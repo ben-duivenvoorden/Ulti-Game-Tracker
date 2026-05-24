@@ -50,7 +50,6 @@ export type RawEventType =
   | 'timeout'
   | 'goal'
   | 'injury-sub'
-  | 'reorder-line'             // visual reorder of a team's on-field line (no roster change)
   | 'half-time'
   | 'end-game'
   | 'foul'
@@ -78,8 +77,6 @@ export interface BlockRawEvent      extends BaseRawEvent { type: 'block' | 'inte
 export interface GoalRawEvent       extends BaseRawEvent { type: 'goal';                playerId: PlayerId; teamId: TeamId }
 // Injury sub replaces a single team's line with a new ordered list.
 export interface InjurySubRawEvent  extends BaseRawEvent { type: 'injury-sub'; teamId: TeamId; line: PlayerId[] }
-// Visual reorder — same set of players, new display order.
-export interface LineReorderRawEvent extends BaseRawEvent { type: 'reorder-line'; teamId: TeamId; line: PlayerId[] }
 export interface HalfTimeRawEvent   extends BaseRawEvent { type: 'half-time' }
 export interface EndGameRawEvent    extends BaseRawEvent { type: 'end-game' }
 export interface TimeoutRawEvent    extends BaseRawEvent { type: 'timeout' }
@@ -98,10 +95,7 @@ export interface TruncateRawEvent   extends BaseRawEvent { type: 'truncate'; tru
 // - removeFromId/ToId both null, events.length > 0 → insert (paste)
 // - removeFromId/ToId set, events.length === N      → replace
 // - removeFromId/ToId set, events.length === 0      → delete
-// The id-range form is unambiguous across resolve passes (visible log vs
-// derivation) — index counts could diverge if reorder-line entries fall in
-// the range. Inner events get fresh ids when the splice is committed via
-// appendEvents.
+// Inner events get fresh ids when the splice is committed via appendEvents.
 export interface SpliceBlockRawEvent extends BaseRawEvent {
   type:         'splice-block'
   afterEventId: EventId
@@ -118,7 +112,6 @@ export type RawEvent =
   | BlockRawEvent
   | GoalRawEvent
   | InjurySubRawEvent
-  | LineReorderRawEvent
   | HalfTimeRawEvent
   | EndGameRawEvent
   | TimeoutRawEvent
@@ -131,11 +124,11 @@ export type RawEvent =
   | SpliceBlockRawEvent
 
 // ─── Visual log ───────────────────────────────────────────────────────────────
-// Same shape as RawEvent minus structural-only entries (undo/amend/truncate
-// resolve into the visible list; reorder-line is purely a display directive).
+// Same shape as RawEvent minus structural-only entries (undo/amend/truncate/
+// splice-block resolve into the visible list rather than appearing in it).
 // Structured — no formatted strings. UI layer formats via format.ts.
 
-export type VisLogEntry = Exclude<RawEvent, UndoRawEvent | AmendRawEvent | LineReorderRawEvent | TruncateRawEvent | SpliceBlockRawEvent>
+export type VisLogEntry = Exclude<RawEvent, UndoRawEvent | AmendRawEvent | TruncateRawEvent | SpliceBlockRawEvent>
 
 // ─── Derived game state ───────────────────────────────────────────────────────
 
@@ -154,8 +147,9 @@ export interface DerivedGameState {
   attackLeft: TeamId           // team currently attacking left → right (UI orientation)
   discHolder: PlayerId | null  // null between possession events / turnovers
   pointIndex: number           // total goals scored so far
-  /** Players on the field for each team, in display order. Derived from
-   *  point-start / injury-sub / reorder-line events. */
+  /** Players on the field for each team, in roster order. Derived from
+   *  point-start / injury-sub events. Visual pill reorder is per-device
+   *  transient state (see `store.lineOrderOverride`), not part of the log. */
   activeLine: ActiveLine
 }
 

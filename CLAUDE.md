@@ -24,6 +24,21 @@ client/src/
 - CSS design tokens live in `client/src/index.css` under `@theme`
 - After any change: `npx tsc -b` from `client/` (matches `npm run build` — `--noEmit` skips referenced projects and lets build-breaking errors through), then `npx vitest run`
 
+## Phase-change cleanup policy
+
+When a phase boundary lands (i.e. a planned chunk of work completes and the next phase begins), aggressively remove legacy code, types, and doc references that the new phase makes redundant. Do not preserve "kept for compat" cruft unless there is a concrete reason it has to stay.
+
+Concretely, at each phase boundary:
+
+- Remove dead event types from `RawEventType` and any related interfaces / `RawEvent` union members.
+- Drop the corresponding cases in `engine.ts` (`step`, `canRecord`, filters in `resolveRawLog` / `applySplice` / `popLastVisible` / `applyAmend`).
+- Strip the label from `summariseEvents` in `store.ts` and any other formatting maps.
+- Add a `migrate` step in the Zustand `persist` config that strips legacy events from any persisted `rawLog`, and bump `STORAGE_VERSION` + `BUILD_MARKER`.
+- Update current-state docs (`requirements/*`, `design/*`) to remove the legacy references. Historical records (`feedback/*`, `plans/*`) stay untouched — they're the audit trail.
+- Run `npx tsc -b` and `npx vitest run` from `client/` and confirm both are clean before committing.
+
+The expectation is that anyone reading the codebase right now should see only what the current phase needs — past phases live in git history, not the working tree.
+
 ## Pending changes workflow
 
 Queue feature requests by adding files to `docs/_get_changes/`. The default

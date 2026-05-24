@@ -5,7 +5,7 @@ Network transport (websockets) is not yet wired up.
 
 This document is the contract that the websocket phase will implement.
 
-> Last refreshed 2026-05-24 to add `truncate` + `splice-block`, drop `reorder-line` from the wire (planned move to transient), and document the UST clipboard envelope.
+> Last refreshed 2026-05-24: structural events now cover `truncate` + `splice-block`; the UST clipboard envelope is documented inline. Pill visual order is per-device transient state and not on the wire.
 
 ---
 
@@ -48,12 +48,6 @@ themselves *events* in the log:
   `removeToId` range, and an inner `events` array. The mechanism behind
   Copy/Paste and Edit-mode commits. Inner events are validated against the
   prefix state via `validateSpliceBlock` before any write.
-
-`reorder-line` is being moved **out of the wire** into per-device transient
-state (see [delta audit Q1](../feedback/2026-05-24-design-code-delta.md)) —
-it's a visual reorder of pills on the canvas, not a sync-worthy fact. Today's
-implementation still emits it into the rawLog; this is a pending implementation
-change.
 
 This is the property that makes sync trivial: a peer with cursor `N` asks the
 server for everything after `N` and concatenates.
@@ -121,10 +115,9 @@ flaky reconnect).
 ## What stays local
 
 - `screen`, `uiMode`, `selPuller`, `showEventMenu`, `truncateCursor` — transient UI state.
-- `swapSides`, `pillSize`, drawer expansion — per-device display preferences.
+- `swapSides`, `pillSize`, drawer expansion, `lineOrderOverride` (pill visual order) — per-device display preferences.
 - `recordingOptions` — per-user preferences (toggles, line ratio). Will move to Competition layer (sync'd then) once that exists.
 - `isInjurySub` — transient flag during line-selection.
-- `reorder-line` *(pending)* — pill visual order on the canvas. See note above.
 
 These never go on the wire.
 

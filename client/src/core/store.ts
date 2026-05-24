@@ -195,10 +195,10 @@ interface GameStore {
 
 // ─── Persistence ──────────────────────────────────────────────────────────────
 
-const STORAGE_VERSION = 10
+const STORAGE_VERSION = 11
 const STORAGE_KEY     = 'ust-game'
 /** Tagged at build time so hydration logs identify which bundle is running. */
-const BUILD_MARKER    = 'ust-build-2026-05-11-v10'
+const BUILD_MARKER    = 'ust-build-2026-05-24-v11'
 
 // ─── Initial seeds ────────────────────────────────────────────────────────────
 // `seedTeamsAndGames()` produces deterministic id 1.. events; the same seed
@@ -362,7 +362,6 @@ function summariseEvents(events: RawEvent[]): string {
     'intercept': 'intercept',
     'goal': 'goal',
     'injury-sub': 'injury sub',
-    'reorder-line': 'reorder',
     'half-time': 'half-time',
     'end-game': 'end-game',
     'foul': 'foul',
@@ -1256,41 +1255,40 @@ export const useGameStore = create<GameStore>()(
       migrate: (persisted, fromVersion) => {
         const obj = persisted as {
           recordingOptions?:   Partial<RecordingOptions>
-          session?:            unknown
+          session?:            { rawLog?: Array<{ type: string }> } | null
           screen?:             AppScreen
           teamsLog?:           TeamEvent[]
           scheduledGamesLog?:  ScheduledGameEvent[]
         }
-        // v4 changed PlayerId / EventId from string to number; v5 derived
-        // activeLine from rawLog and reshaped point-start / injury-sub events.
-        // Both transitions are not back-compatible at the event level, so any
-        // session predating v5 is dropped and the user starts fresh.
+        // v5 was the breaking point for the event log: anything older is
+        // dropped on hydration. v5 → v10 history is preserved in git; the
+        // notable later step is v10 → v11 below.
         const dropping = fromVersion < 5
-        // v5 → v6 introduced teamsLog / scheduledGamesLog.
-        // v6 → v7 swapped the demo seed (BUML 2026-05-11 + real Lizards /
-        // Gooselings rosters; AUDL + Championship removed).
-        // v7 → v8 forced a re-seed for any payload still carrying the
-        // pre-trim demo data.
-        // v8 → v9 again forces a re-seed AND treats empty-array logs (not
-        // just missing) as needing fresh seed — covered a corruption mode
-        // where a mid-flight write left empty arrays in localStorage at a
-        // current-version stamp, blocking the older migration from ever
-        // firing again. Any user-added teams / scheduled games on a pre-v9
-        // payload are dropped on purpose — no production users yet.
         const teamsLogMissing = !Array.isArray(obj.teamsLog) || obj.teamsLog.length === 0
         const gamesLogMissing = !Array.isArray(obj.scheduledGamesLog) || obj.scheduledGamesLog.length === 0
         const needsSeed = fromVersion < 10 || teamsLogMissing || gamesLogMissing
         const seed = needsSeed ? seedTeamsAndGames() : null
+
+        // v10 → v11: `reorder-line` was dropped from the event-type union
+        // (pill display order is now per-device transient state on
+        // `lineOrderOverride`). Strip any legacy entries from the persisted
+        // rawLog so the live engine never sees a now-unknown event type.
+        const session = dropping ? null : (obj.session ?? null)
+        const cleanedSession = (session && Array.isArray(session.rawLog) && fromVersion < 11)
+          ? { ...session, rawLog: session.rawLog.filter(e => e.type !== 'reorder-line') }
+          : session
+
         console.info('[ust-game] migrate', {
           build: BUILD_MARKER,
           fromVersion,
           teamsLogMissing,
           gamesLogMissing,
           reseeded: needsSeed,
+          strippedReorderLine: cleanedSession !== session,
         })
         return {
           ...obj,
-          session:           dropping ? null            : (obj.session ?? null),
+          session:           cleanedSession,
           screen:            dropping ? 'game-setup'    : (obj.screen ?? 'game-setup'),
           teamsLog:          seed ? seed.teamEvents : obj.teamsLog!,
           scheduledGamesLog: seed ? seed.gameEvents : obj.scheduledGamesLog!,

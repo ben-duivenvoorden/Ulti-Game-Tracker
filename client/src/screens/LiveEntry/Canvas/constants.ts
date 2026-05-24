@@ -40,7 +40,8 @@ export const BOUNDS_MARGIN = BOUNDS_MARGIN_Y
 // canvas bounds — see slotPositions() in physics.ts.
 //
 // Index order maps to the active line: players[i] sits at SLOT_POSITIONS[i].
-// Reordering happens via reorder-line events; positions themselves never move.
+// Pill display order is per-device transient state (store.lineOrderOverride);
+// the slot positions themselves never move.
 export interface SlotFrac { readonly x: number; readonly y: number }
 export const SLOT_POSITIONS: ReadonlyArray<SlotFrac> = [
   { x: 0.16, y: 0.18 }, // 0: top-left corner

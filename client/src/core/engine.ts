@@ -28,9 +28,8 @@ export function nextEventId(session: GameSession): number {
 
 // ─── Raw-log resolution ───────────────────────────────────────────────────────
 // One walker, two consumers: the visible event log and game-state derivation.
-// Both produce the same output now that reorder-line is per-device transient
-// state rather than a log event; the two exports below remain as separate
-// names for call-site readability and future divergence.
+// Both produce the same output; the two named exports below preserve intent
+// at call sites.
 
 export type Resolved = Exclude<RawEvent, StructuralOnly>
 
@@ -41,7 +40,6 @@ function resolveRawLog(rawLog: RawEvent[]): Resolved[] {
     if (event.type === 'amend')        { applyAmend(out, event); continue }
     if (event.type === 'truncate')     { dropAfter(out, event.truncateAfterId); continue }
     if (event.type === 'splice-block') { applySplice(out, event); continue }
-    if (event.type === 'reorder-line') continue   // legacy — pill order is now per-device transient
     out.push(event)
   }
   return out
@@ -63,21 +61,20 @@ function applySplice(entries: Resolved[], event: SpliceBlockRawEvent): void {
       removeCount++
     }
   }
-  // Strip structural events from the inner payload. reorder-line is also
-  // stripped — it's legacy/no-op now (pill order is per-device transient).
+  // Strip structural events from the inner payload — they don't belong in
+  // the resolved log directly.
   const inner = event.events.filter((e): e is Resolved =>
     e.type !== 'undo' && e.type !== 'amend' && e.type !== 'truncate'
-    && e.type !== 'splice-block' && e.type !== 'reorder-line')
+    && e.type !== 'splice-block')
   entries.splice(idx + 1, removeCount, ...inner)
 }
 
 // Undoing structural events would corrupt phase tracking, so they're skipped:
-// point-start / half-time / end-game / system anchor the timeline; reorder-line
-// is a display directive that lives outside the visible-event sequence.
+// point-start / half-time / end-game / system anchor the timeline.
 function popLastVisible(entries: Resolved[]): void {
   for (let i = entries.length - 1; i >= 0; i--) {
     const t = entries[i].type
-    if (t !== 'system' && t !== 'point-start' && t !== 'half-time' && t !== 'end-game' && t !== 'reorder-line') {
+    if (t !== 'system' && t !== 'point-start' && t !== 'half-time' && t !== 'end-game') {
       entries.splice(i, 1)
       return
     }
@@ -92,7 +89,7 @@ function applyAmend(entries: Resolved[], event: AmendRawEvent): void {
     return
   }
   const r = event.replacement
-  if (r.type !== 'undo' && r.type !== 'amend' && r.type !== 'reorder-line' && r.type !== 'truncate' && r.type !== 'splice-block') {
+  if (r.type !== 'undo' && r.type !== 'amend' && r.type !== 'truncate' && r.type !== 'splice-block') {
     entries[idx] = r
   }
 }
@@ -132,9 +129,6 @@ function resolveLine(ids: PlayerId[] | undefined, roster: Player[]): Player[] {
 }
 
 export function deriveGameState(session: GameSession): DerivedGameState {
-  // We walk session.rawLog directly — including reorder-line — because
-  // computeVisLog filters reorder-line out for the visible log, but state
-  // derivation needs it.
   const events = resolveLogForDerivation(session.rawLog)
   const receivingTeam = otherTeam(session.gameStartPullingTeam)
 
@@ -216,13 +210,6 @@ function step(state: DerivedGameState, event: Resolved, session: GameSession): v
       }
       break
 
-    case 'reorder-line':
-      // Legacy event — kept in the union for backwards compatibility with
-      // persisted rawLogs. Pill visual order is now per-device transient
-      // state (see `store.lineOrderOverride`); the rawLog no longer carries
-      // reorder events.
-      break
-
     case 'half-time':
       state.gamePhase = 'half-time'
       state.possession = session.gameStartPullingTeam
@@ -295,10 +282,6 @@ export function canRecord(state: DerivedGameState, eventType: RawEventType): boo
 
     case 'injury-sub':
       return state.gamePhase === 'in-play' || state.gamePhase === 'awaiting-pull'
-
-    case 'reorder-line':
-      // Visual reorder is allowed any time the game is active.
-      return state.gamePhase !== 'pre-game' && state.gamePhase !== 'game-over'
 
     case 'half-time':
       // Allowed any time the game is still live — including the brief

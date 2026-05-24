@@ -268,7 +268,7 @@ Local UI prefs — not synced across devices, not in the rawLog.
 
 - **Swap sides** — flips which physical side of the screen each team renders on. Used when teams swap ends or the scorer walks around.
 - **Pill size** — sm / md / lg cycle for thumb / screen comfort.
-- **Pill reorder** — drag a pill on the canvas to a new slot for that team. (Currently logged as `reorder-line`; planned move to transient — see [delta audit Q1](../feedback/2026-05-24-design-code-delta.md).)
+- **Pill reorder** — drag a pill on the canvas to a new slot for that team. Per-device only (`store.lineOrderOverride`); never on the wire.
 - **Drawer expansion state** — which drawer (if any) is open.
 
 ---

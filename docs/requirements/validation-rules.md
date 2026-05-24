@@ -73,7 +73,8 @@ These are part of the append-only model but don't appear in the visible event lo
 | **Amend** | `amend` | References a `targetEventId` and supplies a `replacement` event (or `null` to delete). Original target stays in the raw log; the visible log shows the replacement. |
 | **Truncate** | `truncate` | Drops every visible entry with id > `truncateAfterId`. Used by the tap-to-truncate rewind to commit a "go back in time" cursor atomically with the next recording action. |
 | **Splice-block** | `splice-block` | Structural insert / replace / delete over a contiguous id range, with inner events validated against the prefix state. The mechanism behind Copy/Paste and Edit-mode commits. |
-| **Reorder-line** | (transient) | Per-device visual reorder of pills on the canvas. **Pending move out of `rawLog` into transient store state** — see [delta audit](../feedback/2026-05-24-design-code-delta.md) Q1. |
+
+Pill display order is **not** an event — it lives in per-device transient state (`store.lineOrderOverride`), applied as a display overlay on top of the engine's `activeLine`. Stale ids degrade gracefully when the line changes.
 
 ---
 
@@ -116,8 +117,8 @@ The full guard table — anything not listed is disallowed in that phase.
 | Phase | Allowed event types |
 |---|---|
 | **pre-game** | `point-start` |
-| **awaiting-pull** | `pull`, `pull-bonus`, `brick`, `injury-sub`, `reorder-line`, `half-time`, `end-game`, `foul`, `pick`, `timeout`, `system`, `undo`, `amend`, `truncate` |
-| **in-play** (disc holder = null) | `possession`, `block`, `intercept`, `injury-sub`, `reorder-line`, `half-time`, `end-game`, `foul`, `pick`, `timeout`, structural |
+| **awaiting-pull** | `pull`, `pull-bonus`, `brick`, `injury-sub`, `half-time`, `end-game`, `foul`, `pick`, `timeout`, `system`, `undo`, `amend`, `truncate` |
+| **in-play** (disc holder = null) | `possession`, `block`, `intercept`, `injury-sub`, `half-time`, `end-game`, `foul`, `pick`, `timeout`, structural |
 | **in-play** (disc holder set) | + `turnover-throw-away`, `turnover-receiver-error`, `turnover-stall`, `goal` |
 | **point-over** | `point-start` (next line), structural |
 | **half-time** | `point-start` (second-half line), structural |
