@@ -79,7 +79,7 @@ export default function TeamsManager() {
           onClick={() => setView({ kind: 'new-team' })}
           className="w-full text-left px-4 py-3 border-b border-border cursor-pointer transition-colors"
         >
-          <div className="text-sm font-semibold mb-0.5" style={{ color: 'var(--color-success)' }}>+ New Team</div>
+          <div className="text-lg font-semibold mb-0.5" style={{ color: 'var(--color-success)' }}>+ New Team</div>
           <Label>Add to your roster</Label>
         </button>
         {teamsState.teams.map(t => {
@@ -91,17 +91,17 @@ export default function TeamsManager() {
               className="w-full text-left px-4 py-3 border-b border-border cursor-pointer transition-colors flex items-center gap-3"
             >
               <span
-                className="flex-shrink-0 w-3 h-3 rounded-full"
+                className="flex-shrink-0 w-4 h-4 rounded-full"
                 style={{ background: t.color }}
               />
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-content truncate">{t.name}</div>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <Chip color={t.color}>{t.short}</Chip>
+                <div className="text-lg font-semibold text-content truncate">{t.name}</div>
+                <div className="flex items-center gap-2 mt-1">
+                  <Chip color={t.color} variant="solid">{t.short}</Chip>
                   <Label>{count} {count === 1 ? 'player' : 'players'}</Label>
                 </div>
               </div>
-              <span style={{ color: 'var(--color-dim)' }}>›</span>
+              <span className="text-xl" style={{ color: 'var(--color-dim)' }}>›</span>
             </button>
           )
         })}
@@ -195,7 +195,7 @@ function TeamDetailView({ team, roster, onBack, onEditTeam, onArchive, onAddPlay
           ←
         </button>
         <div className="flex-1 flex items-center justify-center gap-2 min-w-0 px-2">
-          <Chip color={team.color}>{team.short}</Chip>
+          <Chip color={team.color} variant="solid">{team.short}</Chip>
           <span className="text-sm font-bold truncate">{team.name}</span>
         </div>
         <Btn variant="ghost" size="md" onClick={onArchive}>Archive</Btn>

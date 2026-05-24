@@ -96,18 +96,18 @@ export default function GameSetup() {
                 }}
                 className="w-full text-left px-4 py-3 cursor-pointer"
               >
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <div className="text-sm font-semibold text-content truncate">{g.name}</div>
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <div className="text-lg font-semibold text-content truncate">{g.name}</div>
                   <Chip color={chipColor}>{chipText}</Chip>
                 </div>
-                <div className="flex items-center gap-3 text-xs">
+                <div className="flex items-center gap-3 text-sm">
                   <span style={{ color: 'var(--color-muted)' }}>{g.scheduledTime}</span>
                   <span style={{ color: 'var(--color-muted)' }}>·</span>
-                  <span className="truncate" style={{ color: resolved.teams.A.color }}>{resolved.teams.A.short}</span>
+                  <Chip color={resolved.teams.A.color} variant="solid">{resolved.teams.A.short}</Chip>
                   <span style={{ color: 'var(--color-muted)' }}>vs</span>
-                  <span className="truncate" style={{ color: resolved.teams.B.color }}>{resolved.teams.B.short}</span>
+                  <Chip color={resolved.teams.B.color} variant="solid">{resolved.teams.B.short}</Chip>
                   {liveScore && (
-                    <span className="ml-auto font-mono font-bold text-content">
+                    <span className="ml-auto font-mono font-bold text-base text-content">
                       {liveScore.A} – {liveScore.B}
                     </span>
                   )}

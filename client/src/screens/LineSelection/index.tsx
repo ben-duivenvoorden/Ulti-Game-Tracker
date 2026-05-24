@@ -88,22 +88,26 @@ export default function LineSelection() {
           </button>
         </div>
         <div className="flex items-center justify-center gap-2 min-w-0 px-2">
-          <span
-            className="text-sm font-bold truncate text-right flex-1"
-            style={{ color: teams.A.color }}
-            title={teams.A.name}
-          >
-            {headerNames.A}
+          <span className="flex-1 flex justify-end min-w-0">
+            <span
+              className="text-sm font-bold truncate px-2 py-0.5 rounded"
+              style={{ background: teams.A.color, color: inkOn(teams.A.color) }}
+              title={teams.A.name}
+            >
+              {headerNames.A}
+            </span>
           </span>
           <strong className="text-3xl font-black tabular-nums leading-none text-content flex-shrink-0">{score.A}</strong>
           <span className="text-dim text-base flex-shrink-0">–</span>
           <strong className="text-3xl font-black tabular-nums leading-none text-content flex-shrink-0">{score.B}</strong>
-          <span
-            className="text-sm font-bold truncate text-left flex-1"
-            style={{ color: teams.B.color }}
-            title={teams.B.name}
-          >
-            {headerNames.B}
+          <span className="flex-1 flex justify-start min-w-0">
+            <span
+              className="text-sm font-bold truncate px-2 py-0.5 rounded"
+              style={{ background: teams.B.color, color: inkOn(teams.B.color) }}
+              title={teams.B.name}
+            >
+              {headerNames.B}
+            </span>
           </span>
         </div>
         <div className="flex items-center justify-end pr-3">
@@ -256,7 +260,7 @@ function TeamTab({
     <button
       type="button"
       onClick={onClick}
-      className="flex-1 py-3 px-2 cursor-pointer flex items-center justify-center gap-2 text-sm font-semibold"
+      className="flex-1 py-3 px-2 cursor-pointer flex items-center justify-center gap-2 text-base font-semibold"
       style={{
         background:   active ? `${color}18` : 'transparent',
         color:        active ? color        : 'var(--color-muted)',
@@ -387,7 +391,7 @@ function TeamPanel({
                 </span>
               )}
               <span
-                className="text-base flex-1 text-left"
+                className="text-lg flex-1 text-left"
                 style={{
                   fontWeight: isOn ? 600 : 400,
                   color: isOn ? 'var(--color-content)' : 'var(--color-muted)',
@@ -395,7 +399,7 @@ function TeamPanel({
               >
                 {p.name}
                 {p.jerseyNumber !== undefined && (
-                  <span className="font-mono ml-2 text-sm" style={{ color: 'var(--color-dim)' }}>
+                  <span className="font-mono ml-2 text-base" style={{ color: 'var(--color-dim)' }}>
                     #{p.jerseyNumber}
                   </span>
                 )}
@@ -437,7 +441,7 @@ function AddPlayerRow({ color, onAdd, gameMode }: {
         style={{ color, borderColor: `${color}55`, background: `${color}0a`, height: 52 }}
         title="Add a new player to this team"
       >
-        <span className="text-sm font-semibold">+ Add player</span>
+        <span className="text-base font-semibold">+ Add player</span>
       </button>
     )
   }

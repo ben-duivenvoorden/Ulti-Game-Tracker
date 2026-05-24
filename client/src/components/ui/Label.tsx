@@ -11,7 +11,7 @@ export function Label({ children, color, block = false, className = '' }: LabelP
   const Tag = block ? 'div' : 'span'
   return (
     <Tag
-      className={`text-[10px] font-mono tracking-widest ${className}`}
+      className={`text-xs font-mono tracking-widest ${className}`}
       style={{ color: color ?? 'var(--color-muted)' }}
     >
       {children}
