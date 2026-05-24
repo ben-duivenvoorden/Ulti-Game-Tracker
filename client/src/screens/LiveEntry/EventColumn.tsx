@@ -46,6 +46,9 @@ export function EventColumn(props: EventColumnProps) {
   const inPlay = phase === 'in-play'
   const awaitingPull = phase === 'awaiting-pull'
 
+  // In-play layout: Goal at the top, then turnovers grouped — thrower-
+  // attributed (Throw Away) → defender picks (Blocked / Intercepted →
+  // pick screen) → receiver-attributed (Receiver Error) → Stall.
   const inPlayButtons: EventBtnDef[] = [
     {
       label: 'Goal',
@@ -62,13 +65,6 @@ export function EventColumn(props: EventColumnProps) {
       onTap: props.onThrowaway,
     },
     {
-      label: 'Receiver Error',
-      fg:    'var(--color-warn)',
-      ink:   '#111',
-      enabled: inPlay && hasHolder && !firstPossession && canRecord(state, 'turnover-receiver-error'),
-      onTap: props.onReceiverError,
-    },
-    {
       label: 'Blocked by …',
       fg:    'var(--color-block)',
       ink:   '#fff',
@@ -81,6 +77,13 @@ export function EventColumn(props: EventColumnProps) {
       ink:   '#111',
       enabled: inPlay && canRecord(state, 'intercept'),
       onTap: props.onIntercept,
+    },
+    {
+      label: 'Receiver Error',
+      fg:    'var(--color-warn)',
+      ink:   '#111',
+      enabled: inPlay && hasHolder && !firstPossession && canRecord(state, 'turnover-receiver-error'),
+      onTap: props.onReceiverError,
     },
     {
       label: 'Stall',

@@ -168,7 +168,6 @@ export default function LiveEntry() {
               visLog={effectiveVisLog}
               players={activePlayers}
               activeTeam={activeTeam}
-              teamColor={activeTeamColor}
             />
             <EventColumn
               state={state}

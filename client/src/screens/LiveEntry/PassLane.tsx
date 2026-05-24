@@ -5,7 +5,6 @@ interface PassLaneProps {
   visLog: VisLogEntry[]
   players: Player[]
   activeTeam: TeamId
-  teamColor: string
 }
 
 // Thin vertical pane between PlayerColumn and EventColumn. The last
@@ -24,12 +23,31 @@ interface PassLaneProps {
 // at full opacity; older fade.
 
 const MAX_ARROWS         = 3
-const LANE_WIDTH         = 40   // px
+const LANE_WIDTH         = 48   // px
 const LEFT_ANCHOR_X      = 3    // px in from the lane's left edge — where arrowhead tips land
-const LINE_START_INSET   = 5    // px past LEFT_ANCHOR_X where the SENDING line starts — clears any older arrowhead at the same row
+const LINE_START_INSET   = 2    // px past LEFT_ANCHOR_X where the SENDING line starts (small visual inset; head/tail separation comes from the Y-offset below)
 const CORNER_R_MAX       = 12   // px — generous rounding; per-arrow R is clamped down when reach is tight
-const ARROW_AH           = 7    // px — arrowhead length (toward the tip)
-const ARROW_AW           = 4    // px — arrowhead half-width
+const ARROW_AH           = 14   // px — arrowhead length (toward the tip)
+const ARROW_AW           = 8    // px — arrowhead half-width
+
+// Vertical split of each player row, indexed oldest → newest (matches
+// the other emphasis arrays). Senders attach at row-centre + offset,
+// receivers at row-centre − offset, so even within the same row a
+// receiver tip and an outgoing tail never share a Y position.
+//
+// The offset also varies *per arrow age* — newer arrows are closer to
+// the row centre (anchored tight to the player's name), older arrows
+// fan further out. Combined with the per-arrow REACH this means
+// chains that revisit a player (A → B → A → B) get visually distinct
+// endpoints even when the same role attaches to the same row across
+// multiple arrows.
+const ENDPOINT_OFFSETS   = [16, 12, 8] as const  // oldest → newest, px
+
+// Colour for the pass arrows. White (rather than team colour) so the
+// arrows always read against any team's brand colour underneath and
+// don't compete with the team-coloured Pull / Brick buttons or the
+// solid team-colour player highlight.
+const ARROW_COLOUR       = '#ffffff'
 
 // All four emphasis arrays are indexed oldest → newest (last slot =
 // newest). Right-aligned lookup below means a fresh run with fewer
@@ -38,12 +56,12 @@ const ARROW_AW           = 4    // px — arrowhead half-width
 // Reach decreases newest → oldest so the solid, prominent recent
 // arrow sits CLOSEST to the player names; the faintest, most-dashed
 // older arrows fan out further to the right.
-const REACHES       = [30, 22, 14]     as const
-const DASH_PATTERNS = ['2 4', '5 3', undefined] as const
+const REACHES       = [40, 30, 22]     as const
+const DASH_PATTERNS = ['3 5', '6 4', undefined] as const
 const OPACITIES     = [0.42, 0.7, 1]   as const
-const STROKE_WIDTHS = [1.3, 1.6, 2]    as const
+const STROKE_WIDTHS = [1.6, 2, 2.4]    as const
 
-export function PassLane({ visLog, players, activeTeam, teamColor }: PassLaneProps) {
+export function PassLane({ visLog, players, activeTeam }: PassLaneProps) {
   const arrows = derivePassArrows(visLog, activeTeam, players, MAX_ARROWS)
   const N = players.length
 
@@ -80,8 +98,13 @@ export function PassLane({ visLog, players, activeTeam, teamColor }: PassLanePro
             const dash    = DASH_PATTERNS[emphasisIdx]
             const reach   = REACHES[emphasisIdx]
 
-            const fromY = rowCenter(a.fromIdx, N, height)
-            const toY   = rowCenter(a.toIdx,   N, height)
+            // Senders sit in the row's lower half, receivers in the
+            // upper half. Offset varies by recency too so chains that
+            // revisit a player (A → B → A → B) get visibly different
+            // tap points for each arrow's start/end on the same row.
+            const yOffset = ENDPOINT_OFFSETS[emphasisIdx]
+            const fromY = rowCenter(a.fromIdx, N, height) + yOffset
+            const toY   = rowCenter(a.toIdx,   N, height) - yOffset
             const downward = toY > fromY
             const sweep    = downward ? 1 : 0
 
@@ -120,27 +143,34 @@ export function PassLane({ visLog, players, activeTeam, teamColor }: PassLanePro
               `L ${lineEndX} ${toY}`,
             ].join(' ')
 
-            // Arrowhead at receiver's row, tip on the left plane,
-            // pointing horizontally left.
-            const tipX  = LEFT_ANCHOR_X
-            const baseX = LEFT_ANCHOR_X + ARROW_AH
-            const wingY1 = toY - ARROW_AW
-            const wingY2 = toY + ARROW_AW
+            // Swept-back ("feathered") arrowhead. Tip on the left plane,
+            // back wings flared at x = LEFT_ANCHOR_X + ARROW_AH, with a
+            // concave indent halfway along that makes the back read as
+            // a dart rather than a plain triangle.
+            const tipX        = LEFT_ANCHOR_X
+            const tipY        = toY
+            const backX       = LEFT_ANCHOR_X + ARROW_AH
+            const concaveX    = LEFT_ANCHOR_X + ARROW_AH * 0.55  // depth of the indent
+            const wingY1      = toY - ARROW_AW
+            const wingY2      = toY + ARROW_AW
 
             return (
               <g key={i} opacity={opacity}>
                 <path
                   d={d}
-                  stroke={teamColor}
+                  stroke={ARROW_COLOUR}
                   strokeWidth={stroke}
                   fill="none"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeDasharray={dash}
                 />
-                <polygon
-                  points={`${tipX},${toY} ${baseX},${wingY1} ${baseX},${wingY2}`}
-                  fill={teamColor}
+                <path
+                  d={`M ${tipX} ${tipY}
+                      L ${backX} ${wingY1}
+                      Q ${concaveX} ${tipY} ${backX} ${wingY2}
+                      Z`}
+                  fill={ARROW_COLOUR}
                 />
               </g>
             )
