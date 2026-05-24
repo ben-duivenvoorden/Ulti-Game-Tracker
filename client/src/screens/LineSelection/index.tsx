@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Btn } from '@/components/ui/Btn'
 import { Chip } from '@/components/ui/Chip'
 import { Label } from '@/components/ui/Label'
-import { useSession, useDerivedState, useRecordingOptions } from '@/core/selectors'
+import { useSession, useDerivedState, useRecordingOptions, useSuggestedTransition } from '@/core/selectors'
 import { useGameStore, seedDefaultLine } from '@/core/store'
 import { inkOn } from '@/core/contrast'
 import type { Player, GameMode, TeamId } from '@/core/types'
@@ -17,7 +17,11 @@ export default function LineSelection() {
   const toggleSwap     = useGameStore(s => s.toggleSwapSides)
   const openTeamsManager = useGameStore(s => s.openTeamsManager)
   const addPlayer      = useGameStore(s => s.addPlayer)
+  const triggerHalfTime = useGameStore(s => s.triggerHalfTime)
+  const triggerEndGame  = useGameStore(s => s.triggerEndGame)
   const { lineRatio, gameMode } = useRecordingOptions()
+  const suggestion     = useSuggestedTransition()
+  const [dismissed, setDismissed] = useState(false)
 
   const rosters = session?.gameConfig.rosters
   const teams   = session?.gameConfig.teams
@@ -92,6 +96,46 @@ export default function LineSelection() {
             width of the back arrow on the left. */}
         <span className="w-5" aria-hidden />
       </div>
+
+      {/* Suggestion banner — fires when the score crosses halfTimeAt or
+          scoreCapAt and the corresponding event isn't already in the log.
+          Recorder confirms (emits the structural event) or dismisses (defers
+          until the next goal pushes us back into the threshold). */}
+      {suggestion && !dismissed && !isInjurySub && (
+        <div
+          className="flex-shrink-0 flex items-stretch text-[11px] font-semibold tracking-widest"
+          style={{
+            background:   'var(--color-warn-bg)',
+            color:        'var(--color-warn)',
+            borderBottom: '1px solid var(--color-warn)',
+          }}
+        >
+          <div className="flex-1 flex items-center justify-center px-3 py-2">
+            {suggestion === 'half-time'
+              ? 'HALF-TIME SCORE REACHED — CALL HALF TIME?'
+              : 'SCORE CAP REACHED — END THE GAME?'}
+          </div>
+          <button
+            onClick={() => {
+              if (suggestion === 'half-time') triggerHalfTime()
+              else triggerEndGame()
+            }}
+            className="px-3 cursor-pointer font-semibold"
+            style={{ borderLeft: '1px solid var(--color-warn)' }}
+            title={suggestion === 'half-time' ? 'Record half time' : 'End the game'}
+          >
+            {suggestion === 'half-time' ? 'CALL HALF' : 'END GAME'}
+          </button>
+          <button
+            onClick={() => setDismissed(true)}
+            className="px-3 cursor-pointer"
+            style={{ borderLeft: '1px solid var(--color-warn)' }}
+            title="Defer — will re-fire after the next goal if still applicable"
+          >
+            NOT YET
+          </button>
+        </div>
+      )}
 
       {/* Row 2: title (well clear of the back arrow) + Manage teams + Confirm button. */}
       <div className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-border">

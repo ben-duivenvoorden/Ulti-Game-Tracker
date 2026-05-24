@@ -150,3 +150,33 @@ export function useUiState() {
     showEventMenu: s.showEventMenu,
   })))
 }
+
+// ─── Suggested transitions ────────────────────────────────────────────────────
+// Half-time / end-game are no longer auto-emitted on goal — instead, the app
+// surfaces a suggestion when the current score crosses the configured
+// threshold and no corresponding event is already in the log. The recorder
+// confirms or dismisses via banner controls on LineSelection (see F7).
+//
+// Returns null when there's nothing to suggest. End-game wins over half-time
+// when both apply (a game-ending goal at the cap shouldn't propose half-time).
+
+export type SuggestedTransition = 'half-time' | 'end-game'
+
+export function useSuggestedTransition(): SuggestedTransition | null {
+  const session = useSession()
+  const state   = useDerivedState()
+  const visLog  = useVisLog()
+  return useMemo(() => {
+    if (!session || !state) return null
+    if (state.gamePhase === 'game-over') return null
+    const { scoreCapAt, halfTimeAt } = session.gameConfig
+    if (state.score.A >= scoreCapAt || state.score.B >= scoreCapAt) {
+      if (!visLog.some(e => e.type === 'end-game')) return 'end-game'
+    }
+    const total = state.score.A + state.score.B
+    if (total >= halfTimeAt) {
+      if (!visLog.some(e => e.type === 'half-time')) return 'half-time'
+    }
+    return null
+  }, [session, state, visLog])
+}

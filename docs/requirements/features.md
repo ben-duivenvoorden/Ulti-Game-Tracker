@@ -181,12 +181,14 @@ See [architecture.md](architecture.md) and [wire-protocol.md](../design/wire-pro
 
 ---
 
-## F7 — Half Time
+## F7 — Half Time & End Game suggestions
 
-- **Design direction:** When total score reaches the configured `halfTimeAt` threshold, the app surfaces a **confirmation prompt** to the recorder; on confirm, a `half-time` event is appended. Possession for the second half flips to the team that did not start the game.
-- **Current implementation:** The engine auto-emits `half-time` on threshold without a confirmation prompt. A confirmation flow is a planned change (per [delta audit Q5](../feedback/2026-05-24-design-code-delta.md)).
-- Manual trigger via the AdminDrawer's Half Time button is also planned — useful for time-based formats or to override the auto-trigger.
-- The threshold lives on `GameConfig` per game today; the planned Competition layer will own defaults.
+- When total score reaches `halfTimeAt` (or either team reaches `scoreCapAt`), the app surfaces a **confirmation banner** on Line Selection — "HALF-TIME SCORE REACHED — CALL HALF TIME?" or "SCORE CAP REACHED — END THE GAME?".
+- Recorder choices:
+  - **CALL HALF / END GAME** → emits the `half-time` / `end-game` event. For half-time, possession for the second half flips to the team that did not start the game.
+  - **NOT YET** → defers. The banner re-fires after the next goal if the threshold still applies (so dismissal is just for this trip through Line Selection).
+- **Manual triggers** in the AdminDrawer (Half Time, End Game) are also available — useful for time-based formats or to override the suggestion flow. `canRecord` permits these from `in-play` / `awaiting-pull` / `point-over` (and end-game also from `half-time`).
+- Thresholds live on `GameConfig` per game today; the planned Competition layer will own defaults.
 
 ---
 

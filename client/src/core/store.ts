@@ -650,30 +650,19 @@ export const useGameStore = create<GameStore>()(
       },
 
       // ── recordGoal ──────────────────────────────────────────────────────────
+      // Records the goal only. Half-time / end-game suggestions are surfaced
+      // via the `useSuggestedTransition` selector (see selectors.ts) and
+      // confirmed by the recorder on the LineSelection screen — the app no
+      // longer auto-emits these structural events from inside recordGoal.
       recordGoal() {
-        const { session, editMode } = get()
-        const target = activeSession({ session, editMode })
-        if (!target) return
-        const cap  = target.gameConfig.scoreCapAt
-        const half = target.gameConfig.halfTimeAt
-
         recordVia(get, set, state => {
           if (!canRecord(state, 'goal') || !state.discHolder) return null
-          const events: RawEventInput[] = [{
+          return [{
             pointIndex: state.pointIndex,
             type:     'goal',
             playerId: state.discHolder,
             teamId:   state.possession,
           }]
-          // Auto-append half-time / end-game when thresholds met
-          const newScore = { ...state.score, [state.possession]: state.score[state.possession] + 1 }
-          const total = newScore.A + newScore.B
-          if (newScore.A >= cap || newScore.B >= cap) {
-            events.push({ pointIndex: state.pointIndex, type: 'end-game' })
-          } else if (total === half) {
-            events.push({ pointIndex: state.pointIndex, type: 'half-time' })
-          }
-          return events
         })
       },
 

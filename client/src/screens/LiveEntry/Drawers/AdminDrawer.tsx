@@ -58,16 +58,14 @@ export function AdminDrawer({
         <div className="h-px my-1" style={{ background: 'var(--color-border)' }} />
 
         {/*
-          TODO(canvas): the post-goal flow now auto-navigates to LineSelection
-          (see plan decision 12), so manual Half-Time / End-Game become
-          unreachable from the canvas (they require gamePhase === 'in-play' or
-          'awaiting-pull'). The engine still auto-emits Half-Time at the score
-          threshold, so this is rarely a problem in practice — but the manual
-          buttons are kept here, perma-disabled, until a follow-up redesign
-          decides where they should live.
+          Manual half-time / end-game triggers. Useful for time-based formats
+          and to override the auto-suggestion flow. canRecord now permits
+          half-time/end-game from `in-play` / `awaiting-pull` / `point-over`
+          (and end-game also from `half-time`), so the drawer remains
+          actionable through the natural post-goal transition.
         */}
-        <Btn variant="ghost" size="sm" full disabled onClick={onHalfTime}>Half Time</Btn>
-        <Btn variant="ghost" size="sm" full disabled onClick={onEndGame}>End Game</Btn>
+        <Btn variant="ghost" size="sm" full disabled={!can('half-time')} onClick={onHalfTime}>Half Time</Btn>
+        <Btn variant="ghost" size="sm" full disabled={!can('end-game')}  onClick={onEndGame}>End Game</Btn>
       </div>
     </Drawer>
   )

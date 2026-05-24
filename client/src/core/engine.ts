@@ -301,8 +301,20 @@ export function canRecord(state: DerivedGameState, eventType: RawEventType): boo
       return state.gamePhase !== 'pre-game' && state.gamePhase !== 'game-over'
 
     case 'half-time':
+      // Allowed any time the game is still live — including the brief
+      // `point-over` window between a goal and the next line-confirm
+      // (the confirmation prompt fires here when the threshold is met).
+      return state.gamePhase === 'in-play'
+          || state.gamePhase === 'awaiting-pull'
+          || state.gamePhase === 'point-over'
+
     case 'end-game':
-      return state.gamePhase === 'in-play' || state.gamePhase === 'awaiting-pull'
+      // End-game is permitted from any active phase (including half-time,
+      // since a forfeit or time-limited end can happen between halves).
+      return state.gamePhase === 'in-play'
+          || state.gamePhase === 'awaiting-pull'
+          || state.gamePhase === 'point-over'
+          || state.gamePhase === 'half-time'
 
     case 'foul':
     case 'pick':
