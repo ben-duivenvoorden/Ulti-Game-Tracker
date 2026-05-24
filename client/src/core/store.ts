@@ -66,9 +66,6 @@ interface GameStore {
   uiMode: UiMode
   selPuller: PlayerId | null
   recordingOptions: RecordingOptions
-  /** When true, Team A and Team B render on opposite sides of the screen.
-   *  Per-device display preference — never goes on the wire. */
-  swapSides: boolean
   /** Player pill size — per-device display preference. */
   pillSize: PillSize
   /** Per-device visual reorder of pills on the canvas — never goes on the wire.
@@ -127,7 +124,6 @@ interface GameStore {
 
   // Pure UI
   setShowEventMenu:    (show: boolean) => void
-  toggleSwapSides:     () => void
   cyclePillSize:       () => void
   setTruncateCursor:   (cursor: EventId | null) => void
 
@@ -443,7 +439,6 @@ export const useGameStore = create<GameStore>()(
       notification:      null,
       editMode:          null,
       recordingOptions:  DEFAULT_RECORDING_OPTIONS,
-      swapSides:         false,
       pillSize:          'md',
       lineOrderOverride: { A: [], B: [] },
 
@@ -848,14 +843,6 @@ export const useGameStore = create<GameStore>()(
       // ── setShowEventMenu ─────────────────────────────────────────────────────
       setShowEventMenu(show) {
         set({ showEventMenu: show })
-      },
-
-      // ── toggleSwapSides ──────────────────────────────────────────────────────
-      // Flip which physical side of the screen each team renders on. Per-device
-      // display preference — used when teams swap ends or the scorer walks
-      // around to the other touchline. Not synced over the wire.
-      toggleSwapSides() {
-        set(s => ({ swapSides: !s.swapSides }))
       },
 
       // ── cyclePillSize ───────────────────────────────────────────────────────
@@ -1304,7 +1291,6 @@ export const useGameStore = create<GameStore>()(
         uiMode:            state.uiMode,
         selPuller:         state.selPuller,
         recordingOptions:  state.recordingOptions,
-        swapSides:         state.swapSides,
         pillSize:          state.pillSize,
         lineOrderOverride: state.lineOrderOverride,
       }),
