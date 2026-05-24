@@ -37,3 +37,27 @@ before it goes live.
   `SessionMeta`?
 
 **Status.** Captured 2026-04-29. Not scheduled.
+
+---
+
+## Unknown player ("?") roster slot
+
+**Motivation.** When scoring a game against an opposition team the recorder doesn't know
+(common when stats are kept for both teams, F10), there's currently no way to attribute
+events to opposing players — forcing the recorder to either skip events or guess names.
+Real-game testing confirmed this is a recurring pain point.
+
+**Sketched approach.**
+- The "?" is a **roster slot**, not an event type — it sits in the line like any other
+  player and events attach to it normally (pass to ?, ? throws away, etc.).
+- Permitted per league/tournament config — leagues that demand clean data can disable it.
+- Open: single shared "?" placeholder vs one anonymous slot per jersey position. Per-slot
+  preserves "which unknown did what" within a point; single is simpler but collapses all
+  opponents into one entity.
+
+**Open questions.**
+- Single "?" vs per-jersey "?".
+- Does an event involving a "?" player flag the affected stats as lower-quality
+  downstream, or are they just stored as-is and let analysis decide?
+
+**Status.** Captured 2026-05-24 from [Myall feedback](../feedback/2026-05-24-myall-responses.md) #5. Idea-stage — not yet a committed feature.

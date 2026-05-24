@@ -5,6 +5,8 @@ Network transport (websockets) is not yet wired up.
 
 This document is the contract that the websocket phase will implement.
 
+> Last refreshed 2026-05-24 to add `truncate` + `splice-block`, drop `reorder-line` from the wire (planned move to transient), and document the UST clipboard envelope.
+
 ---
 
 ## Two layers
@@ -29,16 +31,29 @@ visible event log are all derived locally by each peer from
 
 ## Append-only invariant
 
-The raw log is **only ever appended to**. There are no in-place edits, no
-splicing, no re-ordering. Mutations that look destructive (undo, amend) are
+The raw log is **only ever appended to**. There are no in-place edits.
+Mutations that look destructive (undo, amend, truncate, splice-block) are
 themselves *events* in the log:
 
 - `undo` — display-time pop of the most recent visible non-structural entry.
   Engine state is recomputed from the resulting visible log.
 - `amend` — references a target event id and supplies a replacement (or `null`
   to delete from the visible log). Original target stays in the raw log.
-- `reorder-line` — replaces a team's display order. Surfaces in derivation but
-  not in the visible event log.
+- `truncate` — drops every visible entry with id > `truncateAfterId`. Used by
+  the tap-to-truncate rewind to commit a "go back in time" cursor atomically
+  with the next recording action. The dropped entries remain in the raw log;
+  they're just hidden in the resolved view.
+- `splice-block` — structural insert / replace / delete over a contiguous id
+  range. Carries an `afterEventId` anchor, optional `removeFromId` /
+  `removeToId` range, and an inner `events` array. The mechanism behind
+  Copy/Paste and Edit-mode commits. Inner events are validated against the
+  prefix state via `validateSpliceBlock` before any write.
+
+`reorder-line` is being moved **out of the wire** into per-device transient
+state (see [delta audit Q1](../feedback/2026-05-24-design-code-delta.md)) —
+it's a visual reorder of pills on the canvas, not a sync-worthy fact. Today's
+implementation still emits it into the rawLog; this is a pending implementation
+change.
 
 This is the property that makes sync trivial: a peer with cursor `N` asks the
 server for everything after `N` and concatenates.
@@ -105,11 +120,42 @@ flaky reconnect).
 
 ## What stays local
 
-- `screen`, `uiMode`, `selPuller`, `showEventMenu` — transient UI state.
-- `recordingOptions` — per-user preferences (toggles, line ratio).
+- `screen`, `uiMode`, `selPuller`, `showEventMenu`, `truncateCursor` — transient UI state.
+- `swapSides`, `pillSize`, drawer expansion — per-device display preferences.
+- `recordingOptions` — per-user preferences (toggles, line ratio). Will move to Competition layer (sync'd then) once that exists.
 - `isInjurySub` — transient flag during line-selection.
+- `reorder-line` *(pending)* — pill visual order on the canvas. See note above.
 
 These never go on the wire.
+
+---
+
+## UST clipboard envelope
+
+Copy / paste between log views uses a JSON envelope serialised to the system
+clipboard. Same structural shape as `EventStreamMessage` but addressed at the
+human (clipboard) layer rather than a network peer.
+
+```ts
+interface USTEnvelope {
+  gameId: GameId
+  fromEventId: EventId   // inclusive
+  toEventId: EventId     // inclusive
+  events: RawEvent[]     // structural events stripped at envelope-build
+}
+```
+
+Validation at paste time:
+
+1. Envelope's `gameId` must equal the receiving session's game id.
+2. Events get fresh ids on commit (the receiver renumbers — source ids are
+   informational, used only in the provenance `system` entry like "Pasted N
+   events from #X–#Y").
+3. The whole slice is wrapped in a `splice-block` and validated via
+   `validateSpliceBlock`. Rejection surfaces as a banner; rawLog untouched.
+
+The envelope is the de facto sync unit even in the absence of a server — a
+recorder can hand off a slice of work between devices by copy-paste.
 
 ## Open questions (deferred)
 

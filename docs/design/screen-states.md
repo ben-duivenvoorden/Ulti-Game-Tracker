@@ -1,133 +1,160 @@
 # Screen States
 ## Ultimate Stat Tracker
 
-**Version:** 0.2
-**Last Updated:** 2026-04-19
+**Version:** 0.3 (resync with implementation)
+**Last Updated:** 2026-05-24
 **Status:** 🟡 In Progress
+
+State labels here use the engine's `GamePhase` discriminator where they map cleanly. Pick-mode states reflect the `UiMode` registry in `core/pickModes.ts`.
 
 ---
 
 ## Overview
 
-| State | Name | Trigger |
-|---|---|---|
-| 1a | Game Setup — No Game Selected | App opened |
-| 1b | Game Setup — Game In Progress | Game selected |
-| 2a | Line Selection — Between Points | Point scored / game start |
-| 2b | Line Selection — Injury Sub | Mid-point injury |
-| 3a | Live Entry — Awaiting Puller | Line confirmed |
-| 3b | Live Entry — Puller Selected | Puller name tapped |
-| 3c | Live Entry — Pass Chain | Pull / Pull Bonus recorded |
-| 3e | Live Entry — Defensive Block Pick | Defensive Block selected from explosion |
-| 3f | Live Entry — Point Over | Goal tapped |
-| 3g | Live Entry — Half Time | Score threshold reached (auto) or manual via Event button |
-| 3h | Live Entry — End Game | End Game confirmed via Event button |
+| State | Screen | Phase / UiMode | Trigger |
+|---|---|---|---|
+| 1a | Game Setup — No Selection | — | App opened |
+| 1b | Game Setup — Game Selected (scheduled / in-progress / finished) | — | Game row tapped |
+| 1c | Game Setup — New Game form | — | "+ New Game" tapped |
+| **3** | Game Settings | — | ⚙ tapped in Game Setup |
+| **4** | Teams Manager | — | "Manage teams" tapped |
+| 5a | Line Selection — Between Points | `pre-game` / `point-over` / `half-time` | Game start / point scored / half time |
+| 5b | Line Selection — Injury Sub | `in-play` / `awaiting-pull` | Injury Sub tapped in AdminDrawer |
+| 6a | Live Entry — Awaiting Puller | `awaiting-pull` (no puller selected) | Line confirmed → `point-start` recorded |
+| 6b | Live Entry — Puller Selected | `awaiting-pull` (puller selected) | Puller pill tapped |
+| 6c | Live Entry — In Play | `in-play` | Pull / Pull Bonus / Brick recorded |
+| 6d | Live Entry — Block Pick | `in-play` + `UiMode = block-pick` | Block chip tapped |
+| 6e | Live Entry — Intercept Pick | `in-play` + `UiMode = intercept-pick` | Intercept chip tapped |
+| 6f | Live Entry — Receiver Error Pick | `in-play` + `UiMode = receiver-error-pick` | Receiver Error chip tapped |
+| 6g | Live Entry — Truncate Preview | any (cursor set) | Long-press an event in the log |
+| 6h | Live Entry — Edit Mode | any (editMode active) | "Edit log" button (currently game-over only) |
+| 6i | Live Entry — Point Over | `point-over` | Goal scored — auto-advances to 5a (Line Selection) |
+| 6j | Live Entry — Half Time | `half-time` | Threshold reached (confirmation prompt planned, F7) — auto-advances to 5a |
+| 7 | Game Over | `game-over` | End-game event |
 
 ---
 
 ## Screen 1 — Game Setup
 
 ### 1a — No Game Selected
-- **Player zone:** List of pre-configured games available on the server
-- **Event buttons:** None
-- **Log:** Not visible
-- **Transition:** Recorder selects a game → **1b**
+- **Left pane:** Game list (with status chips) + "+ New Game" + "Manage teams" link.
+- **Right pane:** Empty / placeholder.
 
-### 1b — Game In Progress
-- **Player zone:** Game summary — teams, current score, start time
-- **Event buttons:** None (or Export if game is over)
-- **Log:** Not visible
-- **First game start only:** Recorder selects which team pulls first before entering Line Selection
-- **Transition:** Recorder taps "Record" / enters game → **2a**
+### 1b — Game Selected
+Right pane shows the selected game with state-dependent CTA:
+- `SCHED` → pulling-team picker + **Start** button → 5a Line Selection.
+- `LIVE` → live score + **Resume** button → 6 Live Entry.
+- `DONE` → final score + **Export** button.
 
----
-
-## Screen 2 — Line Selection
-
-### 2a — Between Points
-- **Player zone:** Full roster for each team — recorder selects up to 7 active players per side
-- **Event buttons:** Confirm Line (available once at least one player is selected per side)
-- **Warning:** If fewer than 7 players are selected for either side, a warning is shown before confirmation — recorder can still proceed
-- **Log:** Not visible
-- **Transition:** Line confirmed → **3a**
-
-### 2b — Injury Sub (Mid-Point)
-- **Player zone:** Active line for affected team — recorder swaps one player out, one in from bench
-- **Event buttons:** Confirm Sub
-- **Log:** Not visible
-- **Transition:** Sub confirmed → **3c** (returns to pass chain, new player eligible)
+### 1c — New Game Form
+Right pane swapped for the inline New Game form. Save → 1b on the new game.
 
 ---
 
-## Screen 3 — Live Event Entry
+## Screen 3 — Game Settings
 
-### 3a — Awaiting Puller
-- **Player zone:** Pulling team's active line
-- **Event buttons:** None (recorder must tap a player first)
-- **Log:** Visible
-- **Prompt:** Recorder taps the puller's name → **3b**
+Single-screen panel with two sections (Game Mode & Line Composition / Events). Done button returns to Game Setup.
 
-### 3b — Puller Selected
-- **Player zone:** Pulling team's active line (puller highlighted)
-- **Explosion (puller):** Pull, Pull Bonus — the only valid options; no pass option
-- **Event button:** Visible (injury sub submenu)
-- **Log:** Visible
-- **Transition:**
-  - Pull or Pull Bonus selected from explosion → possession flips to receiving team → **3c**
+---
 
-### 3c — Pass Chain
-- **Player zone:** Team in possession only
-- **Explosion (per player):** Centre=pass, Left=Receiver Error, Right=Throw Away / Defensive Block / Goal
-- **Event button:** Visible (injury sub submenu)
-- **Log:** Visible
-- **Transitions:**
-  - Centre / dismiss → pass recorded, player has possession → **3c**
-  - Receiver Error → turnover attributed to tapped player (intended receiver who dropped it), possession flips → **3c**
-  - Throw Away → turnover attributed to previous disc holder, possession flips → **3c**
-  - Defensive Block → **3e**
-  - Goal → **3f**
+## Screen 4 — Teams Manager
 
-### 3d — ~~Receiver Error Pick~~ *(removed)*
-Receiver Error is now resolved within the player explosion. The tapped player is the intended receiver — no separate pick screen required.
+Two-pane CRUD:
+- Left: team list (with "+ New Team").
+- Right: selected team's detail — name/short/colour fields, player roster with add/edit/remove, archive button.
 
-### 3e — Defensive Block Pick
-- **Player zone:** Defending team (distinct visual state — colour shift or overlay)
-- **Explosion:** Disabled — recorder taps a name directly
-- **Event button:** Hidden (not valid during pick)
-- **Log:** Visible
-- **Prompt:** Recorder taps the blocker → block recorded, possession flips to blocking team → **3c**
-- **Note:** Blocker may immediately be tapped again as first receiver — two sequential log entries, both valid
+Reached from Game Setup, Line Selection, or (future) a Competition Detail screen.
 
-### 3f — Point Over
-- **Player zone:** None (or dimmed)
-- **Event buttons:** None
-- **Log:** Visible — final state of completed point
-- **Display:** Score updated, brief confirmation of goal scorer
-- **Transition:**
-  - Score < half time threshold → auto or tap → **2a**
-  - Score = half time threshold → system auto-inserts Half Time event → **3g**
+---
 
-### 3g — Half Time
-- **Player zone:** None (or dimmed)
-- **Event button:** Hidden
-- **Log:** Visible — Half Time entry appended (automatically or via Event submenu)
-- **Display:** Half time indicator, current score, ends switched notice
-- **Note:** Possession for second half goes to the team that did not start the game — derived automatically. If score threshold is reached, the app suggests Half Time via the Event button — recorder confirms; not enforced.
-- **Transition:** Auto or tap → **2a** (Line Selection for second half)
+## Screen 5 — Line Selection
 
-### 3h — End Game
-- **Player zone:** None
-- **Event button:** Hidden
-- **Log:** Visible — End Game entry appended; log is now closed (no further entries permitted)
-- **Display:** Final score, game closed notice, export prompt
-- **Note:** Triggered by recorder confirming End Game from the Event submenu. The app suggests this when the score cap is reached (league/tournament config) — not enforced. The recorder decides when the game is over; the log reflects what actually happened.
-- **Transition:** Terminal — session closed; export available
+### 5a — Between Points
+- Two-column roster (one per team); recorder toggles per player.
+- Confirm Line button — opens override prompt if off-ratio/off-count.
+- Swap-sides toggle.
+- Manage teams affordance.
+
+### 5b — Injury Sub
+- Only the affected team's column shown.
+- Title clarifies "INJURY SUBSTITUTION — MID-POINT".
+- Confirm emits an `injury-sub` event with the new line.
+
+---
+
+## Screen 6 — Live Event Entry
+
+All 6-prefix states share the same skeleton: header · AdminDrawer · canvas · LogDrawer. The state-specific differences are in the header strip and the canvas mode.
+
+### 6a — Awaiting Puller
+- **Canvas:** Pulling team's pills. No pill open. No chip rosette.
+- **Holder:** None. **Puller:** None.
+- **Drawers:** Both railed (collapsed). AdminDrawer's Half-Time / End-Game disabled (current implementation).
+- **Transition:** Tap a pill → 6b.
+
+### 6b — Puller Selected
+- **Canvas:** Same pills, one shown as selected puller (glowing border).
+- **Chip rosette** opens around the puller pill: **Pull**, **Pull Bonus** (if enabled), **Brick** (if enabled).
+- **Transition:** Tap a rosette chip → record pull → 6c. Tap puller pill again to deselect.
+
+### 6c — In Play (Pass Chain)
+- **Canvas:** Possession team's pills.
+- **Holder:** Whoever currently has the disc (thick border, filled bg). Null between events.
+- **Tap a pill:** record `possession` (becomes new holder).
+- **Open a pill:** rosette opens with **Throwaway**, **Receiver Error**, **Defensive Block**, **Intercept**, **Goal** (+ **Stall** if enabled). Some chips dim under [first-possession gating](../requirements/validation-rules.md#first-possession-gating).
+- **Transitions:** Throwaway → 6c (other team). Block chip → 6d. Intercept chip → 6e. Receiver Error chip → 6f. Goal chip → 6i.
+
+### 6d — Block Pick
+- **Canvas:** Defending team's pills. Visually distinct background tint (block colour).
+- **Header strip:** "PICK BLOCKER FROM `<DEF>` · TAP TO CANCEL".
+- **Tap any pill:** record `block` (blocker id), possession flips → 6c.
+- **Cancel:** tap header strip or empty canvas → 6c (unchanged).
+- **Chip rosette:** disabled — direct pill tap is the action.
+
+### 6e — Intercept Pick
+- Identical pattern to 6d, with intercept colouring and "PICK INTERCEPTOR" label.
+- **Tap any pill:** record `intercept` (interceptor id); possession flips and interceptor becomes disc holder → 6c.
+
+### 6f — Receiver Error Pick
+- **Canvas:** Possession team's pills (still the throwing team — possession hasn't flipped yet). Receiver Error background tint.
+- **Header strip:** "TAP PLAYER WHO HAD ERROR · TAP TO CANCEL".
+- **Thrower pill** is dimmed and untappable (`ineligibleIds`).
+- **Tap any other pill:** record `turnover-receiver-error` (intended receiver id); possession flips → 6c.
+
+### 6g — Truncate Preview
+- Cursor set on an event in the log. The canvas reflects state *at that cursor* (greyed entries past it in the log; ▶ marker on the cursor entry).
+- **Header strip:** "VIEWING HISTORY · RECORD TO TRUNCATE FORWARD · TAP TO CANCEL".
+- **Recording any new event** prepends a `truncate` and commits the rewind atomically.
+- **Cancel** returns to live.
+
+### 6h — Edit Mode
+- Snapshot baseline + draft session. Recording controls operate on the draft.
+- **Header strip:** "EDIT MODE — select range to replace" / "EDITING #N–#M" + DONE / CANCEL.
+- Long-press an event to set the range; recording continues from that point in the draft.
+- **DONE** → validate and commit as `splice-block`.
+
+### 6i — Point Over
+- Phase = `point-over`. Auto-advances to 5a Line Selection (no manual confirmation needed). The point-over phase itself is brief — not really a stable user-visible state.
+
+### 6j — Half Time
+- Phase = `half-time`. Currently auto-emitted on threshold; will gain a confirmation prompt (F7).
+- Auto-advances to 5a Line Selection for the second half.
+
+---
+
+## Screen 7 — Game Over
+
+Banner overlay inside Live Entry once phase = `game-over`:
+- "GAME OVER" + final score + winner.
+- **Back to games** button → 1a.
+- **Edit log** button → 6h.
+
+The LogDrawer remains accessible for inspecting / copying events.
 
 ---
 
 ## Open Questions
 
-- [ ] Does 3f (Point Over) require a deliberate tap to proceed, or does it auto-advance to Line Selection?
-- [ ] Is Line Selection (Screen 2) a separate screen or an overlay on Screen 3?
-- [ ] Can the recorder access the amend/edit flow from the log in any state, or only in specific states?
-- [ ] What does the visual state change look like for 3d and 3e — colour, overlay, label change?
+- [ ] Should 6g (Truncate Preview) and 6h (Edit Mode) be combinable, or strictly mutually exclusive? (Today they're mutually exclusive — entering edit mode clears the cursor.)
+- [ ] Layout of pick-strip vs notification banner when both want to be present at once.
+- [ ] Mobile portrait re-layout: drawers stay as side rails, or become bottom-sheet style?

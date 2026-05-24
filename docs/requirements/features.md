@@ -1,138 +1,209 @@
 # Core Features
 ## Ultimate Stat Tracker
 
-**Version:** 0.4
-**Last Updated:** 2026-04-23
+**Version:** 0.5 (resync with implementation)
+**Last Updated:** 2026-05-24
 **Status:** 🟡 In Progress
 
 ---
 
 ## F1 — Roster & Line Selection
 
-- Games are pre-configured on the server — rosters are preset before the app is opened
-- Before each point, the recorder selects which players (up to 7) are on the field for each team
-- Typically 4 men and 3 women per side (Parity League format)
-- Both teams always have equal player counts
-- Player names are **colour-coded by gender** as a visual indicator only — never enforced or blocked
-- At game start, the recorder specifies which team pulls first — the only manual pulling team input
-- After the first point, the pulling team is derived automatically from the event log
-- If fewer than 7 players are selected for a side, a warning is shown — the recorder can still confirm
+### Roster sources
+
+- **Team roster (durable, admin-managed)** — set up before a Competition / season via the **Teams Manager** screen. Owned by admins (per [league scoping](../feedback/2026-05-24-league-layer-scoping.md) L9b); scorers cannot edit it.
+- **Game roster (per-game, scorer-mutable)** — seeded from the team roster at game creation. Scorers can add, remove, or edit players for *this game only* (handles game-day subs, unregistered fill-ins, name corrections). Game-roster changes do not flow back to the durable team roster.
+
+> ⚠️ **Implementation status:** Team rosters exist today (`teamsLog`). Game roster mutation is a planned feature — see [league scoping L9c](../feedback/2026-05-24-league-layer-scoping.md).
+
+### Line selection
+
+- Before each point, the recorder selects which players are on the field for each team (up to the line size).
+- Default line size: 7 (4 male-matching + 3 female-matching for mixed; configurable per Competition).
+- Both teams always have equal player counts.
+- Player names are colour-coded by gender as a visual indicator only.
+- At game start, the recorder specifies which team pulls first. Thereafter the pulling team is derived automatically from the event log.
+- If the selected line is off-ratio (mixed mode) or off-count (open mode), an advisory warning is shown — **the recorder can always confirm and proceed**. Ratios guide but never block.
+
+### Unknown opposition player
+
+Planned: a "?" placeholder roster slot for cases where the recorder is scoring an opposing team they don't know (per [Myall feedback #5](../feedback/2026-05-24-myall-responses.md)). The "?" lives in the line like any other player; events attach to it normally. Configurable per Competition.
 
 ---
 
 ## F2 — Event Entry
 
-The recorder taps player names to build an ordered event log. Each tap triggers a **player explosion** — a contextual menu that appears from the player, showing only the actions valid in the current game state.
+The recorder records events on a **canvas-based player surface**: pills (one per active player) sit in a physics-driven layout. Tap a pill to record a possession transfer; hold or expand a pill to open the **action rosette** of non-possession options.
 
-**Core principle:** tapping a player opens an explosion; centre/dismiss records a pass (that player now has possession).
+### Core principle
 
-### Player Zone
-- Shows only the team currently in possession
-- Maximum 7 names — always a short, tappable list
-- Player identity is displayed as a profile photo in a circle (see F10)
+> **Tap = possession. Open = action rosette.**
+> The default action on a player tap is to record a `possession` event (that player now has the disc). The action rosette appears when a pill is opened and surfaces only the chips that are valid in the current game phase. Invalid actions are structurally absent.
 
-### Player Explosion
-The explosion appears on player tap and offers state-dependent options:
+### Canvas / player zone
 
-**During pass chain:**
+- Shows only the team currently in possession (or, during a pick mode, the team being picked from — see F2c).
+- Each player rendered as a circular pill; identity via profile photo (F10) with jersey-number / short-name fallbacks.
+- Pills can be **dragged** to reorder positions on the canvas (a per-device visual preference, not persisted across devices).
+- Active disc holder is visually distinct (thick border, filled background).
 
-| Position | Action | Behaviour |
+### Action rosette
+
+The chip rosette opens around a pill when expanded. Chip set depends on phase:
+
+**Awaiting pull (after the puller is selected):**
+
+| Chip | Engine event | Behaviour |
 |---|---|---|
-| Centre / dismiss | Pass | This player now has possession |
-| Left | Receiver Error | This player was the intended receiver but did not gain possession — turnover attributed to them, possession flips |
-| Right | Throw Away | Attributed to the previous disc holder — possession flips |
-| Right | Defensive Block | Screen state change — recorder picks blocker from defending team; possession flips |
-| Right | Goal | Closes the point — attributed to this player; assist chain derived from log |
+| **Pull** | `pull` | Standard pull. Possession flips to the receiving team. |
+| **Pull Bonus** | `pull-bonus` | Long pull beyond the configured threshold (Parity: gendered). Configurable; default on for Parity. |
+| **Brick** | `brick` | Pull lands OB / fouls. Receiving team starts at the brick mark. Configurable; default on. |
 
-**At point start (after puller is tapped):**
+No possession option here — pulls are the only valid play events at point start.
 
-| Position | Action | Behaviour |
+**In play:**
+
+| Chip | Engine event | Behaviour |
 |---|---|---|
-| Right | Pull | Records the pull — possession flips to receiving team |
-| Right | Pull Bonus | Records a bonus-distance pull — possession flips |
+| **Throwaway** | `turnover-throw-away` | Attributed to the current disc holder (no extra pick). Possession flips. |
+| **Receiver Error** | `turnover-receiver-error` | Enters **Receiver Error Pick** screen — recorder taps the intended receiver from the possession team (thrower is ineligible). Possession flips on tap. |
+| **Defensive Block** | `block` | Enters **Block Pick** screen — recorder taps the defender. Possession flips. |
+| **Intercept** | `intercept` | Enters **Intercept Pick** screen — recorder taps the defender. Possession flips and the interceptor immediately becomes the disc holder. |
+| **Goal** | `goal` | Attributed to the current disc holder. Closes the point. Assist chain derived from the trailing possession sequence. |
+| **Stall** | `turnover-stall` | (Configurable — shown when `recordingOptions.stall` is on. Default off for Parity.) Attributed to the current disc holder. Possession flips. |
 
-Pull and Pull Bonus are the only valid options at point start — no pass option is shown.
+### F2c — Pick-mode screens
 
-### Event Button (Special Events)
-A persistent **Event** button on screen opens a submenu for rare or game-level events outside the normal pass chain:
+Three transient pick screens, each driven by a `UiMode` value. The header strip shows a context label and a "TAP TO CANCEL" affordance.
 
-| Submenu Item | Behaviour |
-|---|---|
-| Injury Sub | Opens Line Selection (mid-point) for the affected team |
-| Half Time | Manual trigger — switches ends and possession; same behaviour as the automatic half time event. Available as an override for time-based formats or when auto-trigger is not configured. |
-| End Game | Marks the end of the game — no further log entries are permitted. Export becomes available. Suggested by the app when the score cap is reached (league/tournament config); recorder confirms. The app does not enforce the score cap — the recorder decides when the game is over. |
+| Pick mode | Header label | Active team | On tap |
+|---|---|---|---|
+| `block-pick` | PICK BLOCKER FROM `<DEF>` | Defending team | Records `block`. Possession flips. |
+| `intercept-pick` | PICK INTERCEPTOR FROM `<DEF>` | Defending team | Records `intercept`. Possession flips; defender becomes disc holder. |
+| `receiver-error-pick` | TAP PLAYER WHO HAD ERROR | Possession team (thrower dimmed/ineligible) | Records `turnover-receiver-error`. Possession flips. |
 
-### Screen State Changes
-**Defensive Block** is the only event that shifts the screen to a distinct visual state — the recorder picks the blocker from the defending team before returning to the pass chain. **Receiver Error** is resolved within the explosion itself (no separate pick screen required).
+### First-possession gating
+
+Goal and Receiver Error chips are **disabled** until the active team has recorded at least one completed pass in the current possession run (i.e. at least 2 consecutive `possession` events for that team). This prevents recording a goal or receiver-error directly off a pull pickup, post-turnover pickup, or intercept-then-receive — there must be at least one pass first.
+
+The gate resets every time the team gains a fresh possession run.
+
+### Special-events affordances
+
+Surfaced via the **AdminDrawer** (F12), not the rosette:
+
+- Injury Sub — enters mid-point Line Selection for the affected team.
+- Timeout — records a `timeout` event (no state change).
+- Foul / Pick — records `foul` / `pick` events (configurable; off by default).
+- Half Time / End Game — currently auto-emitted at thresholds; planned to surface as confirmation prompts (see F7).
 
 ---
 
 ## F3 — Live Event Log
 
-There are two representations of the event log:
+Two representations of the log:
 
-- **Raw log:** append-only, never mutated. Every event — including amendments and reversals — is stored in insertion order. This is the authoritative record.
-- **Visual log:** derived from the raw log. Reflects the current "truth" after all amendments are applied. This is what the recorder sees on screen.
+- **Raw log** — append-only, never mutated. Every event (including `undo` / `amend` / `truncate` / `splice-block`) is stored in insertion order. Single source of truth.
+- **Visual log** — derived from the raw log by walking it and applying structural entries (see F4). This is what the recorder sees.
 
-The visual log is always visible on the Live Event Entry screen. All stats are derived from the visual log.
+The visual log lives in the **LogDrawer** (F12) — a right-side rail that collapses to a thin strip and expands on tap.
+
+Each visible entry is colour-coded by event type. Muted entries (`possession`, `system`, `point-start`) are dimmed since they're context rather than the main signal.
 
 ---
 
-## F4 — Amend / Undo
+## F4 — Amend / Undo / Edit history
 
-- The raw log is **never edited** — all corrections are new entries appended to it in insertion order
-- Amendment entries carry a **target position** — specifying where in the visual log they should appear. The visual log is compiled by ordering entries according to their target positions, not raw insertion order.
-- An **undo** appends a reversal of the last visual log entry; the visual log updates immediately
-- An **edit** lets the recorder select one or more visual log entries to remove or reorder; each correction is appended to the raw log with a target position
-- A correction is accepted only if the resulting visual sequence is valid — otherwise the entire change is rejected; the recorder must resolve it before exiting edit mode
-- The server validates all corrections; invalid sequences are rejected
+The rawLog is **append-only** — there are no in-place edits. Four structural event types provide the editing surface:
+
+| Event | Purpose |
+|---|---|
+| `undo` | Display-time pop of the most recent non-structural entry. State is recomputed. |
+| `amend` | Replace (or delete) a single visible entry by `targetEventId`. Original target stays in the rawLog. |
+| `truncate` | Drop every visible entry with id > `truncateAfterId`. Used by the **truncate-cursor rewind**. |
+| `splice-block` | Insert / replace / delete a contiguous id range, with inner events validated against the prefix state. Used by **Copy/Paste** and **Edit mode**. |
+
+### F4a — Undo
+
+Permanent **Undo** button (in the LogDrawer). Tapping appends an `undo` event; the visible log updates immediately by popping the most recent non-structural entry.
+
+### F4b — Truncate-cursor rewind ("go back in time")
+
+The natural way to fix a mistake without rewriting subsequent events:
+
+1. **Long-press an event** in the LogDrawer → cursor is set to that event id.
+2. The canvas + state derivation rewind to that point; entries past the cursor are greyed out.
+3. **Record a new event** → a `truncate` event prepends to commit the rewind atomically, then the new event lands at the rewound point. Entries past the cursor are dropped from the visible log.
+4. Or **cancel the preview** to return to live without changes.
+
+This replaces the old "amendment with target position" model — references are id-based throughout.
+
+### F4c — Copy / Paste
+
+Slice events out of one game's log and paste into another (same game id only — copying across games is rejected).
+
+1. **Selection mode** — long-press an event in the LogDrawer to enter; tap to toggle selection. Multi-select allowed (non-contiguous).
+2. **Copy** — writes a UST envelope `{ gameId, fromEventId, toEventId, events }` to the system clipboard.
+3. **Paste** — reads the envelope, validates as a `splice-block` against the current state (see [Splice-block validation](validation-rules.md#splice-block-validation)). On success, commits a wrapper + a `system` provenance entry ("Pasted N events from #X–#Y"). On failure, banner-rejects with the reason; the rawLog is untouched.
+
+Paste lands at the truncate cursor if one is set, otherwise after the most recent event.
+
+### F4d — Edit mode
+
+Range-replace mechanism for larger corrections. Currently accessible from the GameOverBanner; planned to be accessible during a live game too (per [delta audit Q4](../feedback/2026-05-24-design-code-delta.md)).
+
+1. **Begin edit** — snapshot the live session as baseline; clone for the draft. Recording controls operate on the draft via the activeSession router.
+2. **Select range** — long-press an event to set the start; tap another to set the end. The draft session truncates to the start of the range.
+3. **Re-record** — use normal recording controls (canvas, rosette, drawers) — events land in the draft.
+4. **Done** — the fresh draft tail is built into a `splice-block`, validated against baseline, and committed if valid (with a `system` provenance entry). Cancel discards the draft.
 
 ---
 
 ## F5 — Substitutions
 
-- **Between points:** Recorder updates the active line during Line Selection
-- **Mid-point (injury only):** Recorder records a substitution event replacing one player in the active line
+- **Between points:** Recorder updates the active line during line-selection; a new `point-start` event carries the agreed `lineA` / `lineB`.
+- **Mid-point (injury only):** Recorder records an `injury-sub` event carrying the full new line for the affected team. The new player is eligible from that point forward.
 
 ---
 
-## F6 — Live Session Sharing
+## F6 — Live Session Sharing *(aspirational)*
 
-- One recorder acts as the active editor at any time — only they can submit events
-- Others can join the same session as live viewers — they see the event log update in real time
-- The editor role can be handed off to another participant mid-session (switch scorer)
-- The editor can leave and rejoin at any time — full state is restored on reconnect
-- If the editor disconnects, live viewer screens remain visible but stagnant — no new events appear until the editor reconnects or the role is handed off
-- Exact viewer permissions and switch scorer handoff model are TBD
-- See [architecture.md](architecture.md) for session model detail
+> ⚠️ **Implementation status:** Currently client-only with localStorage persistence. No server, no real-time sync. This section describes the target architecture.
+
+Target model:
+- One active editor per session — only they can submit events.
+- Others can join as live viewers — they see the event log update in real time.
+- Editor role can be handed off mid-session (switch scorer).
+- Editor can leave and rejoin at any time — full state is restored on reconnect.
+- If the editor disconnects, viewer screens stay visible but stagnant until reconnect or handoff.
+
+See [architecture.md](architecture.md) and [wire-protocol.md](../design/wire-protocol.md) for the planned session model and message format.
 
 ---
 
 ## F7 — Half Time
 
-- Half time is triggered automatically when the score reaches the configured threshold
-- The app appends a **Half Time** event to the log — not recorder-triggered
-- At half time: ends switch and possession goes to the team that did not start the game
-- The half time score threshold is a league/tournament-level setting on the server — not set in-app
-- The recorder does not need to do anything — the app handles the transition
+- **Design direction:** When total score reaches the configured `halfTimeAt` threshold, the app surfaces a **confirmation prompt** to the recorder; on confirm, a `half-time` event is appended. Possession for the second half flips to the team that did not start the game.
+- **Current implementation:** The engine auto-emits `half-time` on threshold without a confirmation prompt. A confirmation flow is a planned change (per [delta audit Q5](../feedback/2026-05-24-design-code-delta.md)).
+- Manual trigger via the AdminDrawer's Half Time button is also planned — useful for time-based formats or to override the auto-trigger.
+- The threshold lives on `GameConfig` per game today; the planned Competition layer will own defaults.
 
 ---
 
 ## F8 — Game Time
 
-- The app records the actual wall-clock start time of the game
-- No countdown timer, no enforced duration
+- The app records the actual wall-clock start time of the game (via event timestamps).
+- No countdown timer, no enforced duration.
+- Per-point duration is derivable from Pull → Goal timestamps (bonus feature; see [Myall responses #16](../feedback/2026-05-24-myall-responses.md)).
 
 ---
 
 ## F9 — Export
 
-- Per-player stats are exportable in-app
-- The server always holds the authoritative copy — the app requests it
-- Export format: TBD
-- Stats are clean and analysis-ready by design — invalid sequences are structurally impossible
-
----
+- Per-player and per-game stats are exportable in-app.
+- Stats are clean and analysis-ready by design — invalid sequences are structurally impossible.
+- **Current implementation:** Local export only (client-side from the rawLog). Server-authoritative copy is part of the F6 aspirational architecture.
+- Export format: TBD.
 
 ---
 
@@ -141,27 +212,62 @@ The visual log is always visible on the Live Event Entry screen. All stats are d
 Profile photos are critical for usability when the recorder does not know the players — particularly when scoring for both teams (Phase 1 default; see below).
 
 ### Display
-- Each player is shown as a **circular profile photo** (similar to Microsoft Teams avatars)
-- Photos are displayed wherever players are listed: Line Selection, Player Zone, and the player explosion
+- Each player is shown as a **circular profile photo**.
+- Photos are displayed wherever players are listed: Line Selection, canvas pills, and the pick screens.
 
 ### Fallback hierarchy
 If a photo is unavailable or fails to load, the display degrades gracefully in order:
 
-1. **Jersey number** — displayed inside the circle in place of the photo
-2. **Short name** — circle removed; displays the player's configured unique short name. Short name preference order: nickname → first name + surname initial (e.g. "Ben D")
+1. **Jersey number** — displayed inside the circle in place of the photo.
+2. **Short name** — circle removed; displays the player's configured unique short name. Short name preference order: nickname → first name + surname initial (e.g. "Ben D").
 
 ### Pre-game photo capture
-- The recorder can take photos of players before the game starts
-- This is especially important when scoring both teams (see below), where the recorder may not know either roster
+- The recorder can take photos of players before the game starts.
+- Especially important when scoring both teams, where the recorder may not know either roster.
 
 ### Scoring both teams
-- Phase 1 records stats for **both teams** — this is a confirmed decision, not configurable
-- The profile photo system is designed to support this: the recorder must be able to identify all players from both rosters at a glance
+- Phase 1 records stats for **both teams** — a confirmed decision, not configurable.
 
 ### Photo management
-- Photos are associated with player records on the server
-- Pre-game capture uploads to the server and is immediately available to all session participants
-- Photo association (which player a captured photo belongs to) is confirmed by the recorder at capture time
+- Photos are associated with player records (currently in `teamsLog`).
+- Pre-game capture uploads to the server (when F6 lands) and is immediately available to all session participants.
+- Photo association (which player a captured photo belongs to) is confirmed by the recorder at capture time.
+
+---
+
+## F11 — Drawers (AdminDrawer + LogDrawer)
+
+The Live Entry screen is bracketed by two collapsible rails. Only one expanded at a time.
+
+### AdminDrawer (left)
+
+"Stoppages" rail with these controls:
+
+- **Injury Sub** — enters mid-point Line Selection.
+- **Timeout** — records `timeout`.
+- **Foul** *(visible when `recordingOptions.foul` is on)* — records `foul`.
+- **Pick** *(visible when `recordingOptions.pick` is on)* — records `pick`.
+- **Half Time / End Game** — manual triggers (currently perma-disabled; planned to re-enable alongside the F7 confirmation prompt).
+- **Pill size cycle** — per-device display preference (sm / md / lg) at the bottom.
+
+### LogDrawer (right)
+
+Event log rail:
+- Vis log entries with color coding (per event type) and muted styling for context entries.
+- **Undo** button.
+- **Selection mode** — long-press to enter; tap to multi-select; Copy / Paste actions.
+- **Cursor visualisation** — when the truncate cursor is set, entries past the cursor are greyed; the cursor entry itself is marked with ▶.
+
+---
+
+## F12 — Per-device display preferences
+
+Local UI prefs — not synced across devices, not in the rawLog.
+
+- **Swap sides** — flips which physical side of the screen each team renders on. Used when teams swap ends or the scorer walks around.
+- **Pill size** — sm / md / lg cycle for thumb / screen comfort.
+- **Pill reorder** — drag a pill on the canvas to a new slot for that team. (Currently logged as `reorder-line`; planned move to transient — see [delta audit Q1](../feedback/2026-05-24-design-code-delta.md).)
+- **Drawer expansion state** — which drawer (if any) is open.
 
 ---
 
@@ -171,4 +277,9 @@ If a photo is unavailable or fails to load, the display degrades gracefully in o
 |---|---|
 | Player stats view | Player filters their own stats from the log — Phase 2+ |
 | Jersey numbers | Optional display enhancement — Phase 1 fallback within photo circle (see F10) |
-| ABBA gender point tracking | If enabled in settings, the app advises on whether the current point should be a men's or women's ratio point (e.g. 4M/3W vs 3M/4W), following the ABBA alternating pattern. Requires the recorder to confirm the starting gender point at game start. Only applicable when the team has enough players of both genders — advisory only, never enforced. Phase 2+. |
+| ABBA gender point tracking | Advisory: app suggests next point's gender ratio (e.g. 4M/3W vs 3M/4W) following the ABBA pattern. Requires starting-gender confirmation at game start. Advisory only, never enforced. Configurable per Competition. Phase 2+. |
+| "?" unknown player slot | Roster slot for scoring opposing teams the recorder doesn't know. Per [Myall #5](../feedback/2026-05-24-myall-responses.md). Configurable per Competition. |
+| Game roster (scorer-mutable) | Per-game player CRUD distinct from the durable team roster. Per [league scoping L9c](../feedback/2026-05-24-league-layer-scoping.md). |
+| In-app stats (bonus, narrow scope) | Line-management stats (points-played per player) at Line Selection; end-of-point reconciliation glance. Per [Myall #15](../feedback/2026-05-24-myall-responses.md). |
+| Field-location capture | Optional landscape mode for high-level teams that want spatial data per pass. Per [Myall #18](../feedback/2026-05-24-myall-responses.md). |
+| Competition layer | Full settings cascade, role system (admin / scorer / viewer), Teams Manager scoped to Competition, etc. Per [league scoping](../feedback/2026-05-24-league-layer-scoping.md). |

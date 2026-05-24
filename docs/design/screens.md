@@ -1,211 +1,217 @@
-# Screens & Field Orientation
+# Screens
 ## Ultimate Stat Tracker
 
-**Version:** 0.3
-**Last Updated:** 2026-04-19
+**Version:** 0.4 (resync with implementation)
+**Last Updated:** 2026-05-24
 **Status:** 🟡 In Progress
 
 ---
 
-## Device & Orientation
+## Device & orientation
 
-- **Platform:** Web app, native app, or both — TBD
-- **Orientation:** Landscape preferred — maps naturally to the left/right field orientation; not locked
-- Designed for a phone held on the sideline; tablet use also viable
+- **Platform:** Web app today (React + Vite). Native app TBD.
+- **Orientation:** **Portrait** is the primary design target (revised 2026-05-24, per [Myall #1](../feedback/2026-05-24-myall-responses.md)). Portrait suits one-handed sideline use and large fixed-position action buttons. The previous landscape-first design (with a left-to-right "field" metaphor) has been dropped.
+- Landscape may return as a parallel mode for the bonus field-location feature ([Myall #18](../feedback/2026-05-24-myall-responses.md)) — not the default.
+
+> ⚠️ **Portrait migration is pending.** The current implementation is still landscape-style. A snapshot git branch will be cut before the migration begins (per [delta audit Q7](../feedback/2026-05-24-design-code-delta.md)). The wireframe prompts at the bottom of this doc remain landscape-era and need regenerating once the portrait layout is settled.
 
 ---
 
-## Screen List
+## Screen list
 
 | # | Screen | Purpose |
 |---|---|---|
-| 1 | Game Setup | Select a pre-configured game; shows game summary (score, start time) once in progress |
-| 2 | Line Selection | Pick active players per team (up to 7 per side); manage substitutions between points |
-| 3 | Live Event Entry | Core screen — player zone + persistent event buttons + live event log |
+| 1 | **Game Setup** | Pick a scheduled game (or create a new one). Resume an in-progress game. Open Teams Manager or Game Settings. |
+| 2 | **New Game form** | Inline form launched from "+ New Game" in Game Setup. |
+| 3 | **Game Settings** | Recording options (per-recorder today; will move to Competition level). |
+| 4 | **Teams Manager** | Team + player CRUD. |
+| 5 | **Line Selection** | Pick active players per team for the upcoming point. Also handles mid-point injury subs. |
+| 6 | **Live Event Entry** | The core scoring screen — canvas + drawers. |
+| 7 | **Game Over** | Final score + edit log entry point. (Currently rendered within Live Event Entry as a banner overlay.) |
 
-> Export can be triggered in-app. The server always holds the authoritative copy — the app requests it, like a client in a chat architecture.
+A future **Competitions Manager** + **Competition Detail** pair sits above Game Setup once the Competition layer lands ([league scoping L9](../feedback/2026-05-24-league-layer-scoping.md)).
 
 ---
 
-## Screen 3 — Live Event Entry Detail
+## Screen 1 — Game Setup
 
-The screen has two zones (exact layout TBD in Stitch):
+Two-pane: left = scheduled-games list, right = detail / actions.
 
-### Player Zone
-- Displays only the team currently **in possession**
-- Each player shown as a tappable name button (baseline); jersey number and photo are future enhancements
-- Up to 7 names — always a short list
+**Left pane (game list):**
+- Header: "GAME SETUP / Select Game" + Recording Settings (⚙) + "Manage teams" link.
+- First row: **+ New Game** — opens the New Game form inline in the right pane.
+- One row per scheduled game with name, scheduled time, and a status chip: `LIVE` / `DONE` / `SCHED`.
 
-### Player Explosion (Contextual Interaction)
+**Right pane (detail):**
+- For a scheduled game: name, teams, scheduled time, **Start** button (with pulling-team picker for fresh starts).
+- For an in-progress game: live score + **Resume** button.
+- For a finished game: final score + **Export** button.
+- For a brand-new game: the inline New Game form (Screen 2).
 
-Tapping a player name **explodes** a contextual menu from that player rather than recording a pass immediately. The explosion offers actions that are valid given the current game state:
+---
 
-**During pass chain:**
-- **Centre / dismiss** — records a simple pass; this player now has possession
-- **Left** — Receiver Error (this player was the intended receiver but did not gain possession)
-- **Right** — Throw Away (attributed to the previous disc holder), Defensive Block (opens defender pick from opposing team), Goal (closes the point; attributed to this player)
+## Screen 2 — New Game form
 
-**At point start (after puller is tapped):**
-- **Right only** — Pull, Pull Bonus (the only valid actions; no pass option)
+Inline form rendered in Game Setup's right pane.
 
-The explosion makes invalid actions structurally absent — only valid options appear.
+Fields:
+- Game name
+- Scheduled time (defaults to "12:00")
+- Team A picker (with **+ Create team** inline)
+- Team B picker (with **+ Create team** inline)
+- `halfTimeAt` stepper (default 8)
+- `scoreCapAt` stepper (default 15)
 
-### Event Button (Special Events)
-A persistent **Event** button is always visible on screen. It opens a submenu for rare or game-level events that are not part of the normal pass chain:
+Save returns to Game Setup with the new game selected.
 
-| Submenu Item | When suggested | Behaviour |
+---
+
+## Screen 3 — Game Settings
+
+Reached via the ⚙ icon in Game Setup. Two-column landscape grid:
+
+**Game Mode & Line Composition:**
+- Mode toggle: Mixed | Open
+- Mixed: separate steppers for Male-matching and Female-matching counts (default 4M / 3F)
+- Open: single stepper for total line size
+
+**Events:**
+- Pull Distance Bonus — toggle
+- Brick — toggle (planned; per [delta audit Q3](../feedback/2026-05-24-design-code-delta.md))
+- Foul — toggle
+- Pick — toggle
+- Stall — toggle
+
+Settings are per-recorder today (localStorage). Planned to move to the Competition layer with `{ strict / default / none }` per-setting policy.
+
+---
+
+## Screen 4 — Teams Manager
+
+Two-pane: left = team list, right = team detail with player CRUD.
+
+**Left pane:**
+- Header: "TEAMS MANAGER / Roster" + Done button.
+- First row: **+ New Team**.
+- One row per team (name, short code, colour swatch).
+
+**Right pane:**
+- Team header — name, short code, colour (all editable inline).
+- **Players** list — each with name, gender (M/F toggle), jersey number, photo.
+- Add / edit / remove player controls.
+- Archive team button.
+
+When the Competition layer lands, this screen becomes Competition-scoped (entered from a Competition Detail screen).
+
+---
+
+## Screen 5 — Line Selection
+
+Two states: **between points** (full line pick) and **mid-point injury sub** (single-team line change).
+
+**Common layout:**
+- Header strip: back arrow + live score (matches Live Entry header).
+- Title row: "LINE SELECTION" or "INJURY SUBSTITUTION — MID-POINT".
+- **Manage teams** affordance (opens Teams Manager).
+- **Confirm Line** button (top-right).
+
+**Between points:**
+- Two columns (one per team) showing the full roster.
+- Recorder taps to toggle each player in/out.
+- Line is seeded from the previous point's line, or from a default of first 4M + 3F at game start.
+- If a line is off-ratio (mixed) or off-count (open), the Confirm Line button opens an "override?" prompt — recorder can always proceed.
+
+**Mid-point injury sub:**
+- Only the affected team is shown.
+- Recorder swaps players in/out; new line takes effect from the next event.
+
+Swap-sides toggle flips which side each team renders on (per-device).
+
+---
+
+## Screen 6 — Live Event Entry
+
+The core scoring surface. Three-zone portrait layout (target) / three-zone landscape layout (current):
+
+```
+┌─────────────────────────────────────────┐
+│ Header: back · score · pick strip       │
+├──────┬───────────────────────────┬──────┤
+│Admin │                           │ Log  │
+│Drawer│         Canvas            │Drawer│
+│      │   (pills + chips)         │      │
+│      │                           │      │
+└──────┴───────────────────────────┴──────┘
+```
+
+### Header
+
+Top strip: back arrow · two team names · live score. A second strip below appears when a transient mode is active:
+
+| Mode | Strip colour | Content |
 |---|---|---|
-| Injury Sub | Any time during a point | Opens Line Selection (2b) for the affected team mid-point |
-| Half Time | Suggested at half time score threshold | Switches ends; possession goes to team that did not start; same as automatic Half Time. Not enforced — recorder confirms. |
-| End Game | Suggested at full time score threshold | Ends the game session; export becomes available. Not enforced — recorder confirms. |
+| Pick mode | Warn (amber) | Pick context label + "TAP TO CANCEL" |
+| Truncate-cursor preview | Warn | "VIEWING HISTORY · RECORD TO TRUNCATE FORWARD · TAP TO CANCEL" |
+| Edit mode | Warn | "EDITING #N–#M" + DONE / CANCEL buttons |
+| Notification banner | Success or warn | Copy/paste/edit-commit feedback |
 
-The app surfaces a suggestion prompt when the score reaches a configured threshold for Half Time or End Game — the recorder chooses to confirm or dismiss. Threshold method is TBD.
+The strips are mutually exclusive (entering pick mode clears the truncate cursor; edit mode supersedes both).
 
-### Screen State Changes
-When **Defensive Block** is selected from the explosion, the screen shifts to a distinct visual state (e.g. colour change) to signal the recorder is picking the blocker from the defending team — not continuing the pass chain. Returns to normal pass mode after the blocker is picked. **Receiver Error** is resolved within the explosion itself (the tapped player is the one who had the error).
+### Canvas (centre)
 
-### Live Event Log
-- Always visible on this screen — shows the **visual log** (derived from the raw log after all amendments)
-- Recorder can glance to verify last entry
+Physics-driven canvas hosting the active team's player pills.
 
-**Undo button:** Permanently visible on screen. Appends a reversal of the last visual log entry to the raw log. The visual log updates immediately.
+- **Active team** = team in possession (in-play) / pulling team (awaiting-pull) / picked-from team (during pick mode).
+- **Pills** — circular, identity via profile photo / jersey / short name.
+- **Tap a pill** — records `possession` (or executes the pick-mode action). Tapping the current disc holder is a no-op.
+- **Open a pill** — surfaces the chip rosette (see F2 in features.md). Chip set depends on phase.
+- **Drag a pill** — reorders pills visually for that team (per-device).
+- **Pass arrows** — curved arrows drawn behind pills showing the last N possessions in the current run (typically 2).
+- **Disc holder** — visually distinct (thick border, filled background).
+- **Ineligible pills** (e.g. the thrower during a Receiver Error Pick) — dimmed and untappable.
 
-**Edit mode:** Recorder enters edit mode from the log. They can select visual log entries to remove or reorder — corrections are appended to the raw log as amendment entries. The recorder must exit edit mode with a valid visual sequence or all changes are rejected.
+### AdminDrawer (left rail)
 
----
+Collapses to a thin rail; expands on tap. See F11 in features.md.
 
-## Field Orientation Logic
+Contents:
+- Section header: "STOPPAGES"
+- Injury Sub
+- Timeout
+- Foul (if `recordingOptions.foul`)
+- Pick (if `recordingOptions.pick`)
+- (Half Time / End Game — currently perma-disabled; planned to re-enable alongside the F7 confirmation prompt)
+- Footer: pill-size cycle button (sm / md / lg)
 
-The screen represents the field left-to-right at all times.
+### LogDrawer (right rail)
 
-```
-[ Left End Zone ]  ←————— field —————→  [ Right End Zone ]
-  Team A attacking                         Team B defending
-```
+Collapses to a thin rail; expands on tap. See F11 in features.md.
 
-- The team **currently attacking left → right** is always shown on the left
-- After each point: attacking direction flips — teams swap sides on screen
-- At half time: direction flips once more
-- The app derives attacking direction automatically from the event log — the recorder never sets it manually
-- This drives: which team's names appear in the player zone, which end zone is "scoring", and the visual layout
-
----
-
-## Wireframe Prompts (Phase 3 — AI Input)
-
-> Paste any sub-section below directly into Google Stitch or Claude Design.
-> Each sub-section is self-contained — prepend the **App Context** block each time.
-> Start with Screen 3; it is the core interaction surface.
-
----
-
-### App Context (prepend to every prompt)
-
-This is a real-time Ultimate Frisbee stat-tracking app called Ultimate Stat Tracker. A single person (the recorder) uses it on the sideline during a live game, holding a phone in landscape orientation. Speed and tap accuracy under distraction are the primary UX constraints — the UI must be large, clear, and unambiguous.
-
-The app has three screens used in sequence:
-1. **Game Setup** — select a pre-configured game from a server list
-2. **Line Selection** — pick up to 7 active players per team before each point
-3. **Live Event Entry** — record every pass, turnover, block, and goal in real time
-
-The screen always represents the field left-to-right. The team currently attacking (moving left → right) is always shown on the left side of the screen. After each point the attacking direction flips automatically — the app derives this from the event log; the recorder never sets it manually.
-
-The app is designed for landscape orientation on a phone. Tablet use is also viable. All interactions are taps — no swipe gestures.
+Contents:
+- Visual log entries, colour-coded by type.
+- Undo button.
+- Long-press → enter selection mode (multi-tap to add).
+- Copy / Paste affordances when in selection mode.
+- Truncate cursor visualisation (greyed entries past the cursor; ▶ on the cursor entry).
+- Edit-range tinting when edit mode is active.
 
 ---
 
-### Screen 3 — Live Event Entry
+## Screen 7 — Game Over
 
-All Screen 3 states share this base layout unless a state description below says otherwise:
+Currently rendered as a banner overlay inside Live Entry once `gamePhase` is `game-over`.
 
-- **Two-zone landscape layout.** The player zone occupies roughly two-thirds of the screen; the live event log occupies the remaining third (exact split TBD).
-- **Player zone:** Up to 7 tappable name buttons showing only the team currently in possession. Names are large enough to tap accurately while standing.
-- **Persistent Event button:** Always visible (except states 3e, 3f, 3g, 3h). Opens a submenu for Injury Sub, Half Time, and End Game.
-- **Persistent Undo button:** Always visible. Reverses the last log entry.
-- **Live event log:** Always visible. Shows the most recent entries for the current point; recorder can glance to verify.
-- **Field direction cue:** A subtle label or arrow pair (e.g. "← Defending | Attacking →") to orient the recorder.
-
-#### 3a — Awaiting Puller
-
-Generate a low-fidelity wireframe for a landscape phone screen. This is the Live Event Entry screen of the Ultimate Stat Tracker app, in state 3a — Awaiting Puller.
-
-The pulling team's 7 player name buttons fill the player zone. No player is selected and no contextual menu is open. The recorder's only valid action is to tap a player name to designate the puller — there are no other action buttons in the player zone. The Event button and Undo button are visible. The event log is visible but empty or shows entries from the previous point. A subtle field direction label is shown.
-
-#### 3b — Puller Selected
-
-Generate a low-fidelity wireframe for a landscape phone screen. This is the Live Event Entry screen of the Ultimate Stat Tracker app, in state 3b — Puller Selected.
-
-One player name in the player zone is highlighted or visually selected. An explosion (contextual action menu) appears attached to that player with exactly two options: **Pull** and **Pull Bonus**. No pass or other options appear — these are the only valid actions at this moment. Other player names are dimmed but still visible. The Event button and Undo button are visible. The event log is visible.
-
-#### 3c — Pass Chain
-
-Generate a low-fidelity wireframe for a landscape phone screen. This is the Live Event Entry screen of the Ultimate Stat Tracker app, in state 3c — Pass Chain (normal possession mode).
-
-The possessing team's 7 player name buttons fill the player zone. No player is selected yet. Show a second version of this screen where one player has been tapped and an explosion is open, offering three directional options: **Centre** (simple pass / dismiss), **Left** (Receiver Error), and **Right** (which expands to Throw Away, Defensive Block, Goal). The explosion should make invalid actions absent — only these options appear. The Event button and Undo button are visible. The event log shows the pull entry and any prior passes.
-
-#### 3e — Defensive Block Pick
-
-Generate a low-fidelity wireframe for a landscape phone screen. This is the Live Event Entry screen of the Ultimate Stat Tracker app, in state 3e — Defensive Block Pick.
-
-This is a visually distinct mode from the normal pass chain — the UI must make it unmistakably clear that the recorder is now picking the blocker from the defending team, not continuing a pass. Use a strong visual signal: a contrasting background colour in the player zone, a prominent overlay banner reading something like "Who made the block?" or "Pick Blocker", or a modal-style treatment. The player zone now shows the defending team's 7 names (possession has not yet flipped). Tapping a name directly records the block — there is no explosion menu. The Event button is hidden. The Undo button and event log are visible.
-
-#### 3f — Point Over
-
-Generate a low-fidelity wireframe for a landscape phone screen. This is the Live Event Entry screen of the Ultimate Stat Tracker app, in state 3f — Point Over.
-
-The player zone is empty or dimmed — no names are shown. The current score is displayed prominently (e.g. "Team A 5 — Team B 4"). A brief confirmation of the goal scorer is shown (e.g. "Goal: Player Name"). The event log shows the complete point sequence including the Goal entry. A "Next Point" button or auto-advance cue is visible. The Event button and Undo button are not relevant here.
-
-#### 3g — Half Time
-
-Generate a low-fidelity wireframe for a landscape phone screen. This is the Live Event Entry screen of the Ultimate Stat Tracker app, in state 3g — Half Time.
-
-The player zone is empty or dimmed. A "Half Time" banner is prominently displayed. The current score is shown. An ends-switched notice is shown — indicating which team now attacks which direction in the second half. The event log shows the Half Time entry appended. A button or auto-advance cue leads to Line Selection for the second half. No Event button.
-
-#### 3h — End Game
-
-Generate a low-fidelity wireframe for a landscape phone screen. This is the Live Event Entry screen of the Ultimate Stat Tracker app, in state 3h — End Game.
-
-The player zone is empty. The final score is displayed prominently. The event log is shown as closed or read-only — no further entries are possible. An **Export** button is the primary call to action. No Event button, no Undo button. A "Game Over" or "Session Closed" label is visible.
+Contents:
+- "GAME OVER" label
+- Final score (large, winner-team-coloured)
+- "<winner> wins" sub-label
+- **Back to games** button
+- **Edit log** button (currently game-over-only; planned to also be available during live game)
 
 ---
 
-### Screen 2 — Line Selection
+## Wireframe prompts *(stale — landscape-era)*
 
-#### 2a — Between Points
+> ⚠️ The prompts below were authored for the prior landscape design and a buttons-based player zone. They need regenerating against the canvas + chip rosette + drawer model and against portrait orientation. Retained here as historical reference only.
 
-Generate a low-fidelity wireframe for a landscape phone screen. This is the Line Selection screen of the Ultimate Stat Tracker app, in state 2a — Between Points.
-
-Both teams' full rosters are displayed — two columns or two panels side by side, one per team. The recorder taps names to select up to 7 active players per team. Selected names are highlighted. A **Confirm Line** button becomes active once at least one player is selected per side. If fewer than 7 players are selected for either team, a warning badge or message appears near the Confirm button (recorder can still proceed). The event log is not visible on this screen.
-
-#### 2b — Injury Sub (mid-point)
-
-Generate a low-fidelity wireframe for a landscape phone screen. This is the Line Selection screen of the Ultimate Stat Tracker app, in state 2b — Injury Sub (mid-point).
-
-Only the affected team's current active line is shown (7 players). One player is swapped out (shown as departing or greyed) and one player from the bench is selected to come in. A **Confirm Sub** button is visible. A context label makes clear this is a mid-point substitution, not a full line reset. The other team's lineup is not shown. The event log is not visible.
-
----
-
-### Screen 1 — Game Setup
-
-#### 1a — No Game Selected
-
-Generate a low-fidelity wireframe for a landscape phone screen. This is the Game Setup screen of the Ultimate Stat Tracker app, in state 1a — No Game Selected.
-
-A list of pre-configured game names is shown (fetched from a server). The recorder taps a game to select it. No player names, no event log, no score — just the list. A simple header or title identifies this as the game selection view.
-
-#### 1b — Game In Progress
-
-Generate a low-fidelity wireframe for a landscape phone screen. This is the Game Setup screen of the Ultimate Stat Tracker app, in state 1b — Game In Progress.
-
-A summary card for the selected game is shown: team names, current score, and start time. A prominent **Record** or **Continue** button leads into Live Event Entry. If the game is already finished, an **Export** button is shown instead of (or alongside) the Record button. No event log is visible here.
-
----
-
-## Open Questions
-
-- See [screen-states.md](screen-states.md) for full state breakdown
-- [ ] Does Line Selection happen on a dedicated screen or inline within Event Entry?
-- [ ] Exact layout of the two zones (player zone top vs bottom, log placement)
-- [ ] Visual design of screen state changes (colour shift, overlay, or other)
-- [ ] How is the live event log displayed — full scroll, last N entries, collapsible?
-- [ ] How is the editing/amend experience surfaced from the log?
+(Removed in this revision — see git history for the previous landscape wireframe prompts. New prompts will be added once the portrait layout is settled.)
