@@ -86,6 +86,13 @@ export default function GameSetup() {
             >
               <button
                 onClick={() => {
+                  // LIVE games have a single follow-up action (Continue
+                  // Recording) and no other inputs — skip the expansion
+                  // and jump straight into Live Entry.
+                  if (isLive) {
+                    resumeGame(g.id)
+                    return
+                  }
                   if (expanded) {
                     setExpandedId(null)
                     setPullingTeam(null)
@@ -116,11 +123,7 @@ export default function GameSetup() {
 
               {expanded && (
                 <div className="px-4 pb-4 flex flex-col gap-3">
-                  {isLive ? (
-                    <Btn variant="primary" size="lg" full onClick={() => resumeGame(g.id)}>
-                      ▶  Continue Recording
-                    </Btn>
-                  ) : isDone ? (
+                  {isDone ? (
                     <div className="flex gap-2">
                       <Btn variant="primary" size="md" full onClick={() => resumeGame(g.id)}>View Final Stats</Btn>
                       <Btn variant="ghost"   size="md" full>Export</Btn>
