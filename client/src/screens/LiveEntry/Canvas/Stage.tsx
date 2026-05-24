@@ -3,12 +3,9 @@ import type { Player, PlayerId, TeamId } from '@/core/types'
 import { useGameStore } from '@/core/store'
 import { TAP_THRESH, HH, PILL_SCALE_FACTORS, SLOT_HIT_PADDING, type PillSize } from './constants'
 import {
-  pillHalfWidth, pillRect, slotPositions, eventXY, computeArrowPath,
-  chipRect, rectsIntersect,
-  type ChipSpec, type Rect, type Vec,
+  pillHalfWidth, slotPositions, eventXY, computeArrowPath,
+  type Vec,
 } from './physics'
-import { buildActions, chipAction, type ChipAction, type ChipId, type Placement } from './layout'
-type DisabledChipIds = ReadonlySet<ChipId>
 import { PlayerNode } from './PlayerNode'
 import { PassArrowLayer, type PassArrowSpec, type ArrowNodeRefs } from './PassArrowLayer'
 
@@ -22,39 +19,27 @@ export interface StageProps {
   teamColor: string
 
   mode: StageMode
-  /** Pill that should render with thick-border / filled-bg holder styling.
-   *  In awaiting-pull, the engine-set discHolder is null, so this is null. */
+  /** Pill that should render with thick-border / filled-bg holder styling. */
   holderId: PlayerId | null
   /** Pill highlighted as the selected puller (only relevant in awaiting-pull). */
   pullerId: PlayerId | null
   /** Pills that can't be tapped (rendered at low opacity). */
   ineligibleIds: PlayerId[]
 
-  /** Recording-options-driven chip toggles. */
-  stallShown: boolean
-  bonusShown: boolean
-  brickShown: boolean
-
   /** Per-device pill-size preference (sm / md / lg). Scales pill dimensions
    *  in lockstep with the slot hit-test half-height. */
   pillSize: PillSize
 
-  /** Chip ids that should render dimmed + un-tappable (e.g. Goal / Receiver
-   *  Error during a fresh possession run before any pass has been made). */
-  disabledChipIds: DisabledChipIds
-
   /** Pass arrows to render on this stage; from/to indices match `players`. */
   arrows: PassArrowSpec[]
 
-  /** Logical canvas centre + bounds. Centre is informational only — slot
-   *  positions are derived from bounds via SLOT_POSITIONS. */
-  centre: { x: number; y: number }
+  /** Logical canvas bounds. Slot positions are derived from bounds via
+   *  SLOT_POSITIONS. */
   bounds: { w: number; h: number }
 
-  /** Tap on a pill that doesn't open chips (defender / teammate / puller). */
+  /** Tap on a pill. Engine decides what to do (puller select / possession /
+   *  pick-mode dispatch) based on game state. */
   onPillTap: (player: Player) => void
-  /** Tap on an action chip emitted by an opened pill. */
-  onChipTap: (player: Player, action: ChipAction) => void
   /** Tap on the empty canvas background (used to cancel pick mode). */
   onBackgroundTap: () => void
 }
@@ -78,7 +63,6 @@ export function Stage(props: StageProps) {
   const swapLineSlots = useGameStore(s => s.swapLineSlots)
 
   // Initial positions on mount / when team-id changes (parent re-keys Stage).
-  // Positions snap to slot coords; halfWidths reseed off the new roster.
   useLayoutEffect(() => {
     const slots = slotPositions(props.bounds)
     posRef.current = Array.from({ length: N }, (_, i) => ({
@@ -90,27 +74,9 @@ export function Stage(props: StageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [N, props.teamId])
 
-  const [openIdx, setOpenIdx] = useState(-1)
   const [dragIdx, setDragIdx] = useState(-1)
-  const stateRef = useRef({ openIdx: -1, dragIdx: -1 })
-  stateRef.current.openIdx = openIdx
+  const stateRef = useRef({ dragIdx: -1 })
   stateRef.current.dragIdx = dragIdx
-
-  // Auto-open the action chips on whichever pill is the current holder
-  // (in-play) or selected puller (awaiting-pull). This makes the chips
-  // "explode" immediately upon selection — the user doesn't need a second
-  // tap to access actions. If the role becomes null (dead disc / no puller
-  // selected) or the mode changes (e.g. entering pick mode), close the chips.
-  useEffect(() => {
-    let idx = -1
-    if (props.mode === 'in-play' && props.holderId !== null) {
-      idx = props.players.findIndex(p => p.id === props.holderId)
-    } else if (props.mode === 'awaiting-pull' && props.pullerId !== null) {
-      idx = props.players.findIndex(p => p.id === props.pullerId)
-    }
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setOpenIdx(idx)
-  }, [props.mode, props.holderId, props.pullerId, props.players])
 
   const dragInfo = useRef({ idx: -1, offX: 0, offY: 0, startX: 0, startY: 0, moved: false })
 
@@ -118,46 +84,6 @@ export function Stage(props: StageProps) {
   // dimensions in PlayerNode and the half-height used for slot hit-testing.
   const scale = PILL_SCALE_FACTORS[props.pillSize]
   const scaledHalfHeight = HH * scale
-
-  // Build a Placement for the pill at active-line index `idx`. Anchors the
-  // chip rosette at the pill's slot (not its drag-offset position) and
-  // exposes every *other* pill's slot rect so the repair pass in
-  // buildActions() can keep chips clear of teammates.
-  const placementFor = (idx: number): Placement | undefined => {
-    if (idx < 0) return undefined
-    const slots = slotPositions(props.bounds)
-    const slot = slots[idx]
-    if (!slot) return undefined
-    const others: Rect[] = []
-    for (let j = 0; j < props.players.length; j++) {
-      if (j === idx) continue
-      const s = slots[j]
-      if (!s) continue
-      const hw = halfWidthsRef.current[j] ?? pillHalfWidth(props.players[j]?.name ?? '')
-      others.push(pillRect(s.x, s.y, hw, scaledHalfHeight))
-    }
-    return { pill: { x: slot.x, y: slot.y }, bounds: props.bounds, others }
-  }
-
-  // Compute the chip set per pill. Always non-empty for pills that *could*
-  // be opened (holder in in-play, puller in awaiting-pull) so the chips are
-  // already mounted (invisible) and can transition in when isOpen flips.
-  const chipsForPlayer = (player: Player): ChipSpec[] => {
-    if (props.mode === 'pick') return []
-    const idx = props.players.indexOf(player)
-    const HW = idx >= 0 ? halfWidthsRef.current[idx] : pillHalfWidth(player.name)
-    const placement = placementFor(idx)
-    if (props.mode === 'awaiting-pull') {
-      if (player.id !== props.pullerId) return []
-      return buildActions(HW, {
-        phase: 'awaiting-pull',
-        bonusShown: props.bonusShown,
-        brickShown: props.brickShown,
-      }, placement)
-    }
-    if (player.id !== props.holderId) return []
-    return buildActions(HW, { phase: 'in-play', stallShown: props.stallShown }, placement)
-  }
 
   // Latest-props ref so the rAF loop sees current bounds/arrows without
   // restarting.
@@ -171,28 +97,6 @@ export function Stage(props: StageProps) {
     arrows: props.arrows,
     halfHeight: scaledHalfHeight,
   }
-
-  // Open pill's chip rects, in canvas-space. Used by the rAF tick to push
-  // surrounding pills out of the way when their slot rect overlaps a chip's
-  // footprint — keeps chips readable even when the rosette is wider than the
-  // available gap between teammates.
-  //
-  // Recomputed whenever the open pill, its chips, or the bounds change.
-  // Half-width changes (measured by ResizeObserver) don't trigger this — the
-  // initial heuristic is close enough, and the rosette re-lays once the
-  // measured width feeds back via the next prop tick.
-  const openChipRectsRef = useRef<Rect[]>([])
-  useEffect(() => {
-    if (openIdx < 0) { openChipRectsRef.current = []; return }
-    const slots = slotPositions(props.bounds)
-    const openSlot = slots[openIdx]
-    const openPlayer = props.players[openIdx]
-    if (!openSlot || !openPlayer) { openChipRectsRef.current = []; return }
-    const chips = chipsForPlayer(openPlayer)
-    openChipRectsRef.current = chips.map(c => chipRect(openSlot.x, openSlot.y, c))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openIdx, props.holderId, props.pullerId, props.mode, props.players, props.bounds,
-      props.stallShown, props.bonusShown, props.brickShown, scale])
 
   function applyDOM() {
     const arr = posRef.current
@@ -208,15 +112,13 @@ export function Stage(props: StageProps) {
 
   // rAF loop — runs once per Stage instance (per team). Each frame, write the
   // home-slot coords into posRef for every non-dragging pill, then update the
-  // pass arrows + DOM transforms. The dragged pill (if any) is positioned by
-  // the drag handler's onMove, not by this loop.
+  // pass arrows + DOM transforms.
   useEffect(() => {
     let raf = 0
     const tick = () => {
       const ctx = tickCtx.current
       const slots = slotPositions(ctx.bounds)
       const drag = stateRef.current.dragIdx
-      const openIdxNow = stateRef.current.openIdx
       const arr = posRef.current
       for (let i = 0; i < arr.length; i++) {
         if (i === drag) continue
@@ -224,64 +126,6 @@ export function Stage(props: StageProps) {
         if (!slot) continue
         arr[i].x = slot.x
         arr[i].y = slot.y
-      }
-
-      // Push-out pass — when a pill is open, any teammate whose slot rect
-      // overlaps a chip rect (inflated by CHIP_HALO_PX for comfort) is
-      // shifted just far enough to clear. The repair pass in layout.ts
-      // already avoids chip-chip overlap; pill-vs-chip overlap is fixed
-      // here, per-frame, so the displacement reverses the instant the open
-      // pill closes (next tick snaps everyone back).
-      //
-      // Inflating the chip rect with a halo means neighbours land with
-      // comfortable visual clearance, not just barely-non-overlapping. 12 px
-      // is roughly the same as the connector-line gap between pill and chip
-      // (CHIP_GAP in layout.ts), so the visual rhythm reads consistently.
-      //
-      // Up to 4 iterations: a pill caught between two adjacent chips may
-      // have its first axis-resolution put it back into a sibling chip, so
-      // we keep nudging until stable (capped to bound the work).
-      const CHIP_HALO_PX = 12
-      const chipRects = openChipRectsRef.current
-      if (openIdxNow >= 0 && chipRects.length > 0) {
-        for (let i = 0; i < arr.length; i++) {
-          if (i === drag || i === openIdxNow) continue
-          const hw = halfWidthsRef.current[i]
-          if (!hw) continue
-          let px = arr[i].x, py = arr[i].y
-          for (let pass = 0; pass < 4; pass++) {
-            let moved = false
-            for (const cr of chipRects) {
-              // Inflated rect — testing against this evicts the pill so the
-              // chip ends up with HALO clearance on every side, not zero.
-              const halo: Rect = {
-                l: cr.l - CHIP_HALO_PX, r: cr.r + CHIP_HALO_PX,
-                t: cr.t - CHIP_HALO_PX, b: cr.b + CHIP_HALO_PX,
-              }
-              const r = pillRect(px, py, hw, ctx.halfHeight)
-              if (!rectsIntersect(r, halo)) continue
-              const ccx = (halo.l + halo.r) / 2
-              const ccy = (halo.t + halo.b) / 2
-              const halfW = (halo.r - halo.l) / 2 + hw
-              const halfH = (halo.b - halo.t) / 2 + ctx.halfHeight
-              const overlapX = halfW - Math.abs(px - ccx)
-              const overlapY = halfH - Math.abs(py - ccy)
-              if (overlapX <= 0 || overlapY <= 0) continue
-              // Resolve along the shorter axis with a small additional gap
-              // so the next iteration doesn't ping-pong on rounding.
-              const GAP = 2
-              if (overlapX < overlapY) {
-                px += (px >= ccx ? 1 : -1) * (overlapX + GAP)
-              } else {
-                py += (py >= ccy ? 1 : -1) * (overlapY + GAP)
-              }
-              moved = true
-            }
-            if (!moved) break
-          }
-          arr[i].x = px
-          arr[i].y = py
-        }
       }
 
       // Update pass arrows (recent at slot 0, previous at slot 1).
@@ -377,9 +221,7 @@ export function Stage(props: StageProps) {
         }
 
         // Swallow the synthetic click that follows mouseup so the drop site
-        // doesn't immediately register as a tap. If no click fires (release
-        // on a non-clickable area), tear the listener down on a short timer
-        // so the *next* genuine tap isn't eaten.
+        // doesn't immediately register as a tap.
         let removed = false
         const cleanup = () => {
           if (removed) return
@@ -416,30 +258,12 @@ export function Stage(props: StageProps) {
       if (dragInfo.current.moved) return
       const player = props.players[i]
       if (props.ineligibleIds.includes(player.id)) return
-
-      const canOpen =
-        props.mode === 'in-play'       ? player.id === props.holderId :
-        props.mode === 'awaiting-pull' ? player.id === props.pullerId :
-        false
-
-      if (canOpen) {
-        setOpenIdx(prev => prev === i ? -1 : i)
-      } else {
-        setOpenIdx(-1)
-        props.onPillTap(player)
-      }
+      props.onPillTap(player)
     }
-  }
-
-  function onChipTap(player: Player, id: ChipId) {
-    if (props.disabledChipIds.has(id)) return
-    setOpenIdx(-1)
-    props.onChipTap(player, chipAction(id))
   }
 
   function onBackgroundClick() {
     if (dragInfo.current.moved) return
-    setOpenIdx(-1)
     props.onBackgroundTap()
   }
 
@@ -453,7 +277,6 @@ export function Stage(props: StageProps) {
       {props.players.map((p, i) => {
         const isHolder = p.id === props.holderId
         const isPuller = p.id === props.pullerId
-        const isOpen   = i === openIdx
         const dragging = i === dragIdx
         const ineligible = props.ineligibleIds.includes(p.id)
 
@@ -464,17 +287,13 @@ export function Stage(props: StageProps) {
             name={p.name}
             teamColor={props.teamColor}
             scale={scale}
-            disabledChipIds={props.disabledChipIds}
             isHolder={isHolder}
             isPuller={isPuller}
-            isOpen={isOpen}
             dragging={dragging}
             ineligible={ineligible}
-            chips={chipsForPlayer(p)}
             onMouseDown={(e) => { if (!ineligible) beginDrag(i, e) }}
             onTouchStart={(e) => { if (!ineligible) beginDrag(i, e) }}
             onClick={onPillClick(i)}
-            onChipClick={(id) => onChipTap(p, id)}
             onMeasureWidth={(hw) => { halfWidthsRef.current[i] = hw }}
           />
         )

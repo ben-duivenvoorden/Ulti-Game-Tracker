@@ -6,20 +6,19 @@ import {
 import { useGameStore, applyLineOverride } from '@/core/store'
 import { computeVisLog } from '@/core/engine'
 import { otherTeam, type EventId, type Player, type TeamId, type VisLogEntry } from '@/core/types'
-import { isPickMode, pickActiveTeam } from '@/core/pickModes'
+import { isPickMode, pickActiveTeam, resolveContextLabel } from '@/core/pickModes'
 import { Header } from './Header'
 import { Stage, type StageMode } from './Canvas/Stage'
 import type { PassArrowSpec } from './Canvas/PassArrowLayer'
-import type { ChipAction, ChipId } from './Canvas/layout'
-import { LogDrawer, LOG_DRAWER_W } from './Drawers/LogDrawer'
-import { AdminDrawer, ADMIN_DRAWER_W } from './Drawers/AdminDrawer'
-import { DRAWER_RAIL_W } from './Drawers/Drawer'
 import { useStageSize } from './Canvas/useStageSize'
+import { LogPeek } from './LogPeek'
+import { ActionZone } from './ActionZone'
+import { BottomSheet, type SheetTab } from './BottomSheet'
 import { Btn } from '@/components/ui/Btn'
 
 // True until the active team's possession run has at least 2 recorded
 // possession events — i.e. the current holder hasn't received a pass yet
-// (they picked up after a pull / turnover, or are the intercepter). On
+// (they picked up after a pull / turnover, or are the interceptor). On
 // each new possession run for the team this resets, so the "first pass"
 // rule applies *every* time they get the disc fresh.
 function isFirstPossession(visLog: VisLogEntry[], teamId: TeamId): boolean {
@@ -36,18 +35,7 @@ function isFirstPossession(visLog: VisLogEntry[], teamId: TeamId): boolean {
   return true
 }
 
-const FIRST_POSSESSION_DISABLED: ReadonlySet<ChipId> = new Set<ChipId>(['goal', 'rec'])
-const NO_DISABLED: ReadonlySet<ChipId> = new Set<ChipId>()
-
 // Derive pass arrows for the active team's *current* possession run.
-//
-// Walks the visLog backwards collecting consecutive `possession` events for
-// `teamId`. Any other event (a turnover, block, intercept, pull/brick, the
-// other team's possession, or point-start) breaks the chain — so as soon as
-// the team loses possession, prior arrows are cleared. When they regain it
-// later in the same point, only the new run shows.
-//
-// Returns at most `maxArrows` most recent arrows (newest last).
 function derivePassArrows(
   visLog: VisLogEntry[],
   teamId: TeamId,
@@ -75,11 +63,7 @@ function derivePassArrows(
   return arrows.slice(-maxArrows)
 }
 
-const HEADER_H     = 48      // h-12
-const PICK_STRIP_H = 32      // h-8
-
 export default function LiveEntry() {
-  // ── All hooks declared up front (no conditional hooks) ───────────────────
   const session          = useSession()
   const state            = useDerivedState()
   const visLog           = useVisLog()
@@ -91,20 +75,14 @@ export default function LiveEntry() {
   const truncateCursor   = useTruncateCursor()
   const editMode         = useEditMode()
   const notification     = useNotification()
+  const lineOverride     = useGameStore(s => s.lineOrderOverride)
 
-  // One drawer at most may be expanded at a time; toggling one collapses the
-  // other. Drawers reserve their own width in the flex row, so the canvas
-  // shrinks when a drawer expands rather than being overlaid.
-  type ExpandedDrawer = 'log' | 'admin' | null
-  const [expandedDrawer, setExpandedDrawer] = useState<ExpandedDrawer>(null)
-  const logExpanded   = expandedDrawer === 'log'
-  const adminExpanded = expandedDrawer === 'admin'
-  const toggleDrawer = (which: 'log' | 'admin') =>
-    setExpandedDrawer(prev => (prev === which ? null : which))
+  // Bottom sheet — opens on log-peek tap or on MORE button.
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [sheetTab, setSheetTab] = useState<SheetTab>('log')
+  const openSheet = (tab: SheetTab) => { setSheetTab(tab); setSheetOpen(true) }
 
-  // Active context — derived even when state is null so all hooks below can
-  // run unconditionally. Default values are inert (null active team, empty
-  // arrows, etc.) and the early return below the hooks guards rendering.
+  // Derived flags before the early return (so hook order stays stable).
   const phase   = state?.gamePhase
   const pickMode = isPickMode(ui.uiMode) ? ui.uiMode : null
 
@@ -115,8 +93,6 @@ export default function LiveEntry() {
           ? otherTeam(state.possession)
           : state.possession)
     : null
-
-  const lineOverride = useGameStore(s => s.lineOrderOverride)
 
   const activePlayers = useMemo<Player[]>(
     () => {
@@ -129,9 +105,8 @@ export default function LiveEntry() {
     [state, activeTeam, lineOverride],
   )
 
-  // The full visLog still drives the LogDrawer (so greyed entries past the
-  // cursor render). Anything that should reflect the historical view —
-  // arrows, first-possession chip gating — gets the cursor-filtered version.
+  // For arrows + first-possession gating, use the cursor-aware view of the
+  // log. The bottom sheet's log tab still gets the full vis log.
   const effectiveVisLog = useMemo(
     () => (truncateCursor === null ? visLog : visLog.filter(e => e.id <= truncateCursor)),
     [visLog, truncateCursor],
@@ -142,20 +117,11 @@ export default function LiveEntry() {
     [effectiveVisLog, activeTeam, activePlayers],
   )
 
-  // Goal and Receiver Error are disabled until the team has recorded at
-  // least one pass within the current possession run. Only meaningful in
-  // the in-play phase (pull-phase chips and pick-mode have their own gates).
-  const disabledChipIds = useMemo<ReadonlySet<ChipId>>(() => {
-    if (!activeTeam || pickMode || phase !== 'in-play') return NO_DISABLED
-    return isFirstPossession(effectiveVisLog, activeTeam)
-      ? FIRST_POSSESSION_DISABLED
-      : NO_DISABLED
-  }, [effectiveVisLog, activeTeam, pickMode, phase])
+  const firstPossession = !!activeTeam && phase === 'in-play' && isFirstPossession(effectiveVisLog, activeTeam)
 
-  // Auto-navigate to LineSelection after a goal or half-time. Skip while
-  // previewing — otherwise rewinding to the moment of a goal would silently
-  // navigate the user out of LiveEntry. Cancelling the preview re-runs this
-  // against live state.
+  // Auto-advance to LineSelection after a goal or half-time. Skip while
+  // previewing — otherwise rewinding to a goal would silently navigate the
+  // user out of LiveEntry.
   useEffect(() => {
     if (truncateCursor !== null) return
     if (phase === 'point-over' || phase === 'half-time') actions.nextPoint()
@@ -174,54 +140,14 @@ export default function LiveEntry() {
     ? [state.discHolder]
     : []
 
-  // Drawer rails (collapsed) and full panels (expanded) both reserve width
-  // from the canvas. Compute the actual stage area = window - drawer widths
-  // - header. Centre is the midpoint of that area; the Stage's coordinate
-  // system is its parent's local space.
+  const isGameOver = phase === 'game-over'
   const previewing = truncateCursor !== null
   const editActive = !!editMode?.active
   const editRange  = editActive && editMode?.removeFromId !== null && editMode?.removeToId !== null
     ? { from: editMode.removeFromId, to: editMode.removeToId }
     : null
-  // History strip / pick strip / edit strip mutually exclude — pick clears
-  // the cursor, edit replaces both — so adding one strip's height is enough.
-  const stripActive = !!pickMode || previewing || editActive
-  const headerH = HEADER_H + (stripActive ? PICK_STRIP_H : 0)
-  const leftDrawerW  = adminExpanded ? ADMIN_DRAWER_W : DRAWER_RAIL_W
-  const rightDrawerW = logExpanded   ? LOG_DRAWER_W   : DRAWER_RAIL_W
-  const stageW  = Math.max(0, stageSize.w - leftDrawerW - rightDrawerW)
-  const stageH  = Math.max(0, stageSize.h - headerH)
-  const cx = stageW / 2
-  const cy = stageH / 2
 
-  // ─── Pill / chip dispatchers ────────────────────────────────────────────────
-  const onPillTap = (player: Player) => {
-    // tapPlayer in the engine covers all three flows: pick-mode dispatch,
-    // puller-toggle in awaiting-pull, and auto-possession in in-play.
-    actions.tapPlayer(player)
-  }
-
-  const onChipTap = (_player: Player, action: ChipAction) => {
-    switch (action.kind) {
-      case 'pull':            actions.recordPull(action.bonus); break
-      case 'brick':           actions.recordBrick();            break
-      case 'throwaway':       actions.recordThrowAway();        break
-      case 'goal':            actions.recordGoal();             break
-      case 'stall':           actions.recordStall();            break
-      case 'def-block':       actions.triggerDefBlock(action.type); break
-      case 'receiver-error':  actions.triggerReceiverError();   break
-    }
-  }
-
-  const onBackgroundTap = () => {
-    if (pickMode) actions.cancelPickMode()
-  }
-
-  const isGameOver = phase === 'game-over'
-
-  // Long-press in edit mode sets the replace range. In normal mode the
-  // LogDrawer handles long-press internally to enter multi-select; this
-  // handler only fires for the edit-mode flow.
+  // Long-press in edit mode sets the replace range.
   const onLongPress = (entryId: EventId) => {
     if (editActive) {
       const fromId = truncateCursor ?? entryId
@@ -230,8 +156,7 @@ export default function LiveEntry() {
   }
 
   // Paste lands at the truncate cursor if set, else after the most recent
-  // event. Reads the system clipboard on demand — no background probing, so
-  // the browser only prompts for permission when the user explicitly asks.
+  // event.
   const onPaste = () => {
     const lastId = visLog.length > 0 ? visLog[visLog.length - 1].id : null
     const targetId = truncateCursor ?? lastId
@@ -242,36 +167,35 @@ export default function LiveEntry() {
     void actions.pasteFromClipboard(targetId)
   }
 
+  const stageW = Math.max(0, stageSize.w)
+  const stageH = Math.max(0, stageSize.h)
+  const defendingShort = teams[otherTeam(state.possession)].short
+
   return (
     <div className="h-full flex flex-col" style={{ background: 'var(--color-bg)' }}>
       <Header
         teams={teams}
         score={state.score}
-        pickMode={pickMode}
-        defendingShort={teams[otherTeam(state.possession)].short}
         onBack={actions.backToGameList}
-        onCancelPickMode={actions.cancelPickMode}
       />
 
-      {notification && (
+      {/* Mode strip — mutually exclusive. */}
+      {pickMode && (
         <button
-          onClick={actions.dismissNotification}
-          className="flex-shrink-0 w-full px-3 py-1.5 text-[11px] font-semibold cursor-pointer text-left"
+          onClick={actions.cancelPickMode}
+          className="flex-shrink-0 h-8 w-full flex items-center justify-center text-[11px] font-semibold tracking-widest cursor-pointer"
           style={{
-            background: notification.kind === 'success' ? 'var(--color-success-bg)' : 'var(--color-warn-bg)',
-            color:      notification.kind === 'success' ? 'var(--color-success)'                    : 'var(--color-warn)',
-            borderBottom: `1px solid ${notification.kind === 'success' ? 'var(--color-success)' : 'var(--color-warn)'}`,
+            background: 'var(--color-warn-bg)',
+            color: 'var(--color-warn)',
+            borderBottom: '1px solid var(--color-warn)',
           }}
-          title="Tap to dismiss"
+          title="Tap to cancel"
         >
-          {notification.message}
-          {notification.detail && (
-            <span style={{ opacity: 0.75, marginLeft: 8, fontWeight: 400 }}>· {notification.detail}</span>
-          )}
+          {resolveContextLabel(pickMode, { defendingShort })} · TAP TO CANCEL
         </button>
       )}
 
-      {editActive && (
+      {editActive && !pickMode && (
         <div
           className="flex-shrink-0 h-8 w-full flex items-stretch text-[11px] font-semibold tracking-widest"
           style={{
@@ -283,14 +207,13 @@ export default function LiveEntry() {
           <div className="flex-1 flex items-center justify-center">
             {editMode?.removeFromId !== null && editMode?.removeToId !== null
               ? `EDITING #${editMode.removeFromId}–#${editMode.removeToId}`
-              : 'EDIT MODE — select range to replace'}
+              : 'EDIT MODE — long-press a log entry to set the range end'}
           </div>
           {editMode?.removeFromId !== null && editMode?.removeToId !== null && (
             <button
               onClick={() => actions.commitEdit()}
               className="px-3 cursor-pointer"
               style={{ borderLeft: '1px solid var(--color-warn)' }}
-              title="Commit the edit"
             >
               DONE
             </button>
@@ -299,18 +222,16 @@ export default function LiveEntry() {
             onClick={() => actions.cancelEdit()}
             className="px-3 cursor-pointer"
             style={{ borderLeft: '1px solid var(--color-warn)' }}
-            title="Discard edit"
           >
             CANCEL
           </button>
         </div>
       )}
 
-      {previewing && !editActive && (
-        // Same vocabulary as the pick-mode strip — tap to cancel the rewind.
+      {previewing && !editActive && !pickMode && (
         <button
           onClick={() => actions.setTruncateCursor(null)}
-          className="flex-shrink-0 h-8 w-full flex items-center justify-center text-[11px] font-semibold tracking-widest cursor-pointer transition-colors"
+          className="flex-shrink-0 h-8 w-full flex items-center justify-center text-[11px] font-semibold tracking-widest cursor-pointer"
           style={{
             background: 'var(--color-warn-bg)',
             color: 'var(--color-warn)',
@@ -322,81 +243,108 @@ export default function LiveEntry() {
         </button>
       )}
 
-      {/*
-        Layout: AdminDrawer | Stage | LogDrawer (flex row).
-        Drawers reserve their width so the canvas shrinks when one is
-        expanded, rather than overlapping. Only one drawer expanded at a
-        time (mutual exclusion via toggleDrawer).
-      */}
-      <div className="flex-1 flex overflow-hidden">
-        <AdminDrawer
-          state={state}
-          recordingOptions={recordingOptions}
-          expanded={adminExpanded}
-          onToggle={() => toggleDrawer('admin')}
-          onTimeout={actions.recordTimeout}
-          onFoul={actions.recordFoul}
-          onPick={actions.recordPick}
-          onInjurySub={actions.triggerInjurySub}
-          onHalfTime={actions.triggerHalfTime}
-          onEndGame={actions.triggerEndGame}
-          pillSize={pillSize}
-          onCyclePillSize={actions.cyclePillSize}
-        />
-
-        <div className="flex-1 relative overflow-hidden" style={{ minWidth: 0 }}>
-          {isGameOver ? (
-            <GameOverBanner
-              score={state.score}
-              teams={teams}
-              onBack={actions.backToGameList}
-              onEdit={editActive ? undefined : actions.beginEdit}
-            />
-          ) : (
-            <Stage
-              // Re-key on team change so Stage remounts cleanly (physics + arrows reset).
-              key={activeTeam}
-              teamId={activeTeam}
-              players={activePlayers}
-              teamColor={teams[activeTeam].color}
-              mode={stageMode}
-              holderId={state.discHolder}
-              pullerId={ui.selPuller}
-              ineligibleIds={ineligibleIds}
-              stallShown={recordingOptions.stall}
-              bonusShown={recordingOptions.pullBonus}
-              brickShown={recordingOptions.brick}
-              pillSize={pillSize}
-              disabledChipIds={disabledChipIds}
-              arrows={arrows}
-              centre={{ x: cx, y: cy }}
-              bounds={{ w: stageW, h: stageH }}
-              onPillTap={onPillTap}
-              onChipTap={onChipTap}
-              onBackgroundTap={onBackgroundTap}
-            />
+      {notification && (
+        <button
+          onClick={actions.dismissNotification}
+          className="flex-shrink-0 w-full px-3 py-1.5 text-[11px] font-semibold cursor-pointer text-left"
+          style={{
+            background: notification.kind === 'success' ? 'var(--color-success-bg)' : 'var(--color-warn-bg)',
+            color:      notification.kind === 'success' ? 'var(--color-success)'    : 'var(--color-warn)',
+            borderBottom: `1px solid ${notification.kind === 'success' ? 'var(--color-success)' : 'var(--color-warn)'}`,
+          }}
+          title="Tap to dismiss"
+        >
+          {notification.message}
+          {notification.detail && (
+            <span style={{ opacity: 0.75, marginLeft: 8, fontWeight: 400 }}>· {notification.detail}</span>
           )}
-        </div>
+        </button>
+      )}
 
-        <LogDrawer
-          // In edit mode, show the baseline log so the user can see the range
-          // they're replacing (rendered with strike-through). Fresh draft
-          // events aren't visible until commit — accepted tradeoff for v1.
+      {/* Log peek strip — tap to open the bottom sheet's Log tab. */}
+      <LogPeek
+        visLog={visLog}
+        players={[...session.gameConfig.rosters.A, ...session.gameConfig.rosters.B]}
+        onOpen={() => openSheet('log')}
+      />
+
+      {/* Main body: canvas (top) + action zone (bottom). Sheet floats above
+          when open. */}
+      <div className="flex-1 relative overflow-hidden" style={{ minWidth: 0 }}>
+        {isGameOver ? (
+          <GameOverBanner
+            score={state.score}
+            teams={teams}
+            onBack={actions.backToGameList}
+            onEdit={editActive ? undefined : actions.beginEdit}
+          />
+        ) : (
+          <Stage
+            key={activeTeam}
+            teamId={activeTeam}
+            players={activePlayers}
+            teamColor={teams[activeTeam].color}
+            mode={stageMode}
+            holderId={state.discHolder}
+            pullerId={ui.selPuller}
+            ineligibleIds={ineligibleIds}
+            pillSize={pillSize}
+            arrows={arrows}
+            bounds={{ w: stageW, h: stageH }}
+            onPillTap={actions.tapPlayer}
+            onBackgroundTap={() => { if (pickMode) actions.cancelPickMode() }}
+          />
+        )}
+
+        {/* Bottom sheet overlays the body when open. */}
+        <BottomSheet
+          open={sheetOpen}
+          activeTab={sheetTab}
+          onTabChange={setSheetTab}
+          onClose={() => setSheetOpen(false)}
           visLog={editActive && editMode ? computeVisLog(editMode.baselineSession.rawLog) : visLog}
           players={[...session.gameConfig.rosters.A, ...session.gameConfig.rosters.B]}
-          expanded={logExpanded}
           truncateCursor={editActive ? null : truncateCursor}
           editRange={editRange}
           editActive={editActive}
-          onToggle={() => toggleDrawer('log')}
-          onUndo={actions.undo}
           onSetCursor={actions.setTruncateCursor}
           onLongPress={onLongPress}
+          onUndo={actions.undo}
           onCopySelection={actions.copyEventsToClipboard}
           onPaste={onPaste}
-          onBeginEdit={actions.beginEdit}
+          onBeginEdit={editActive ? undefined : actions.beginEdit}
+          state={state}
+          recordingOptions={recordingOptions}
+          pillSize={pillSize}
+          onCyclePillSize={actions.cyclePillSize}
+          onInjurySub={actions.triggerInjurySub}
+          onTimeout={actions.recordTimeout}
+          onFoul={actions.recordFoul}
+          onPick={actions.recordPick}
+          onHalfTime={actions.triggerHalfTime}
+          onEndGame={actions.triggerEndGame}
         />
       </div>
+
+      {/* Fixed action zone — bottom of screen. */}
+      {!isGameOver && !pickMode && (
+        <ActionZone
+          state={state}
+          recordingOptions={recordingOptions}
+          firstPossession={firstPossession}
+          pullerSelected={ui.selPuller !== null}
+          onGoal={actions.recordGoal}
+          onThrowaway={actions.recordThrowAway}
+          onStall={actions.recordStall}
+          onReceiverError={actions.triggerReceiverError}
+          onBlock={() => actions.triggerDefBlock('block')}
+          onIntercept={() => actions.triggerDefBlock('intercept')}
+          onPull={() => actions.recordPull(false)}
+          onPullBonus={() => actions.recordPull(true)}
+          onBrick={actions.recordBrick}
+          onMore={() => openSheet('more')}
+        />
+      )}
     </div>
   )
 }

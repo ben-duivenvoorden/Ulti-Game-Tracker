@@ -18,20 +18,14 @@ export const PILL_SIZE_CYCLE: Record<PillSize, PillSize> = {
   lg: 'sm',
 }
 export const GAP = 6
-export const CHIP_H = 22
 
 // Tap vs drag distinction (px). Bumped from 5 to forgive thumb shake.
 export const TAP_THRESH = 6
 
-// Soft bounds inset — distance kept clear between the pill (or chip
-// footprint) and the canvas edge. Horizontal margin is tighter than
-// vertical so pills can hug the left/right edges where there's nothing
-// else competing for space (drawers handle their own width via flex).
+// Soft bounds inset — distance kept clear between the pill and the canvas
+// edge.
 export const BOUNDS_MARGIN_X = 5
 export const BOUNDS_MARGIN_Y = 15
-// Kept for API compatibility with anything still importing the original
-// uniform constant.
-export const BOUNDS_MARGIN = BOUNDS_MARGIN_Y
 
 // ─── Slot layout ──────────────────────────────────────────────────────────────
 // Seven home positions for the active line. Distribution-only (not tactical):

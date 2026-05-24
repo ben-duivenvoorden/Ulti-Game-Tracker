@@ -4,7 +4,7 @@
   "description": "Live stat tracker for ultimate frisbee games.",
   "start_url": "/",
   "display": "standalone",
-  "orientation": "landscape",
+  "orientation": "portrait",
   "background_color": "#111111",
   "theme_color": "#111111",
   "icons": [

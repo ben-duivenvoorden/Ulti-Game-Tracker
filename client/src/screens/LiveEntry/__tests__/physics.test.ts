@@ -3,10 +3,8 @@ import {
   rectExitDist,
   computeArrowPath,
   sampleBezier,
-  openZoneRects,
   pillHalfWidth,
   pillLabel,
-  type ChipSpec,
 } from '../Canvas/physics'
 
 describe('rectExitDist', () => {
@@ -52,22 +50,6 @@ describe('sampleBezier', () => {
     const pts = sampleBezier(0, 0, 50, 0, 100, 0, 8)
     for (let i = 1; i < pts.length; i++) {
       expect(pts[i].x).toBeGreaterThan(pts[i - 1].x)
-    }
-  })
-})
-
-describe('openZoneRects', () => {
-  it('produces 1 + chips.length rects with positive area', () => {
-    const chips: ChipSpec[] = [
-      { id: 'goal', label: 'Goal',     ax: 0,   ay: 25, align: 'center-top' },
-      { id: 'rec',  label: 'Receiver', ax: -40, ay: 0,  align: 'right-center' },
-      { id: 'tw',   label: 'Throwaway', ax: 0,  ay: -25, align: 'center-bottom' },
-    ]
-    const rects = openZoneRects(100, 100, 30, 22, chips)
-    expect(rects).toHaveLength(4)
-    for (const r of rects) {
-      expect(r.r).toBeGreaterThan(r.l)
-      expect(r.b).toBeGreaterThan(r.t)
     }
   })
 })

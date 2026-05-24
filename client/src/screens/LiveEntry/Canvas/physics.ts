@@ -1,43 +1,17 @@
-import { CHIP_H, SLOT_POSITIONS } from './constants'
+import { SLOT_POSITIONS } from './constants'
 
 export interface Vec { x: number; y: number }
 export interface Rect { l: number; r: number; t: number; b: number }
-export type ChipAlign = 'right-center' | 'left-center' | 'center-top' | 'center-bottom'
-export interface ChipSpec {
-  id: string
-  label: string
-  ax: number
-  ay: number
-  align: ChipAlign
-  /** Length of the connector line from the pill's perimeter to the chip's
-   *  near edge, along the ray from pill centre. Equals CHIP_GAP for axial
-   *  chips and grows with the corner bump for diagonal ones. */
-  connectorLength: number
-}
 
 // Pill label is the player's full name. The pill itself sizes to its
 // content (`width: max-content` in PlayerNode), and physics uses the
-// rendered half-width measured by ResizeObserver — so a long name simply
-// makes its pill wider, with everything else (chip anchors, no-overlap,
-// bounds clamp) adapting automatically.
+// rendered half-width measured by ResizeObserver.
 export const pillLabel = (name: string): string => name
 
-// Approx rendered widths for the fixed pill / chip typography.
-// chip: 11px / 600 weight; pill: 15px / 600 weight.
-// We deliberately overestimate so the push-out pass pushes other pills clear
-// of the actual rendered chip rather than the smaller heuristic bbox.
-export const chipWidth = (label: string): number =>
-  Math.round(label.length * 7.5 + 28)
-
+// Approx rendered pill width for the fixed pill typography (15px / 600 weight).
+// Used as a placeholder until ResizeObserver reports the real measured width.
 export const pillHalfWidth = (name: string): number =>
   Math.round((pillLabel(name).length * 9 + 36 + 4) / 2)
-
-// Extra padding added to each chip rect when computing the open zone, so
-// other pills get pushed a little clear of the chip rather than touching it.
-// Applied only to the openZoneRects view; chipRect() returns the rendered
-// chip's true bbox so overlap checks in the layout repair pass aren't
-// distorted by the push-out cushion.
-const CHIP_RECT_PAD = 6
 
 export function rectExitDist(ux: number, uy: number, hw: number, hh: number): number {
   const tx = ux !== 0 ? hw / Math.abs(ux) : Infinity
@@ -115,82 +89,13 @@ export function pillRect(cx: number, cy: number, HW: number, halfHeight: number)
   return { l: cx - HW, r: cx + HW, t: cy - halfHeight, b: cy + halfHeight }
 }
 
-// Axis-aligned rect for a single chip's *rendered* bbox — i.e. the actual
-// pixels the chip occupies, with no extra padding. Used by the layout
-// repair pass so the bounds and overlap checks reflect what the user sees,
-// not a softened cushion.
-//
-// `cx, cy` is the host pill's canvas-space centre — `chip.ax/ay` are
-// pill-local offsets, so the chip's anchor sits at (cx + ax, cy + ay).
-export function chipRect(cx: number, cy: number, chip: ChipSpec): Rect {
-  const cw = chipWidth(chip.label)
-  const acx = cx + chip.ax, acy = cy + chip.ay
-  let l: number, r: number, t: number, b: number
-  if (chip.align === 'right-center') {
-    r = acx; l = acx - cw
-    t = acy - CHIP_H / 2; b = acy + CHIP_H / 2
-  } else if (chip.align === 'left-center') {
-    l = acx; r = acx + cw
-    t = acy - CHIP_H / 2; b = acy + CHIP_H / 2
-  } else if (chip.align === 'center-top') {
-    l = acx - cw / 2; r = acx + cw / 2
-    t = acy; b = acy + CHIP_H
-  } else {
-    // center-bottom: chip's bottom edge touches anchor → extends upward
-    l = acx - cw / 2; r = acx + cw / 2
-    t = acy - CHIP_H; b = acy
-  }
-  return { l, r, t, b }
-}
-
-// Axis-aligned rects covering the open pill + its chip footprints. Each
-// chip rect is padded by CHIP_RECT_PAD so other pills get pushed slightly
-// clear of the chip rather than just touching its edge — used by the
-// (currently dormant) push-out physics, NOT by the layout repair pass.
-//
-// `halfHeight` is the pill's effective half-height (HH × pillScale). Chips
-// always use the constant CHIP_H — the chip set itself doesn't scale.
-export function openZoneRects(
-  cx: number, cy: number,
-  HW: number, halfHeight: number,
-  chips: ChipSpec[],
-): Rect[] {
-  const rects: Rect[] = [pillRect(cx, cy, HW, halfHeight)]
-  for (const a of chips) {
-    const r = chipRect(cx, cy, a)
-    rects.push({
-      l: r.l - CHIP_RECT_PAD,
-      r: r.r + CHIP_RECT_PAD,
-      t: r.t - CHIP_RECT_PAD,
-      b: r.b + CHIP_RECT_PAD,
-    })
-  }
-  return rects
-}
-
 // Standard AABB intersection test on rects expressed as { l, r, t, b }.
 export function rectsIntersect(a: Rect, b: Rect): boolean {
   return a.l < b.r && a.r > b.l && a.t < b.b && a.b > b.t
 }
 
-// True when `r` sits fully inside the canvas bounds with the given soft
-// inset margins. Used during the chip-placement repair pass to reject
-// candidate anchors that would push a chip past the canvas edge.
-export function rectInsideBounds(
-  r: Rect,
-  bounds: { w: number; h: number },
-  marginX: number,
-  marginY: number,
-): boolean {
-  return r.l >= marginX
-      && r.r <= bounds.w - marginX
-      && r.t >= marginY
-      && r.b <= bounds.h - marginY
-}
-
 // Pixel-space slot positions for the active line. Returns one Vec per slot in
-// SLOT_POSITIONS order (length always equals SLOT_POSITIONS.length, currently
-// 7). Callers index into it with the active-line index.
+// SLOT_POSITIONS order. Callers index into it with the active-line index.
 export function slotPositions(bounds: { w: number; h: number }): Vec[] {
   return SLOT_POSITIONS.map(s => ({ x: s.x * bounds.w, y: s.y * bounds.h }))
 }
