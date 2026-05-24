@@ -34,6 +34,14 @@ const ARROW_AW      = 4    // px — arrowhead half-width
 // allowing for the corner radius + arrowhead.
 const REACHES = [9, 16, 23] as const
 
+// Per-arrow visual emphasis. Indexed oldest → newest so the newest arrow
+// (last index) is solid + full opacity + thicker; older arrows progress
+// to dashed + faded + thinner. Three independent cues stack so each
+// arrow is unambiguous even at a glance.
+const DASH_PATTERNS = ['2 4', '5 3', undefined] as const
+const OPACITIES     = [0.42, 0.7, 1] as const
+const STROKE_WIDTHS = [1.3, 1.6, 2] as const
+
 export function PassLane({ visLog, players, activeTeam, teamColor }: PassLaneProps) {
   const arrows = derivePassArrows(visLog, activeTeam, players, MAX_ARROWS)
   const N = players.length
@@ -73,9 +81,15 @@ export function PassLane({ visLog, players, activeTeam, teamColor }: PassLanePro
           style={{ position: 'absolute', inset: 0, display: 'block' }}
         >
           {arrows.map((a, i) => {
-            const newest  = i === arrows.length - 1
-            const opacity = newest ? 1 : 0.5
-            const stroke  = newest ? 2 : 1.4
+            // Map this arrow's position (0..arrows.length-1, oldest →
+            // newest) onto the emphasis arrays (oldest → newest of the
+            // full three-slot scale). When there are fewer than three
+            // arrows, we align to the right so the latest arrow always
+            // gets the newest treatment.
+            const emphasisIdx = MAX_ARROWS - arrows.length + i
+            const opacity = OPACITIES[emphasisIdx]
+            const stroke  = STROKE_WIDTHS[emphasisIdx]
+            const dash    = DASH_PATTERNS[emphasisIdx]
             const reach   = REACHES[i] ?? REACHES[REACHES.length - 1]
 
             const fromY = rowCenter(a.fromIdx, N, height)
@@ -116,6 +130,7 @@ export function PassLane({ visLog, players, activeTeam, teamColor }: PassLanePro
                   fill="none"
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  strokeDasharray={dash}
                 />
                 <polygon
                   points={`${tipX},${toY} ${baseX},${wingY1} ${baseX},${wingY2}`}
