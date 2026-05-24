@@ -1,11 +1,13 @@
 # Portrait Layout Proposal
 ## Ultimate Stat Tracker
 
-**Version:** 0.1 (initial draft)
+**Version:** 0.2 (post-migration — design now matches implementation)
 **Last Updated:** 2026-05-24
-**Status:** 🟡 Draft for review — not yet implemented
+**Status:** 🟢 Implemented across all screens. Refinements welcome.
 **Source:** [Myall #1](../feedback/2026-05-24-myall-responses.md), [delta audit Q1 + Q7](../feedback/2026-05-24-design-code-delta.md)
 **Replaces:** the landscape-era wireframe prompts removed from [screens.md](screens.md)
+
+> This document was written as a design proposal and has been left intact as the source-of-truth for **why** each screen is laid out the way it is (rationale, alternatives considered, open questions). The migration has since landed across all screens — see `git log --grep "portrait"` for the implementation commits.
 
 ---
 
