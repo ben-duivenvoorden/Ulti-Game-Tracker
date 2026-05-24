@@ -1,5 +1,6 @@
 import type { TeamId, Score, Team } from '@/core/types'
 import { pickDisplayNames } from '@/core/teams/shortName'
+import { inkOn } from '@/core/contrast'
 
 interface HeaderProps {
   teams: Record<TeamId, Team>
@@ -30,22 +31,26 @@ export function Header({ teams, score, onBack }: HeaderProps) {
         ←
       </button>
       <div className="flex-1 flex items-center justify-center gap-2 min-w-0 px-2">
-        <span
-          className="text-sm font-bold truncate text-right flex-1"
-          style={{ color: teams.A.color }}
-          title={teams.A.name}
-        >
-          {names.A}
+        <span className="flex-1 flex justify-end min-w-0">
+          <span
+            className="text-sm font-bold truncate px-2 py-0.5 rounded"
+            style={{ background: teams.A.color, color: inkOn(teams.A.color) }}
+            title={teams.A.name}
+          >
+            {names.A}
+          </span>
         </span>
         <strong className="text-3xl font-black tabular-nums leading-none text-content flex-shrink-0">{score.A}</strong>
         <span className="text-dim text-base flex-shrink-0">–</span>
         <strong className="text-3xl font-black tabular-nums leading-none text-content flex-shrink-0">{score.B}</strong>
-        <span
-          className="text-sm font-bold truncate text-left flex-1"
-          style={{ color: teams.B.color }}
-          title={teams.B.name}
-        >
-          {names.B}
+        <span className="flex-1 flex justify-start min-w-0">
+          <span
+            className="text-sm font-bold truncate px-2 py-0.5 rounded"
+            style={{ background: teams.B.color, color: inkOn(teams.B.color) }}
+            title={teams.B.name}
+          >
+            {names.B}
+          </span>
         </span>
       </div>
       <span className="w-4" />
