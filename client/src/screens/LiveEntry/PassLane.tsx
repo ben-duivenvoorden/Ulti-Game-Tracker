@@ -7,26 +7,30 @@ interface PassLaneProps {
   teamColor: string
 }
 
-// Thin vertical pane between PlayerColumn and EventColumn. The last two
-// passes are drawn as curves that BOTH start and end on a single vertical
-// "left plane" — the line nearest the PlayerColumn — and bow out to the
-// right of the lane. The newer pass bows further (more prominent); the
-// older pass is a tighter curve closer to the plane.
+// Thin vertical pane between PlayerColumn and EventColumn. The last three
+// passes render as rounded right-angle brackets: each one leaves the
+// sender's row horizontally to the right, travels vertically alongside
+// a shared "left plane", then re-enters the receiver's row from the
+// right horizontally.
 //
-// Why the shared-left-plane layout: every arrow's endpoint sits next to
-// its player's row in the PlayerColumn. That makes "where did the disc
-// come from / go to" unambiguous — the reader's eye runs along the left
-// plane to find the row, then follows the curve to read sender vs
-// receiver. No two arrows ever overlap because their bow depths differ.
+// Geometry: cubic bezier with BOTH control points at the same x (the
+// curve's "reach"). That forces horizontal tangents at the start and
+// end — the curve flares out, runs parallel to the left plane, and
+// flares back in. Reads as a flowchart bracket rather than a skewed
+// loop.
+//
+// Three arrows are distinguished by reach depth alone (oldest tightest,
+// newest furthest right). They never overlap because their reaches
+// differ. Newest also draws thicker + at full opacity.
 
-const MAX_ARROWS = 2
-const LANE_WIDTH = 56          // px — wider than before so curves have room to bow
-const LEFT_ANCHOR_X = 3        // px in from the lane's left edge; arrows pin here
-const VIEW_H = 100             // viewBox vertical units (paths use this same scale)
+const MAX_ARROWS    = 3
+const LANE_WIDTH    = 72
+const LEFT_ANCHOR_X = 4    // px in from the lane's left edge
+const VIEW_H        = 100  // viewBox vertical units
 
-// Bow depths (in viewBox X units) per arrow, oldest first. The newer
-// arrow gets the larger bow so it reads as the dominant curve.
-const BOW_DEPTHS = [LANE_WIDTH * 0.45, LANE_WIDTH * 0.78] as const
+// Reach (in viewBox X units) per arrow, oldest → newest. Tuned so the
+// three brackets sit visibly inside each other without crowding.
+const REACHES = [LANE_WIDTH * 0.32, LANE_WIDTH * 0.58, LANE_WIDTH * 0.85] as const
 
 export function PassLane({ visLog, players, activeTeam, teamColor }: PassLaneProps) {
   const arrows = derivePassArrows(visLog, activeTeam, players, MAX_ARROWS)
@@ -40,8 +44,8 @@ export function PassLane({ visLog, players, activeTeam, teamColor }: PassLanePro
       preserveAspectRatio="none"
       aria-hidden
     >
-      {/* Vertical "left plane" — the spine that arrows pin to. Faint so
-          empty-lane states still read as a deliberate area. */}
+      {/* Vertical "left plane" — arrows anchor here. Faint so the empty-
+          lane state still reads as a deliberate column. */}
       <line
         x1={LEFT_ANCHOR_X} x2={LEFT_ANCHOR_X}
         y1={4} y2={VIEW_H - 4}
@@ -51,54 +55,38 @@ export function PassLane({ visLog, players, activeTeam, teamColor }: PassLanePro
       />
 
       {arrows.map((a, i) => {
-        const newest = i === arrows.length - 1
-        const opacity = newest ? 1 : 0.55
+        const newest  = i === arrows.length - 1
+        const opacity = newest ? 1 : 0.5
         const stroke  = newest ? 2 : 1.4
-        const bow     = BOW_DEPTHS[i] ?? BOW_DEPTHS[BOW_DEPTHS.length - 1]
+        const reach   = REACHES[i] ?? REACHES[REACHES.length - 1]
 
         const fromY = rowCenter(a.fromIdx, N)
         const toY   = rowCenter(a.toIdx,   N)
-        const midY  = (fromY + toY) / 2
 
-        // Control point bowed to the right. Same x for both endpoints
-        // anchors them on the left plane; the bezier passes through a
-        // point further right at midY.
-        const cx = LEFT_ANCHOR_X + bow
+        // Cubic with both control points at x = LEFT_ANCHOR_X + reach:
+        //   start at (left, fromY) → goes horizontally right
+        //   c1 = (left + reach, fromY) → vertical motion begins
+        //   c2 = (left + reach, toY)   → vertical motion ends
+        //   end at (left, toY) → returns horizontally
+        const cx = LEFT_ANCHOR_X + reach
 
-        // Arrowhead at the receiver end, pointing back toward the
-        // control point (i.e. along the curve's exit tangent).
-        const ah = 5  // arrowhead length (in viewBox X units)
-        const aw = 2.5
-        // Approximate end-tangent direction: from cx,midY toward
-        // LEFT_ANCHOR_X,toY. The arrowhead sits along that direction
-        // so the tip is at (LEFT_ANCHOR_X, toY).
-        const tdx = LEFT_ANCHOR_X - cx
-        const tdy = toY - midY
-        const tlen = Math.hypot(tdx, tdy) || 1
-        const tx = tdx / tlen
-        const ty = tdy / tlen
-        // Tip:
-        const tipX = LEFT_ANCHOR_X
-        const tipY = toY
-        // Base centre (back along the tangent from the tip):
-        const baseX = tipX - tx * ah
-        const baseY = tipY - ty * ah
-        // Perpendicular (-ty, tx) for the base wings:
-        const lX = baseX + (-ty) * aw
-        const lY = baseY +   tx  * aw
-        const rX = baseX -  (-ty) * aw
-        const rY = baseY -    tx  * aw
-
-        // Truncate the path so the curve ends at the arrowhead's base
-        // rather than the player's row centre — keeps the line from
-        // peeking out of the arrowhead.
-        const pathEndX = baseX
-        const pathEndY = baseY
+        // Arrowhead points left (back toward the player column) at
+        // (LEFT_ANCHOR_X, toY). Truncate the path at the arrowhead's
+        // base so the stroke doesn't peek out.
+        const ah = 5         // arrowhead length (viewBox X units)
+        const aw = 2.6       // arrowhead half-width (viewBox Y units)
+        const tipX  = LEFT_ANCHOR_X
+        const tipY  = toY
+        const baseX = LEFT_ANCHOR_X + ah
+        const baseY = toY
+        const wingX = baseX
+        const wingY1 = baseY - aw
+        const wingY2 = baseY + aw
 
         return (
           <g key={i} opacity={opacity}>
             <path
-              d={`M ${LEFT_ANCHOR_X} ${fromY} Q ${cx} ${midY} ${pathEndX} ${pathEndY}`}
+              d={`M ${LEFT_ANCHOR_X} ${fromY} C ${cx} ${fromY}, ${cx} ${toY}, ${baseX} ${baseY}`}
               stroke={teamColor}
               strokeWidth={stroke}
               fill="none"
@@ -106,7 +94,7 @@ export function PassLane({ visLog, players, activeTeam, teamColor }: PassLanePro
               vectorEffect="non-scaling-stroke"
             />
             <polygon
-              points={`${tipX},${tipY} ${lX},${lY} ${rX},${rY}`}
+              points={`${tipX},${tipY} ${wingX},${wingY1} ${wingX},${wingY2}`}
               fill={teamColor}
             />
           </g>
