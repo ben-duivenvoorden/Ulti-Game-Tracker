@@ -68,7 +68,7 @@ export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
         <div className="flex-1 text-center">
           <Label block>NEW GAME</Label>
         </div>
-        <Btn variant="primary" size="sm" disabled={!canSave} onClick={handleSave}>Save</Btn>
+        <Btn variant="primary" size="md" disabled={!canSave} onClick={handleSave}>Save</Btn>
       </div>
 
       {/* Scrollable form body */}

@@ -71,7 +71,7 @@ export default function TeamsManager() {
           <Label block className="mb-1">TEAMS MANAGER</Label>
           <div className="text-base font-bold">Roster</div>
         </div>
-        <Btn variant="primary" size="sm" onClick={closeTeamsManager}>Done</Btn>
+        <Btn variant="primary" size="md" onClick={closeTeamsManager}>Done</Btn>
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -159,7 +159,7 @@ function NewTeamView({ onCreate, onCancel }: {
           ←
         </button>
         <Label>NEW TEAM</Label>
-        <Btn variant="primary" size="sm" disabled={!canSave}
+        <Btn variant="primary" size="md" disabled={!canSave}
           onClick={() => onCreate(name.trim(), short.trim(), color)}>
           Save
         </Btn>
@@ -198,7 +198,7 @@ function TeamDetailView({ team, roster, onBack, onEditTeam, onArchive, onAddPlay
           <Chip color={team.color}>{team.short}</Chip>
           <span className="text-sm font-bold truncate">{team.name}</span>
         </div>
-        <Btn variant="ghost" size="sm" onClick={onArchive}>Archive</Btn>
+        <Btn variant="ghost" size="md" onClick={onArchive}>Archive</Btn>
       </div>
 
       {/* Team identity editor */}

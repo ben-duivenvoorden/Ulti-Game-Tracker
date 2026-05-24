@@ -74,7 +74,7 @@ export default function LineSelection() {
       <div
         className="flex-shrink-0 grid items-center h-12"
         style={{
-          gridTemplateColumns: '88px 1fr 88px',
+          gridTemplateColumns: '100px 1fr 100px',
           borderBottom: '1px solid var(--color-border)',
         }}
       >
@@ -107,7 +107,7 @@ export default function LineSelection() {
           </span>
         </div>
         <div className="flex items-center justify-end pr-3">
-          <Btn variant="primary" size="sm" onClick={onConfirmClick}>
+          <Btn variant="primary" size="md" onClick={onConfirmClick}>
             {isInjurySub ? 'Sub' : 'Confirm'}
           </Btn>
         </div>
