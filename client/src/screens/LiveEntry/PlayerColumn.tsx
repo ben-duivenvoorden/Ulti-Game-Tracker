@@ -62,7 +62,7 @@ export function PlayerColumn(props: PlayerColumnProps) {
             {rest && (
               <span
                 className="block w-full text-center truncate"
-                style={{ fontSize: 'clamp(13px, 4.2vw, 19px)', opacity: 0.85 }}
+                style={{ fontSize: 'clamp(15px, 5vw, 22px)', opacity: 0.85 }}
               >
                 {rest}
               </span>

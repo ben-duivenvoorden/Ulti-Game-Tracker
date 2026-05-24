@@ -139,23 +139,46 @@ export function EventColumn(props: EventColumnProps) {
 }
 
 function EventBtn({ label, fg, ink, enabled, onTap }: EventBtnDef) {
+  const [first, rest] = splitLabel(label)
   return (
     <button
       type="button"
       onClick={onTap}
       disabled={!enabled}
-      className="flex-1 min-h-0 rounded-lg border-2 cursor-pointer transition-opacity select-none disabled:opacity-25 disabled:cursor-default flex items-center justify-center px-2 text-center"
+      className="flex-1 min-h-0 rounded-lg border-2 cursor-pointer transition-opacity select-none disabled:opacity-25 disabled:cursor-default flex flex-col items-center justify-center px-2 text-center"
       style={{
         background:    fg,
         color:         ink,
         borderColor:   fg,
-        fontSize:      'clamp(14px, 4.5vw, 19px)',
         fontWeight:    700,
         letterSpacing: 0.4,
         lineHeight:    1.15,
       }}
     >
-      {label}
+      <span
+        className="block w-full text-center truncate"
+        style={{ fontSize: 'clamp(14px, 4.5vw, 19px)' }}
+      >
+        {first}
+      </span>
+      {rest && (
+        <span
+          className="block w-full text-center truncate"
+          style={{ fontSize: 'clamp(14px, 4.5vw, 19px)' }}
+        >
+          {rest}
+        </span>
+      )}
     </button>
   )
+}
+
+// Split a label on the first whitespace: "Throw Away" → ["Throw", "Away"],
+// "Blocked by …" → ["Blocked", "by …"], "Goal" → ["Goal", null]. Both
+// lines render at the same font size; single-word labels just sit
+// vertically centred on the button.
+function splitLabel(label: string): [string, string | null] {
+  const i = label.indexOf(' ')
+  if (i < 0) return [label, null]
+  return [label.slice(0, i), label.slice(i + 1)]
 }
