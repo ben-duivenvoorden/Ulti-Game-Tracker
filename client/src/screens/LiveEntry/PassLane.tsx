@@ -30,17 +30,17 @@ const CORNER_R      = 4    // px — corner-rounding radius
 const ARROW_AH      = 7    // px — arrowhead length (toward the tip)
 const ARROW_AW      = 4    // px — arrowhead half-width
 
-// Reach (in px) per arrow, oldest → newest. Sits inside LANE_WIDTH after
-// allowing for the corner radius + arrowhead.
-const REACHES = [9, 16, 23] as const
-
-// Per-arrow visual emphasis. Indexed oldest → newest so the newest arrow
-// (last index) is solid + full opacity + thicker; older arrows progress
-// to dashed + faded + thinner. Three independent cues stack so each
-// arrow is unambiguous even at a glance.
+// All four emphasis arrays are indexed oldest → newest (last slot =
+// newest). Right-aligned lookup below means a fresh run with fewer
+// arrows still treats the latest arrow as the newest.
+//
+// Reach decreases newest → oldest so the solid, prominent recent
+// arrow sits CLOSEST to the player names; the faintest, most-dashed
+// older arrows fan out further to the right.
+const REACHES       = [23, 16, 9]      as const
 const DASH_PATTERNS = ['2 4', '5 3', undefined] as const
-const OPACITIES     = [0.42, 0.7, 1] as const
-const STROKE_WIDTHS = [1.3, 1.6, 2] as const
+const OPACITIES     = [0.42, 0.7, 1]   as const
+const STROKE_WIDTHS = [1.3, 1.6, 2]    as const
 
 export function PassLane({ visLog, players, activeTeam, teamColor }: PassLaneProps) {
   const arrows = derivePassArrows(visLog, activeTeam, players, MAX_ARROWS)
@@ -90,7 +90,7 @@ export function PassLane({ visLog, players, activeTeam, teamColor }: PassLanePro
             const opacity = OPACITIES[emphasisIdx]
             const stroke  = STROKE_WIDTHS[emphasisIdx]
             const dash    = DASH_PATTERNS[emphasisIdx]
-            const reach   = REACHES[i] ?? REACHES[REACHES.length - 1]
+            const reach   = REACHES[emphasisIdx]
 
             const fromY = rowCenter(a.fromIdx, N, height)
             const toY   = rowCenter(a.toIdx,   N, height)
