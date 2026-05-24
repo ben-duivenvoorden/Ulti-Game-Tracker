@@ -33,6 +33,7 @@ export interface StageProps {
   /** Recording-options-driven chip toggles. */
   stallShown: boolean
   bonusShown: boolean
+  brickShown: boolean
 
   /** Per-device pill-size preference (sm / md / lg). Scales pill dimensions
    *  in lockstep with the slot hit-test half-height. */
@@ -148,7 +149,11 @@ export function Stage(props: StageProps) {
     const placement = placementFor(idx)
     if (props.mode === 'awaiting-pull') {
       if (player.id !== props.pullerId) return []
-      return buildActions(HW, { phase: 'awaiting-pull', bonusShown: props.bonusShown }, placement)
+      return buildActions(HW, {
+        phase: 'awaiting-pull',
+        bonusShown: props.bonusShown,
+        brickShown: props.brickShown,
+      }, placement)
     }
     if (player.id !== props.holderId) return []
     return buildActions(HW, { phase: 'in-play', stallShown: props.stallShown }, placement)
@@ -187,7 +192,7 @@ export function Stage(props: StageProps) {
     openChipRectsRef.current = chips.map(c => chipRect(openSlot.x, openSlot.y, c))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openIdx, props.holderId, props.pullerId, props.mode, props.players, props.bounds,
-      props.stallShown, props.bonusShown, scale])
+      props.stallShown, props.bonusShown, props.brickShown, scale])
 
   function applyDOM() {
     const arr = posRef.current

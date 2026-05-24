@@ -201,6 +201,7 @@ export type GameMode = 'mixed' | 'open'
 
 export interface RecordingOptions {
   pullBonus: boolean
+  brick:     boolean
   foul:      boolean
   pick:      boolean
   stall:     boolean
@@ -212,6 +213,7 @@ export interface RecordingOptions {
 
 export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
   pullBonus: true,
+  brick:     true,
   foul:      false,
   pick:      false,
   stall:     false,

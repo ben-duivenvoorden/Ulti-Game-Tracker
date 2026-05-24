@@ -27,6 +27,10 @@ interface LogDrawerProps {
   onCopySelection: (ids: EventId[]) => void
   /** Read the system clipboard and attempt to paste. Caller decides where. */
   onPaste: () => void
+  /** Enter edit mode. Available during a live game too — not only from the
+   *  Game Over banner. Caller passes undefined to hide the affordance (e.g.
+   *  while already in edit mode). */
+  onBeginEdit?: () => void
 }
 
 export const LOG_DRAWER_W = 280
@@ -35,6 +39,7 @@ const LONG_PRESS_MS = 500
 export function LogDrawer({
   visLog, players, expanded, truncateCursor, editRange, editActive,
   onToggle, onUndo, onSetCursor, onLongPress, onCopySelection, onPaste,
+  onBeginEdit,
 }: LogDrawerProps) {
   const logRef = useRef<HTMLDivElement>(null)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -141,6 +146,7 @@ export function LogDrawer({
         <LogHeader
           onSelect={visLog.length > 0 ? () => setSelectionMode(true) : undefined}
           onPaste={onPaste}
+          onBeginEdit={!editActive && visLog.length > 0 ? onBeginEdit : undefined}
         />
       )}
 
@@ -198,10 +204,11 @@ export function LogDrawer({
 }
 
 function LogHeader({
-  onSelect, onPaste,
+  onSelect, onPaste, onBeginEdit,
 }: {
   onSelect?: () => void
   onPaste: () => void
+  onBeginEdit?: () => void
 }) {
   return (
     <div
@@ -217,18 +224,30 @@ function LogHeader({
         <PasteIcon />
       </button>
       <Label>EVENT LOG</Label>
-      {onSelect ? (
-        <button
-          onClick={onSelect}
-          className="cursor-pointer text-muted hover:text-content transition-colors flex items-center justify-center"
-          style={{ width: 20, height: 20 }}
-          title="Enter selection mode"
-        >
-          <SelectIcon />
-        </button>
-      ) : (
-        <span className="w-5" />
-      )}
+      <div className="flex items-center gap-1">
+        {onBeginEdit && (
+          <button
+            onClick={onBeginEdit}
+            className="cursor-pointer text-muted hover:text-content transition-colors flex items-center justify-center"
+            style={{ width: 20, height: 20 }}
+            title="Edit log — select a range to replace"
+          >
+            <EditIcon />
+          </button>
+        )}
+        {onSelect ? (
+          <button
+            onClick={onSelect}
+            className="cursor-pointer text-muted hover:text-content transition-colors flex items-center justify-center"
+            style={{ width: 20, height: 20 }}
+            title="Enter selection mode"
+          >
+            <SelectIcon />
+          </button>
+        ) : (
+          <span className="w-5" />
+        )}
+      </div>
     </div>
   )
 }
@@ -329,6 +348,15 @@ function LogRailIcon() {
       <rect x="2" y="3" width="10" height="1.4" rx="0.7" />
       <rect x="2" y="6.3" width="10" height="1.4" rx="0.7" />
       <rect x="2" y="9.6" width="10" height="1.4" rx="0.7" />
+    </svg>
+  )
+}
+
+function EditIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M2.5 11.5 L2.5 9.5 L9.5 2.5 L11.5 4.5 L4.5 11.5 Z" />
+      <path d="M8 4 L10 6" />
     </svg>
   )
 }

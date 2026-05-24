@@ -30,6 +30,9 @@ export interface BuildOpts {
   /** Show the Pull Distance Bonus chip on awaiting-pull opens
    *  (recordingOptions.pullBonus). */
   bonusShown?: boolean
+  /** Show the Brick chip on awaiting-pull opens
+   *  (recordingOptions.brick). */
+  brickShown?: boolean
 }
 
 /** Per-pill placement context. When provided, `buildActions` orients the
@@ -110,8 +113,16 @@ function openDirection(p: Placement): number | null {
 // reading order: rec, tw, [st], goal, blk, int.
 const ARC_ORDER_INPLAY_NO_STALL: ChipId[] = ['rec', 'tw', 'goal', 'blk', 'int']
 const ARC_ORDER_INPLAY_STALL:    ChipId[] = ['rec', 'tw', 'st', 'goal', 'blk', 'int']
-const ARC_ORDER_PULL_NO_BONUS:   ChipId[] = ['brick', 'pull']
-const ARC_ORDER_PULL_BONUS:      ChipId[] = ['brick', 'pull', 'pull-bonus']
+
+// Pulling arc is dynamic — brick and pull-bonus are independently configurable.
+// Order, when present: brick (left) → pull (centre) → pull-bonus (right).
+function pullArcOrder(brickShown: boolean, bonusShown: boolean): ChipId[] {
+  const ids: ChipId[] = []
+  if (brickShown) ids.push('brick')
+  ids.push('pull')
+  if (bonusShown) ids.push('pull-bonus')
+  return ids
+}
 
 // Evenly spread `ids` across the 180° arc centred at θ₀.
 function hemisphereProposals(ids: ChipId[], theta0: number): { id: ChipId; angle: number }[] {
@@ -128,8 +139,8 @@ function legacyProposals(opts: BuildOpts): { id: ChipId; angle: number }[] {
   if (opts.phase === 'awaiting-pull') {
     const out: { id: ChipId; angle: number }[] = [
       { id: 'pull',  angle: -Math.PI / 2 },
-      { id: 'brick', angle:  Math.PI },
     ]
+    if (opts.brickShown) out.push({ id: 'brick',      angle: Math.PI })
     if (opts.bonusShown) out.push({ id: 'pull-bonus', angle: 0 })
     return out
   }
@@ -249,7 +260,7 @@ export function buildActions(HW: number, opts: BuildOpts, placement?: Placement)
   if (theta0 !== null) {
     let ids: ChipId[]
     if (opts.phase === 'awaiting-pull') {
-      ids = opts.bonusShown ? ARC_ORDER_PULL_BONUS : ARC_ORDER_PULL_NO_BONUS
+      ids = pullArcOrder(opts.brickShown ?? false, opts.bonusShown ?? false)
     } else {
       ids = opts.stallShown ? ARC_ORDER_INPLAY_STALL : ARC_ORDER_INPLAY_NO_STALL
     }

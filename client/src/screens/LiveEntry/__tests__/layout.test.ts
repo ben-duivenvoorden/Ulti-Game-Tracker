@@ -78,15 +78,26 @@ describe('buildActions — in-play legacy layout (no placement, stall shown)', (
 })
 
 describe('buildActions — awaiting-pull legacy layout (no placement)', () => {
-  it('returns Pull + Brick when bonus is hidden', () => {
-    const chips = buildActions(40, { phase: 'awaiting-pull', bonusShown: false })
+  it('returns just Pull when brick + bonus are both hidden', () => {
+    const chips = buildActions(40, { phase: 'awaiting-pull', brickShown: false, bonusShown: false })
+    expect(chips.map(c => c.id)).toEqual(['pull'])
+  })
+
+  it('returns Pull + Brick when brick on, bonus hidden', () => {
+    const chips = buildActions(40, { phase: 'awaiting-pull', brickShown: true, bonusShown: false })
     expect(chips.map(c => c.id).sort()).toEqual(['brick', 'pull'])
     expect(chips.find(c => c.id === 'pull')!.label).toBe(CHIP_LABELS.pull)
     expect(chips.find(c => c.id === 'brick')!.ax).toBeLessThan(0)  // brick on the left
   })
 
-  it('returns Pull + Brick + Pull Distance Bonus when bonus is shown', () => {
-    const chips = buildActions(40, { phase: 'awaiting-pull', bonusShown: true })
+  it('returns Pull + Pull Distance Bonus when brick hidden, bonus on', () => {
+    const chips = buildActions(40, { phase: 'awaiting-pull', brickShown: false, bonusShown: true })
+    expect(chips.map(c => c.id).sort()).toEqual(['pull', 'pull-bonus'])
+    expect(chips.find(c => c.id === 'pull-bonus')!.ax).toBeGreaterThan(0)
+  })
+
+  it('returns Pull + Brick + Pull Distance Bonus when both shown', () => {
+    const chips = buildActions(40, { phase: 'awaiting-pull', brickShown: true, bonusShown: true })
     expect(chips.map(c => c.id).sort()).toEqual(['brick', 'pull', 'pull-bonus'])
     expect(chips.find(c => c.id === 'pull-bonus')!.ax).toBeGreaterThan(0)
     expect(chips.find(c => c.id === 'brick')!.ax).toBeLessThan(0)
@@ -141,10 +152,10 @@ describe('buildActions — adaptive placement keeps chips inside bounds', () => 
   )
 
   it.each(SLOT_POSITIONS.map((_, i) => i))(
-    'awaiting-pull (with bonus) — slot %i: every chip rect fits inside bounds',
+    'awaiting-pull (with brick + bonus) — slot %i: every chip rect fits inside bounds',
     (idx) => {
       const placement = placementForSlot(idx, REALISTIC_BOUNDS, REALISTIC_HW)
-      const chips = buildActions(REALISTIC_HW, { phase: 'awaiting-pull', bonusShown: true }, placement)
+      const chips = buildActions(REALISTIC_HW, { phase: 'awaiting-pull', brickShown: true, bonusShown: true }, placement)
       for (const chip of chips) {
         const r = chipRect(placement.pill.x, placement.pill.y, chip)
         expect(rectInsideBounds(r, REALISTIC_BOUNDS, BOUNDS_MARGIN_X, BOUNDS_MARGIN_Y)).toBe(true)

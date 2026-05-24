@@ -3,7 +3,7 @@ import {
   useSession, useDerivedState, useVisLog, useGameActions, useUiState, useRecordingOptions,
   useTruncateCursor, useEditMode, useNotification,
 } from '@/core/selectors'
-import { useGameStore } from '@/core/store'
+import { useGameStore, applyLineOverride } from '@/core/store'
 import { computeVisLog } from '@/core/engine'
 import { otherTeam, type EventId, type Player, type TeamId, type VisLogEntry } from '@/core/types'
 import { isPickMode, pickActiveTeam } from '@/core/pickModes'
@@ -116,9 +116,17 @@ export default function LiveEntry() {
           : state.possession)
     : null
 
+  const lineOverride = useGameStore(s => s.lineOrderOverride)
+
   const activePlayers = useMemo<Player[]>(
-    () => (state && activeTeam ? state.activeLine[activeTeam] : []),
-    [state, activeTeam],
+    () => {
+      if (!state || !activeTeam) return []
+      const engineLine = state.activeLine[activeTeam]
+      const order = applyLineOverride(engineLine.map(p => p.id), lineOverride[activeTeam])
+      const byId = new Map(engineLine.map(p => [p.id, p]))
+      return order.map(id => byId.get(id)).filter((p): p is Player => p !== undefined)
+    },
+    [state, activeTeam, lineOverride],
   )
 
   // The full visLog still drives the LogDrawer (so greyed entries past the
@@ -357,6 +365,7 @@ export default function LiveEntry() {
               ineligibleIds={ineligibleIds}
               stallShown={recordingOptions.stall}
               bonusShown={recordingOptions.pullBonus}
+              brickShown={recordingOptions.brick}
               pillSize={pillSize}
               disabledChipIds={disabledChipIds}
               arrows={arrows}
@@ -385,6 +394,7 @@ export default function LiveEntry() {
           onLongPress={onLongPress}
           onCopySelection={actions.copyEventsToClipboard}
           onPaste={onPaste}
+          onBeginEdit={actions.beginEdit}
         />
       </div>
     </div>

@@ -76,6 +76,12 @@ export default function GameSettings() {
               onChange={v => updateRecordingOption('pullBonus', v)}
             />
             <CompactToggle
+              label="Brick"
+              hint="Pull lands OB / fouls"
+              checked={options.brick}
+              onChange={v => updateRecordingOption('brick', v)}
+            />
+            <CompactToggle
               label="Foul"
               hint="Foul calls during play"
               checked={options.foul}

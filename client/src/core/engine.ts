@@ -28,34 +28,28 @@ export function nextEventId(session: GameSession): number {
 
 // ─── Raw-log resolution ───────────────────────────────────────────────────────
 // One walker, two consumers: the visible event log and game-state derivation.
-// Both need to fold undo / amend into the upstream log; they only differ on
-// whether `reorder-line` (a display directive) sticks around in the result.
+// Both produce the same output now that reorder-line is per-device transient
+// state rather than a log event; the two exports below remain as separate
+// names for call-site readability and future divergence.
 
 export type Resolved = Exclude<RawEvent, StructuralOnly>
 
-interface ResolveOpts {
-  /** Derivation needs reorder-line to walk activeLine through display tweaks;
-   *  the visible log filters it out. */
-  keepReorderLine: boolean
-}
-
-function resolveRawLog(rawLog: RawEvent[], opts: ResolveOpts): Resolved[] {
+function resolveRawLog(rawLog: RawEvent[]): Resolved[] {
   const out: Resolved[] = []
   for (const event of rawLog) {
     if (event.type === 'undo')         { popLastVisible(out); continue }
     if (event.type === 'amend')        { applyAmend(out, event); continue }
     if (event.type === 'truncate')     { dropAfter(out, event.truncateAfterId); continue }
-    if (event.type === 'splice-block') { applySplice(out, event, opts); continue }
-    if (event.type === 'reorder-line' && !opts.keepReorderLine) continue
+    if (event.type === 'splice-block') { applySplice(out, event); continue }
+    if (event.type === 'reorder-line') continue   // legacy — pill order is now per-device transient
     out.push(event)
   }
   return out
 }
 
 // One splice call covers insert / replace / delete. Removal is by id-range
-// so the operation is identical in both resolve passes regardless of any
-// reorder-line entries that fall inside the range.
-function applySplice(entries: Resolved[], event: SpliceBlockRawEvent, opts: ResolveOpts): void {
+// so the operation is identical regardless of inner-event composition.
+function applySplice(entries: Resolved[], event: SpliceBlockRawEvent): void {
   const idx = entries.findIndex(e => e.id === event.afterEventId)
   if (idx === -1) return
   let removeCount = 0
@@ -69,9 +63,11 @@ function applySplice(entries: Resolved[], event: SpliceBlockRawEvent, opts: Reso
       removeCount++
     }
   }
-  const inner = opts.keepReorderLine
-    ? event.events.filter((e): e is Resolved => e.type !== 'undo' && e.type !== 'amend' && e.type !== 'truncate' && e.type !== 'splice-block')
-    : event.events.filter((e): e is Resolved => e.type !== 'undo' && e.type !== 'amend' && e.type !== 'truncate' && e.type !== 'splice-block' && e.type !== 'reorder-line')
+  // Strip structural events from the inner payload. reorder-line is also
+  // stripped — it's legacy/no-op now (pill order is per-device transient).
+  const inner = event.events.filter((e): e is Resolved =>
+    e.type !== 'undo' && e.type !== 'amend' && e.type !== 'truncate'
+    && e.type !== 'splice-block' && e.type !== 'reorder-line')
   entries.splice(idx + 1, removeCount, ...inner)
 }
 
@@ -113,7 +109,7 @@ function dropAfter(entries: Resolved[], truncateAfterId: number): void {
 // ─── Visual log derivation ────────────────────────────────────────────────────
 
 export function computeVisLog(rawLog: RawEvent[]): VisLogEntry[] {
-  return resolveRawLog(rawLog, { keepReorderLine: false }) as VisLogEntry[]
+  return resolveRawLog(rawLog) as VisLogEntry[]
 }
 
 // ─── Derived game state ───────────────────────────────────────────────────────
@@ -214,11 +210,17 @@ function step(state: DerivedGameState, event: Resolved, session: GameSession): v
       break
 
     case 'injury-sub':
-    case 'reorder-line':
       state.activeLine = {
         ...state.activeLine,
         [event.teamId]: resolveLine(event.line, session.gameConfig.rosters[event.teamId]),
       }
+      break
+
+    case 'reorder-line':
+      // Legacy event — kept in the union for backwards compatibility with
+      // persisted rawLogs. Pill visual order is now per-device transient
+      // state (see `store.lineOrderOverride`); the rawLog no longer carries
+      // reorder events.
       break
 
     case 'half-time':
@@ -240,10 +242,12 @@ function step(state: DerivedGameState, event: Resolved, session: GameSession): v
   }
 }
 
-/** Like computeVisLog but keeps reorder-line events (state derivation needs
- *  them; the visible log doesn't). Resolves undo/amend the same way. */
+/** Alias for `computeVisLog` shape — kept as a separate export so callers
+ *  that want to express "I'm walking the resolved log for state derivation"
+ *  can read clearly at the call site, even though the two paths produce
+ *  identical output today. */
 export function resolveLogForDerivation(rawLog: RawEvent[]): Resolved[] {
-  return resolveRawLog(rawLog, { keepReorderLine: true })
+  return resolveRawLog(rawLog)
 }
 
 type StructuralOnly = Extract<RawEvent, { type: 'undo' | 'amend' | 'truncate' | 'splice-block' }>

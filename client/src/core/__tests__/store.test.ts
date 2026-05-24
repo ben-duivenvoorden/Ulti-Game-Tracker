@@ -209,33 +209,30 @@ describe('pasteFromClipboard', () => {
 describe('swapLineSlots', () => {
   beforeEach(resetAndStartGame)
 
-  it('emits a single reorder-line with two ids swapped', () => {
-    const sessionBefore = useGameStore.getState().session!
-    const lineBefore = computeVisLog(sessionBefore.rawLog) // touch to keep deps lean
-    void lineBefore
-    const stateBefore = useGameStore.getState().session!
+  it('updates the per-device lineOrderOverride with two ids swapped — does not touch rawLog', () => {
+    const rawLogLengthBefore = useGameStore.getState().session!.rawLog.length
     // The active line for team A is the first 7 of the roster (set in resetAndStartGame).
     const expectedLineBefore = MOCK_GAMES[0].rosters.A.slice(0, 7).map(p => p.id)
 
     useGameStore.getState().swapLineSlots('A', 0, 2)
 
-    const tail = useGameStore.getState().session!.rawLog.slice(-1)[0]
-    expect(tail.type).toBe('reorder-line')
-    expect((tail as { teamId: 'A' | 'B' }).teamId).toBe('A')
+    // No new event in the rawLog — pill order is per-device transient.
+    expect(useGameStore.getState().session!.rawLog.length).toBe(rawLogLengthBefore)
+
+    const override = useGameStore.getState().lineOrderOverride.A
     const swappedLine = [...expectedLineBefore]
     const tmp = swappedLine[0]
     swappedLine[0] = swappedLine[2]
     swappedLine[2] = tmp
-    expect((tail as { line: number[] }).line).toEqual(swappedLine)
-
-    // Sanity: only one event was appended, not two.
-    expect(useGameStore.getState().session!.rawLog.length).toBe(stateBefore.rawLog.length + 1)
+    expect(override).toEqual(swappedLine)
   })
 
   it('no-op when i === j', () => {
-    const before = useGameStore.getState().session!.rawLog.length
+    const rawLogBefore = useGameStore.getState().session!.rawLog.length
+    const overrideBefore = useGameStore.getState().lineOrderOverride.A
     useGameStore.getState().swapLineSlots('A', 3, 3)
-    expect(useGameStore.getState().session!.rawLog.length).toBe(before)
+    expect(useGameStore.getState().session!.rawLog.length).toBe(rawLogBefore)
+    expect(useGameStore.getState().lineOrderOverride.A).toBe(overrideBefore)
   })
 })
 

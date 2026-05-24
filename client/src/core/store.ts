@@ -71,6 +71,12 @@ interface GameStore {
   swapSides: boolean
   /** Player pill size — per-device display preference. */
   pillSize: PillSize
+  /** Per-device visual reorder of pills on the canvas — never goes on the wire.
+   *  Each value is the preferred player-id order for that team. Stale ids
+   *  (players no longer on the field) are filtered out at apply-time; the
+   *  engine's `activeLine` order remains authoritative for any id not present
+   *  here. See `applyLineOverride`. */
+  lineOrderOverride: Record<TeamId, PlayerId[]>
 
   // Transient (not persisted)
   showEventMenu: boolean
@@ -274,6 +280,20 @@ export function seedDefaultLine(roster: Player[]): Player[] {
   return [...males, ...females]
 }
 
+/** Apply a per-device visual order to the engine's `activeLine`. Override
+ *  entries that are no longer on the field are silently dropped; engine
+ *  entries not present in the override appear at the end in engine order.
+ *  This way the override degrades gracefully across line changes
+ *  (injury subs, new points) without needing explicit invalidation. */
+export function applyLineOverride(engineLine: PlayerId[], override: PlayerId[]): PlayerId[] {
+  if (override.length === 0) return engineLine
+  const inEngine = new Set(engineLine)
+  const ordered  = override.filter(id => inEngine.has(id))
+  const inOverride = new Set(ordered)
+  const newcomers = engineLine.filter(id => !inOverride.has(id))
+  return [...ordered, ...newcomers]
+}
+
 function sameLine(a: PlayerId[], b: PlayerId[]): boolean {
   if (a.length !== b.length) return false
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
@@ -426,6 +446,7 @@ export const useGameStore = create<GameStore>()(
       recordingOptions:  DEFAULT_RECORDING_OPTIONS,
       swapSides:         false,
       pillSize:          'md',
+      lineOrderOverride: { A: [], B: [] },
 
       // ── selectGame ──────────────────────────────────────────────────────────
       // Start a fresh game session (overwrites any existing one). Resolves
@@ -729,33 +750,41 @@ export const useGameStore = create<GameStore>()(
       },
 
       // ── reorderActiveLine ────────────────────────────────────────────────────
-      // Reorders the on-field display order for a team. Recorded as a
-      // 'reorder-line' event so other peers see the same order on sync.
+      // Reorders the on-field display order for a team. Per-device visual
+      // preference only — never written to the rawLog or sent on the wire.
       reorderActiveLine(teamId, fromIdx, toIdx) {
         if (fromIdx === toIdx) return
-        recordVia(get, set, state => {
-          const current = state.activeLine[teamId].map(p => p.id)
-          if (fromIdx < 0 || fromIdx >= current.length || toIdx < 0 || toIdx >= current.length) return null
-          const [moved] = current.splice(fromIdx, 1)
-          current.splice(toIdx, 0, moved)
-          return [{ pointIndex: state.pointIndex, type: 'reorder-line', teamId, line: current }]
-        })
+        const { session, editMode, truncateCursor, lineOrderOverride } = get()
+        const target = activeSession({ session, editMode })
+        if (!target) return
+        const state = deriveGameState(effectiveSession(target, truncateCursor))
+        const engineLine = state.activeLine[teamId].map(p => p.id)
+        const effective = applyLineOverride(engineLine, lineOrderOverride[teamId])
+        if (fromIdx < 0 || fromIdx >= effective.length || toIdx < 0 || toIdx >= effective.length) return
+        const next = [...effective]
+        const [moved] = next.splice(fromIdx, 1)
+        next.splice(toIdx, 0, moved)
+        set({ lineOrderOverride: { ...lineOrderOverride, [teamId]: next } })
       },
 
       // ── swapLineSlots ────────────────────────────────────────────────────────
       // Swap two players' positions in a team's on-field line. Used by the
-      // canvas drag-onto-pill interaction. Single 'reorder-line' event so the
-      // swap is one undo step.
+      // canvas drag-onto-pill interaction. Per-device visual preference only —
+      // never written to the rawLog or sent on the wire.
       swapLineSlots(teamId, i, j) {
         if (i === j) return
-        recordVia(get, set, state => {
-          const current = state.activeLine[teamId].map(p => p.id)
-          if (i < 0 || i >= current.length || j < 0 || j >= current.length) return null
-          const tmp = current[i]
-          current[i] = current[j]
-          current[j] = tmp
-          return [{ pointIndex: state.pointIndex, type: 'reorder-line', teamId, line: current }]
-        })
+        const { session, editMode, truncateCursor, lineOrderOverride } = get()
+        const target = activeSession({ session, editMode })
+        if (!target) return
+        const state = deriveGameState(effectiveSession(target, truncateCursor))
+        const engineLine = state.activeLine[teamId].map(p => p.id)
+        const effective = applyLineOverride(engineLine, lineOrderOverride[teamId])
+        if (i < 0 || i >= effective.length || j < 0 || j >= effective.length) return
+        const next = [...effective]
+        const tmp = next[i]
+        next[i] = next[j]
+        next[j] = tmp
+        set({ lineOrderOverride: { ...lineOrderOverride, [teamId]: next } })
       },
 
       // ── backToGameList ───────────────────────────────────────────────────────
@@ -1227,6 +1256,7 @@ export const useGameStore = create<GameStore>()(
           truncateCursor:    null,
           editMode:          null,
           notification:      null,
+          lineOrderOverride: { A: [], B: [] },
         })
       },
     }),
@@ -1289,6 +1319,7 @@ export const useGameStore = create<GameStore>()(
         recordingOptions:  state.recordingOptions,
         swapSides:         state.swapSides,
         pillSize:          state.pillSize,
+        lineOrderOverride: state.lineOrderOverride,
       }),
       // Defensive overlay. The default merge lets `{ teamsLog: [] }` from a
       // corrupted localStorage clobber the seeded initial state — which is
