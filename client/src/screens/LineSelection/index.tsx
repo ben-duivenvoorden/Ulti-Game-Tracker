@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Btn } from '@/components/ui/Btn'
 import { Chip } from '@/components/ui/Chip'
+import { IconBtn, SettingsIcon, TeamsIcon } from '@/components/ui/Icons'
 import { useSession, useDerivedState, useRecordingOptions, useSuggestedTransition } from '@/core/selectors'
 import { useGameStore, seedDefaultLine } from '@/core/store'
 import { inkOn } from '@/core/contrast'
@@ -17,6 +18,7 @@ export default function LineSelection() {
   const confirmLine    = useGameStore(s => s.confirmLine)
   const backToGameList = useGameStore(s => s.backToGameList)
   const openTeamsManager = useGameStore(s => s.openTeamsManager)
+  const openGameSettings = useGameStore(s => s.openGameSettings)
   const addPlayer      = useGameStore(s => s.addPlayer)
   const triggerHalfTime = useGameStore(s => s.triggerHalfTime)
   const triggerEndGame  = useGameStore(s => s.triggerEndGame)
@@ -181,15 +183,14 @@ export default function LineSelection() {
         </div>
       )}
 
-      {/* Manage teams secondary nav */}
-      <div className="flex-shrink-0 px-3 py-1.5 flex justify-end border-b border-border">
-        <button
-          onClick={openTeamsManager}
-          className="text-[10px] font-mono tracking-widest uppercase cursor-pointer transition-colors hover:text-content"
-          style={{ color: 'var(--color-muted)' }}
-        >
-          ⚙ Manage teams
-        </button>
+      {/* Teams + Settings icons — large tap targets, sibling affordances. */}
+      <div className="flex-shrink-0 px-2 py-1 flex justify-end items-center gap-1 border-b border-border">
+        <IconBtn onClick={openTeamsManager} title="Manage teams">
+          <TeamsIcon />
+        </IconBtn>
+        <IconBtn onClick={openGameSettings} title="Recording settings">
+          <SettingsIcon />
+        </IconBtn>
       </div>
 
       {/* Active team's roster */}

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Btn } from '@/components/ui/Btn'
 import { Chip } from '@/components/ui/Chip'
 import { Label } from '@/components/ui/Label'
+import { IconBtn, SettingsIcon, TeamsIcon } from '@/components/ui/Icons'
 import { useGameStore } from '@/core/store'
 import { useScheduledGames, useSession, useTeamsState } from '@/core/selectors'
 import { deriveGameState, deriveGameStatus } from '@/core/engine'
@@ -39,29 +40,22 @@ export default function GameSetup() {
 
   return (
     <div className="h-full flex flex-col bg-bg text-content">
-      {/* Header */}
-      <div className="flex-shrink-0 px-4 pt-3 pb-2 border-b border-border">
-        <div className="flex items-start justify-between">
-          <div>
-            <Label block className="mb-1">GAME SETUP</Label>
-            <div className="text-base font-bold">Games</div>
-          </div>
-          <button
-            onClick={openGameSettings}
-            className="text-[18px] leading-none cursor-pointer transition-opacity hover:opacity-70"
-            style={{ color: 'var(--color-dim)' }}
-            title="Recording Settings"
-          >
-            ⚙
-          </button>
+      {/* Header — title on the left, two large action icons on the right.
+          Teams and Settings are siblings; matching tap targets, different
+          icons. */}
+      <div className="flex-shrink-0 px-4 py-3 border-b border-border flex items-center justify-between gap-3">
+        <div>
+          <Label block className="mb-1">GAME SETUP</Label>
+          <div className="text-base font-bold">Games</div>
         </div>
-        <button
-          onClick={openTeamsManager}
-          className="mt-1 text-[10px] font-mono tracking-widest uppercase cursor-pointer transition-colors hover:text-content"
-          style={{ color: 'var(--color-muted)' }}
-        >
-          ⚙ Manage teams →
-        </button>
+        <div className="flex items-center gap-1">
+          <IconBtn onClick={openTeamsManager} title="Manage teams">
+            <TeamsIcon />
+          </IconBtn>
+          <IconBtn onClick={openGameSettings} title="Recording settings">
+            <SettingsIcon />
+          </IconBtn>
+        </div>
       </div>
 
       {/* Game list */}
