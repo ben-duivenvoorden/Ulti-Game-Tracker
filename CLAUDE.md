@@ -22,7 +22,7 @@ client/src/
 - `canRecord(state, eventType)` is the single guard for all recording actions
 - New event types need handling in: `types.ts` (union + interface), `engine.ts` (derive + canRecord), `format.ts` (label + color)
 - CSS design tokens live in `client/src/index.css` under `@theme`
-- After any change: `npx tsc --noEmit` from `client/`, then `npx vitest run`
+- After any change: `npx tsc -b` from `client/` (matches `npm run build` — `--noEmit` skips referenced projects and lets build-breaking errors through), then `npx vitest run`
 
 ## Pending changes workflow
 
