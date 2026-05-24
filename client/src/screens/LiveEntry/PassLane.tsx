@@ -23,12 +23,13 @@ interface PassLaneProps {
 // — oldest tightest, newest furthest. Newer arrows also draw thicker and
 // at full opacity; older fade.
 
-const MAX_ARROWS    = 3
-const LANE_WIDTH    = 32   // px
-const LEFT_ANCHOR_X = 3    // px in from the lane's left edge
-const CORNER_R      = 4    // px — corner-rounding radius
-const ARROW_AH      = 7    // px — arrowhead length (toward the tip)
-const ARROW_AW      = 4    // px — arrowhead half-width
+const MAX_ARROWS         = 3
+const LANE_WIDTH         = 40   // px
+const LEFT_ANCHOR_X      = 3    // px in from the lane's left edge — where arrowhead tips land
+const LINE_START_INSET   = 5    // px past LEFT_ANCHOR_X where the SENDING line starts — clears any older arrowhead at the same row
+const CORNER_R_MAX       = 12   // px — generous rounding; per-arrow R is clamped down when reach is tight
+const ARROW_AH           = 7    // px — arrowhead length (toward the tip)
+const ARROW_AW           = 4    // px — arrowhead half-width
 
 // All four emphasis arrays are indexed oldest → newest (last slot =
 // newest). Right-aligned lookup below means a fresh run with fewer
@@ -37,7 +38,7 @@ const ARROW_AW      = 4    // px — arrowhead half-width
 // Reach decreases newest → oldest so the solid, prominent recent
 // arrow sits CLOSEST to the player names; the faintest, most-dashed
 // older arrows fan out further to the right.
-const REACHES       = [23, 16, 9]      as const
+const REACHES       = [30, 22, 14]     as const
 const DASH_PATTERNS = ['2 4', '5 3', undefined] as const
 const OPACITIES     = [0.42, 0.7, 1]   as const
 const STROKE_WIDTHS = [1.3, 1.6, 2]    as const
@@ -61,19 +62,6 @@ export function PassLane({ visLog, players, activeTeam, teamColor }: PassLanePro
 
   return (
     <div ref={ref} className="relative h-full" style={{ width: LANE_WIDTH }} aria-hidden>
-      {/* Vertical "left plane" — the line every arrow pins to. Faint so
-          the empty-lane state still reads as a deliberate column. */}
-      <div
-        className="absolute"
-        style={{
-          left: LEFT_ANCHOR_X - 0.5,
-          top:  4,
-          bottom: 4,
-          width: 1,
-          background: 'var(--color-border)',
-        }}
-      />
-
       {height > 0 && (
         <svg
           width={LANE_WIDTH}
@@ -97,21 +85,39 @@ export function PassLane({ visLog, players, activeTeam, teamColor }: PassLanePro
             const downward = toY > fromY
             const sweep    = downward ? 1 : 0
 
+            const lineStartX  = LEFT_ANCHOR_X + LINE_START_INSET
+            const lineEndX    = LEFT_ANCHOR_X + ARROW_AH            // line ends at arrowhead base
             const cornerX     = LEFT_ANCHOR_X + reach
-            const horizEndX   = cornerX - CORNER_R
-            const vertStartY  = fromY + (downward ? CORNER_R : -CORNER_R)
-            const vertEndY    = toY   + (downward ? -CORNER_R : CORNER_R)
-            const pathEndX    = LEFT_ANCHOR_X + ARROW_AH  // stop at arrowhead base
 
-            // Three segments + two arcs: horizontal right, ⌐ arc down,
-            // vertical, ⌐ arc left, horizontal back.
+            // Adaptive corner radius: aim for CORNER_R_MAX, but clamp
+            // so neither the sending nor receiving horizontal segment
+            // is consumed by the corner arc. Vertical rows that are
+            // close together also restrict R (half the vertical span).
+            const vertSpan = Math.abs(toY - fromY)
+            const cornerR = Math.max(
+              2,
+              Math.min(
+                CORNER_R_MAX,
+                cornerX - lineStartX,
+                cornerX - lineEndX,
+                vertSpan / 2,
+              ),
+            )
+
+            const horizEndX  = cornerX - cornerR
+            const vertStartY = fromY + (downward ? cornerR : -cornerR)
+            const vertEndY   = toY   + (downward ? -cornerR : cornerR)
+
+            // Three segments + two arcs: horizontal right, rounded
+            // corner, vertical, rounded corner, horizontal back to the
+            // arrowhead's base.
             const d = [
-              `M ${LEFT_ANCHOR_X} ${fromY}`,
+              `M ${lineStartX} ${fromY}`,
               `L ${horizEndX} ${fromY}`,
-              `A ${CORNER_R} ${CORNER_R} 0 0 ${sweep} ${cornerX} ${vertStartY}`,
+              `A ${cornerR} ${cornerR} 0 0 ${sweep} ${cornerX} ${vertStartY}`,
               `L ${cornerX} ${vertEndY}`,
-              `A ${CORNER_R} ${CORNER_R} 0 0 ${sweep} ${horizEndX} ${toY}`,
-              `L ${pathEndX} ${toY}`,
+              `A ${cornerR} ${cornerR} 0 0 ${sweep} ${horizEndX} ${toY}`,
+              `L ${lineEndX} ${toY}`,
             ].join(' ')
 
             // Arrowhead at receiver's row, tip on the left plane,
