@@ -4,7 +4,6 @@ import GameSettings from '@/screens/GameSettings'
 import LineSelection from '@/screens/LineSelection'
 import LiveEntry from '@/screens/LiveEntry'
 import TeamsManager from '@/screens/TeamsManager'
-import { RotateOverlay } from '@/components/RotateOverlay'
 
 export default function App() {
   const screen      = useGameStore(s => s.screen)
@@ -23,7 +22,6 @@ export default function App() {
       {effective === 'teams-manager'  && <TeamsManager />}
       {effective === 'line-selection' && <LineSelection />}
       {effective === 'live-entry'     && <LiveEntry />}
-      <RotateOverlay />
     </div>
   )
 }
