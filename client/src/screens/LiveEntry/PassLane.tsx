@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from 'react'
 import type { VisLogEntry, Player, TeamId } from '@/core/types'
 
 interface PassLaneProps {
@@ -7,100 +8,125 @@ interface PassLaneProps {
   teamColor: string
 }
 
-// Thin vertical pane between PlayerColumn and EventColumn. The last three
-// passes render as rounded right-angle brackets: each one leaves the
-// sender's row horizontally to the right, travels vertically alongside
-// a shared "left plane", then re-enters the receiver's row from the
-// right horizontally.
+// Thin vertical pane between PlayerColumn and EventColumn. The last
+// three passes render as right-angle paths with small rounded corners:
+//   sender's row ─┐
+//                 │   (vertical run, parallel to the left plane)
+//                 │
+//   receiver's row ←─┘
 //
-// Geometry: cubic bezier with BOTH control points at the same x (the
-// curve's "reach"). That forces horizontal tangents at the start and
-// end — the curve flares out, runs parallel to the left plane, and
-// flares back in. Reads as a flowchart bracket rather than a skewed
-// loop.
+// The SVG sizes itself to its container in real pixels (via ResizeObserver
+// — no viewBox stretching) so the arrowhead stays a proper triangle and
+// the corner arcs are real circular quarter-arcs, not ellipses.
 //
-// Three arrows are distinguished by reach depth alone (oldest tightest,
-// newest furthest right). They never overlap because their reaches
-// differ. Newest also draws thicker + at full opacity.
+// Three arrows differentiated by REACH (how far right the bracket extends)
+// — oldest tightest, newest furthest. Newer arrows also draw thicker and
+// at full opacity; older fade.
 
 const MAX_ARROWS    = 3
-const LANE_WIDTH    = 72
-const LEFT_ANCHOR_X = 4    // px in from the lane's left edge
-const VIEW_H        = 100  // viewBox vertical units
+const LANE_WIDTH    = 32   // px
+const LEFT_ANCHOR_X = 3    // px in from the lane's left edge
+const CORNER_R      = 4    // px — corner-rounding radius
+const ARROW_AH      = 7    // px — arrowhead length (toward the tip)
+const ARROW_AW      = 4    // px — arrowhead half-width
 
-// Reach (in viewBox X units) per arrow, oldest → newest. Tuned so the
-// three brackets sit visibly inside each other without crowding.
-const REACHES = [LANE_WIDTH * 0.32, LANE_WIDTH * 0.58, LANE_WIDTH * 0.85] as const
+// Reach (in px) per arrow, oldest → newest. Sits inside LANE_WIDTH after
+// allowing for the corner radius + arrowhead.
+const REACHES = [9, 16, 23] as const
 
 export function PassLane({ visLog, players, activeTeam, teamColor }: PassLaneProps) {
   const arrows = derivePassArrows(visLog, activeTeam, players, MAX_ARROWS)
   const N = players.length
 
+  // Measure the container in real pixels so SVG coords stay 1-to-1 and
+  // the arrowhead / corner arcs don't distort under aspect-ratio stretching.
+  const ref = useRef<HTMLDivElement>(null)
+  const [height, setHeight] = useState(0)
+  useLayoutEffect(() => {
+    if (!ref.current) return
+    const update = () => setHeight(ref.current?.clientHeight ?? 0)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(ref.current)
+    return () => ro.disconnect()
+  }, [])
+
   return (
-    <svg
-      className="h-full"
-      style={{ width: LANE_WIDTH, display: 'block' }}
-      viewBox={`0 0 ${LANE_WIDTH} ${VIEW_H}`}
-      preserveAspectRatio="none"
-      aria-hidden
-    >
-      {/* Vertical "left plane" — arrows anchor here. Faint so the empty-
-          lane state still reads as a deliberate column. */}
-      <line
-        x1={LEFT_ANCHOR_X} x2={LEFT_ANCHOR_X}
-        y1={4} y2={VIEW_H - 4}
-        stroke="var(--color-border)"
-        strokeWidth={1}
-        vectorEffect="non-scaling-stroke"
+    <div ref={ref} className="relative h-full" style={{ width: LANE_WIDTH }} aria-hidden>
+      {/* Vertical "left plane" — the line every arrow pins to. Faint so
+          the empty-lane state still reads as a deliberate column. */}
+      <div
+        className="absolute"
+        style={{
+          left: LEFT_ANCHOR_X - 0.5,
+          top:  4,
+          bottom: 4,
+          width: 1,
+          background: 'var(--color-border)',
+        }}
       />
 
-      {arrows.map((a, i) => {
-        const newest  = i === arrows.length - 1
-        const opacity = newest ? 1 : 0.5
-        const stroke  = newest ? 2 : 1.4
-        const reach   = REACHES[i] ?? REACHES[REACHES.length - 1]
+      {height > 0 && (
+        <svg
+          width={LANE_WIDTH}
+          height={height}
+          style={{ position: 'absolute', inset: 0, display: 'block' }}
+        >
+          {arrows.map((a, i) => {
+            const newest  = i === arrows.length - 1
+            const opacity = newest ? 1 : 0.5
+            const stroke  = newest ? 2 : 1.4
+            const reach   = REACHES[i] ?? REACHES[REACHES.length - 1]
 
-        const fromY = rowCenter(a.fromIdx, N)
-        const toY   = rowCenter(a.toIdx,   N)
+            const fromY = rowCenter(a.fromIdx, N, height)
+            const toY   = rowCenter(a.toIdx,   N, height)
+            const downward = toY > fromY
+            const sweep    = downward ? 1 : 0
 
-        // Cubic with both control points at x = LEFT_ANCHOR_X + reach:
-        //   start at (left, fromY) → goes horizontally right
-        //   c1 = (left + reach, fromY) → vertical motion begins
-        //   c2 = (left + reach, toY)   → vertical motion ends
-        //   end at (left, toY) → returns horizontally
-        const cx = LEFT_ANCHOR_X + reach
+            const cornerX     = LEFT_ANCHOR_X + reach
+            const horizEndX   = cornerX - CORNER_R
+            const vertStartY  = fromY + (downward ? CORNER_R : -CORNER_R)
+            const vertEndY    = toY   + (downward ? -CORNER_R : CORNER_R)
+            const pathEndX    = LEFT_ANCHOR_X + ARROW_AH  // stop at arrowhead base
 
-        // Arrowhead points left (back toward the player column) at
-        // (LEFT_ANCHOR_X, toY). Truncate the path at the arrowhead's
-        // base so the stroke doesn't peek out.
-        const ah = 5         // arrowhead length (viewBox X units)
-        const aw = 2.6       // arrowhead half-width (viewBox Y units)
-        const tipX  = LEFT_ANCHOR_X
-        const tipY  = toY
-        const baseX = LEFT_ANCHOR_X + ah
-        const baseY = toY
-        const wingX = baseX
-        const wingY1 = baseY - aw
-        const wingY2 = baseY + aw
+            // Three segments + two arcs: horizontal right, ⌐ arc down,
+            // vertical, ⌐ arc left, horizontal back.
+            const d = [
+              `M ${LEFT_ANCHOR_X} ${fromY}`,
+              `L ${horizEndX} ${fromY}`,
+              `A ${CORNER_R} ${CORNER_R} 0 0 ${sweep} ${cornerX} ${vertStartY}`,
+              `L ${cornerX} ${vertEndY}`,
+              `A ${CORNER_R} ${CORNER_R} 0 0 ${sweep} ${horizEndX} ${toY}`,
+              `L ${pathEndX} ${toY}`,
+            ].join(' ')
 
-        return (
-          <g key={i} opacity={opacity}>
-            <path
-              d={`M ${LEFT_ANCHOR_X} ${fromY} C ${cx} ${fromY}, ${cx} ${toY}, ${baseX} ${baseY}`}
-              stroke={teamColor}
-              strokeWidth={stroke}
-              fill="none"
-              strokeLinecap="round"
-              vectorEffect="non-scaling-stroke"
-            />
-            <polygon
-              points={`${tipX},${tipY} ${wingX},${wingY1} ${wingX},${wingY2}`}
-              fill={teamColor}
-            />
-          </g>
-        )
-      })}
-    </svg>
+            // Arrowhead at receiver's row, tip on the left plane,
+            // pointing horizontally left.
+            const tipX  = LEFT_ANCHOR_X
+            const baseX = LEFT_ANCHOR_X + ARROW_AH
+            const wingY1 = toY - ARROW_AW
+            const wingY2 = toY + ARROW_AW
+
+            return (
+              <g key={i} opacity={opacity}>
+                <path
+                  d={d}
+                  stroke={teamColor}
+                  strokeWidth={stroke}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <polygon
+                  points={`${tipX},${toY} ${baseX},${wingY1} ${baseX},${wingY2}`}
+                  fill={teamColor}
+                />
+              </g>
+            )
+          })}
+        </svg>
+      )}
+    </div>
   )
 }
 
@@ -133,12 +159,12 @@ function derivePassArrows(
   return arrows.slice(-maxArrows)
 }
 
-// Y-centre of row `idx` within the viewBox, accounting for the
-// PlayerColumn's vertical padding (p-1.5 → ~6 px ≈ 4 viewBox units).
-function rowCenter(idx: number, n: number): number {
-  if (n <= 0) return VIEW_H / 2
-  const top = 4
-  const bot = 4
-  const usable = VIEW_H - top - bot
+// Y-centre of row `idx` in the measured pixel space. Mirrors the
+// PlayerColumn's flex-1 rows + p-1.5 (≈6 px top/bottom padding).
+function rowCenter(idx: number, n: number, heightPx: number): number {
+  if (n <= 0 || heightPx <= 0) return heightPx / 2
+  const top = 6
+  const bot = 6
+  const usable = Math.max(0, heightPx - top - bot)
   return top + ((idx + 0.5) / n) * usable
 }
