@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 import type { VisLogEntry, Player, EventId, DerivedGameState, RecordingOptions } from '@/core/types'
 import { formatVisLogEntry, getVisLogColor, isMutedLogEntry } from '@/core/format'
 import { canRecord } from '@/core/engine'
@@ -16,15 +16,10 @@ interface BottomSheetProps {
   // Log tab
   visLog:          VisLogEntry[]
   players:         Player[]
+  /** When set, entries with id > cursor are greyed/struck-through and the
+   *  cursor entry itself is marked with a thick border + ▶ glyph. */
   truncateCursor:  EventId | null
-  editRange:       { from: EventId; to: EventId } | null
-  editActive:      boolean
   onSetCursor:     (cursor: EventId | null) => void
-  onLongPress:     (entryId: EventId) => void
-  onUndo:          () => void
-  onCopySelection: (ids: EventId[]) => void
-  onPaste:         () => void
-  onBeginEdit?:    () => void
 
   // More tab
   state:            DerivedGameState
@@ -37,14 +32,12 @@ interface BottomSheetProps {
   onEndGame:        () => void
 }
 
-// Half-height overlay anchored to the bottom of the screen. Sits above the
-// action zone (which stays visible behind / above the sheet so the recorder
-// can still see what state they're in). Tap the backdrop to dismiss.
+// Half-height overlay anchored to the bottom of the screen. Tap the
+// backdrop to dismiss.
 export function BottomSheet(props: BottomSheetProps) {
   if (!props.open) return null
   return (
     <div className="absolute inset-0 z-20 flex flex-col">
-      {/* Backdrop — top half. Tap to dismiss. */}
       <button
         type="button"
         onClick={props.onClose}
@@ -52,8 +45,6 @@ export function BottomSheet(props: BottomSheetProps) {
         style={{ background: 'rgba(0,0,0,0.45)' }}
         aria-label="Close sheet"
       />
-
-      {/* Sheet body — bottom half. */}
       <div
         className="flex-shrink-0 flex flex-col"
         style={{
@@ -63,7 +54,6 @@ export function BottomSheet(props: BottomSheetProps) {
           minHeight:    340,
         }}
       >
-        {/* Tab strip + close */}
         <div
           className="flex-shrink-0 flex items-stretch"
           style={{ borderBottom: '1px solid var(--color-border)' }}
@@ -79,8 +69,6 @@ export function BottomSheet(props: BottomSheetProps) {
             ✕
           </button>
         </div>
-
-        {/* Tab body */}
         <div className="flex-1 overflow-hidden">
           {props.activeTab === 'log' ? <LogTab {...props} /> : <MoreTab {...props} />}
         </div>
@@ -107,124 +95,35 @@ function TabBtn({ label, active, onClick }: { label: string; active: boolean; on
 }
 
 // ─── Log tab ─────────────────────────────────────────────────────────────────
-// Mirrors the old LogDrawer body — vis log entries with cursor / edit-range
-// visualisation, selection mode for multi-tap copy, Undo / Edit / Paste rail.
-
-const LONG_PRESS_MS = 500
+// Vis log entries with the truncate-cursor visualisation. Tap an entry
+// to set the cursor (rewind); tap the same entry again to clear.
+// Select / copy / paste / range-edit affordances have been removed —
+// "go back in time and re-record" via the cursor is the only correction
+// flow that lives here. (Inline single-event amend is a planned future
+// addition.)
 
 function LogTab(props: BottomSheetProps) {
-  const {
-    visLog, players, truncateCursor, editRange, editActive,
-    onSetCursor, onLongPress, onUndo, onCopySelection, onPaste, onBeginEdit,
-  } = props
+  const { visLog, players, truncateCursor, onSetCursor } = props
 
   const logRef = useRef<HTMLDivElement>(null)
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const longPressFired = useRef(false)
-  const [pressedId, setPressedId] = useState<EventId | null>(null)
-  const [selectionMode, setSelectionMode] = useState(false)
-  const [selectedIds, setSelectedIds] = useState<ReadonlySet<EventId>>(() => new Set())
 
   // Pin the scroll to the most-recent entry on open and whenever the log grows.
   useLayoutEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
   }, [visLog.length])
 
-  const enterSelection = (id: EventId) => {
-    setSelectionMode(true)
-    setSelectedIds(new Set([id]))
-  }
-  const cancelSelection = () => {
-    setSelectionMode(false)
-    setSelectedIds(new Set())
-  }
-  const toggleSelected = (id: EventId) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id); else next.add(id)
-      return next
-    })
-  }
-  const copySelected = () => {
-    const ids = [...selectedIds].sort((a, b) => a - b)
-    if (ids.length === 0) return
-    onCopySelection(ids)
-    cancelSelection()
-  }
-
-  const startPress = (id: EventId) => {
-    longPressFired.current = false
-    setPressedId(id)
-    if (longPressTimer.current) clearTimeout(longPressTimer.current)
-    longPressTimer.current = setTimeout(() => {
-      longPressFired.current = true
-      longPressTimer.current = null
-      setPressedId(null)
-      if (selectionMode) {
-        toggleSelected(id)
-      } else if (editActive) {
-        onLongPress(id)
-      } else {
-        enterSelection(id)
-      }
-    }, LONG_PRESS_MS)
-  }
-  const cancelPress = () => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current)
-      longPressTimer.current = null
-    }
-    setPressedId(null)
-  }
   const tapEntry = (id: EventId) => {
-    if (longPressFired.current) {
-      longPressFired.current = false
-      return
-    }
-    if (selectionMode) {
-      toggleSelected(id)
-      return
-    }
     onSetCursor(truncateCursor === id ? null : id)
   }
 
-  const longPressHint = selectionMode
-    ? 'Tap to toggle selection'
-    : editActive
-      ? 'Long-press to set range end'
-      : 'Long-press to select for copy'
-
   return (
     <div className="h-full flex flex-col">
-      {/* Toolbar */}
-      {selectionMode ? (
-        <div
-          className="flex-shrink-0 h-10 flex items-stretch text-xs font-semibold tracking-widest"
-          style={{
-            background: 'var(--color-warn-bg)',
-            color:      'var(--color-warn)',
-            borderBottom: '1px solid var(--color-warn)',
-          }}
-        >
-          <button onClick={cancelSelection} className="px-3 cursor-pointer" title="Exit selection">✕</button>
-          <div className="flex-1 flex items-center justify-center">{selectedIds.size} SELECTED</div>
-          <button onClick={copySelected} className="px-3 cursor-pointer" disabled={selectedIds.size === 0}>COPY</button>
-        </div>
-      ) : (
-        <div
-          className="flex-shrink-0 h-10 flex items-stretch text-xs"
-          style={{ borderBottom: '1px solid var(--color-border)' }}
-        >
-          <ToolBtn onClick={onUndo} disabled={visLog.length === 0}>↩ Undo</ToolBtn>
-          <ToolBtn onClick={() => setSelectionMode(true)} disabled={visLog.length === 0}>Select</ToolBtn>
-          {onBeginEdit && !editActive && (
-            <ToolBtn onClick={onBeginEdit} disabled={visLog.length === 0}>Edit</ToolBtn>
-          )}
-          <ToolBtn onClick={onPaste}>Paste</ToolBtn>
-        </div>
-      )}
-
-      {/* Log body */}
+      <div
+        className="flex-shrink-0 h-9 flex items-center justify-center px-3 text-xs"
+        style={{ borderBottom: '1px solid var(--color-border)', color: 'var(--color-muted)' }}
+      >
+        Tap any entry to rewind · tap again to cancel
+      </div>
       <div ref={logRef} className="flex-1 p-2 flex flex-col gap-1 overflow-y-auto">
         {visLog.length === 0 ? (
           <Label className="py-2 text-center block">No events yet</Label>
@@ -233,58 +132,30 @@ function LogTab(props: BottomSheetProps) {
             const color    = getVisLogColor(e.type)
             const muted    = isMutedLogEntry(e.type)
             const past     = truncateCursor !== null && e.id > truncateCursor
-            const isCursor = !selectionMode && truncateCursor !== null && e.id === truncateCursor
-            const inRange  = editRange !== null && e.id >= editRange.from && e.id <= editRange.to
-            const pressed  = pressedId === e.id
-            const selected = selectionMode && selectedIds.has(e.id)
+            const isCursor = truncateCursor !== null && e.id === truncateCursor
             return (
-              <div
+              <button
                 key={e.id}
                 onClick={() => tapEntry(e.id)}
-                onPointerDown={() => startPress(e.id)}
-                onPointerUp={cancelPress}
-                onPointerLeave={cancelPress}
-                onPointerCancel={cancelPress}
-                className="py-1.5 px-2.5 rounded text-[12px] cursor-pointer select-none"
+                className="py-1.5 px-2.5 rounded text-[13px] cursor-pointer select-none text-left"
                 style={{
                   borderLeft: `${isCursor ? 3 : 2}px solid ${color}`,
-                  background: selected
-                    ? `${color}33`
-                    : inRange
-                      ? 'var(--color-warn-bg)'
-                      : `${color}12`,
+                  background: `${color}12`,
                   color: muted ? 'var(--color-muted)' : color,
                   fontFamily: e.type === 'system' || e.type === 'point-start' ? 'var(--font-mono)' : 'var(--font-sans)',
                   opacity: past ? 0.4 : 1,
-                  textDecoration: past || inRange ? 'line-through' : 'none',
-                  outline: selected ? `2px solid ${color}` : pressed ? '2px solid var(--color-warn)' : 'none',
-                  transition: 'outline 120ms, background 120ms',
+                  textDecoration: past ? 'line-through' : 'none',
                 }}
-                title={isCursor ? 'Tap to cancel preview' : longPressHint}
+                title={isCursor ? 'Tap to cancel preview' : 'Tap to rewind to here'}
               >
-                {selected && <span style={{ marginRight: 4 }}>✓</span>}
                 {isCursor && <span style={{ marginRight: 4 }}>▶</span>}
                 {formatVisLogEntry(e, players)}
-              </div>
+              </button>
             )
           })
         )}
       </div>
     </div>
-  )
-}
-
-function ToolBtn({ children, onClick, disabled }: { children: React.ReactNode; onClick: () => void; disabled?: boolean }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="flex-1 cursor-pointer disabled:opacity-30 disabled:cursor-default"
-      style={{ color: 'var(--color-muted)', borderRight: '1px solid var(--color-border)' }}
-    >
-      {children}
-    </button>
   )
 }
 

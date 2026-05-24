@@ -4,7 +4,7 @@ import { useGameStore, effectiveSession } from './store'
 import { computeVisLog, deriveGameState } from './engine'
 import { deriveTeamsState } from './teams/engine'
 import { deriveScheduledGamesState, resolveGameConfig } from './games/engine'
-import type { DerivedGameState, VisLogEntry, GameSession, RecordingOptions, EventId, Notification, EditModeState } from './types'
+import type { DerivedGameState, VisLogEntry, GameSession, RecordingOptions, EventId, Notification } from './types'
 import type { TeamsState } from './teams/types'
 import type { ScheduledGame, ScheduledGameEvent } from './games/types'
 import type { TeamEvent } from './teams/types'
@@ -52,24 +52,7 @@ function resolveSessionWith(session: GameSession, teamsState: TeamsState, schedu
 
 // Single subscription to the session — re-derives only when session reference changes.
 //
-// When edit mode is active, the recording controls operate against the draft.
-// The selector returns the draft so the entire LiveEntry UI works against it
-// for free; the live session is read from useLiveSession when needed.
-
 export function useSession(): GameSession | null {
-  const stored = useGameStore(s => s.session)
-  const draft  = useGameStore(s => s.editMode?.draftSession ?? null)
-  const teamsState = useTeamsState()
-  const scheduledGames = useScheduledGames()
-  const active = draft ?? stored
-  return useMemo(
-    () => (active ? resolveSessionWith(active, teamsState, scheduledGames) : null),
-    [active, teamsState, scheduledGames],
-  )
-}
-
-/** The persisted live session, ignoring any edit-mode draft. */
-export function useLiveSession(): GameSession | null {
   const stored = useGameStore(s => s.session)
   const teamsState = useTeamsState()
   const scheduledGames = useScheduledGames()
@@ -77,10 +60,6 @@ export function useLiveSession(): GameSession | null {
     () => (stored ? resolveSessionWith(stored, teamsState, scheduledGames) : null),
     [stored, teamsState, scheduledGames],
   )
-}
-
-export function useEditMode(): EditModeState | null {
-  return useGameStore(s => s.editMode)
 }
 
 export function useNotification(): Notification | null {

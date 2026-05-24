@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   useSession, useDerivedState, useVisLog, useGameActions, useUiState, useRecordingOptions,
-  useTruncateCursor, useEditMode, useNotification,
+  useTruncateCursor, useNotification,
 } from '@/core/selectors'
-import { computeVisLog } from '@/core/engine'
-import { otherTeam, type EventId, type Player, type TeamId, type VisLogEntry } from '@/core/types'
+import { otherTeam, type Player, type TeamId, type VisLogEntry } from '@/core/types'
 import { isPickMode, pickActiveTeam, resolveContextLabel } from '@/core/pickModes'
 import { Header } from './Header'
 import { LogPeek } from './LogPeek'
@@ -39,10 +38,8 @@ export default function LiveEntry() {
   const actions          = useGameActions()
   const recordingOptions = useRecordingOptions()
   const truncateCursor   = useTruncateCursor()
-  const editMode         = useEditMode()
   const notification     = useNotification()
 
-  // Bottom sheet — opens on log-peek tap or on MORE button.
   const [sheetOpen, setSheetOpen] = useState(false)
   const [sheetTab, setSheetTab] = useState<SheetTab>('log')
   const openSheet = (tab: SheetTab) => { setSheetTab(tab); setSheetOpen(true) }
@@ -70,7 +67,6 @@ export default function LiveEntry() {
 
   const firstPossession = !!activeTeam && phase === 'in-play' && isFirstPossession(effectiveVisLog, activeTeam)
 
-  // Auto-advance to LineSelection after a goal or half-time.
   useEffect(() => {
     if (truncateCursor !== null) return
     if (phase === 'point-over' || phase === 'half-time') actions.nextPoint()
@@ -85,27 +81,6 @@ export default function LiveEntry() {
 
   const isGameOver = phase === 'game-over'
   const previewing = truncateCursor !== null
-  const editActive = !!editMode?.active
-  const editRange  = editActive && editMode?.removeFromId !== null && editMode?.removeToId !== null
-    ? { from: editMode.removeFromId, to: editMode.removeToId }
-    : null
-
-  const onLongPress = (entryId: EventId) => {
-    if (editActive) {
-      const fromId = truncateCursor ?? entryId
-      void actions.setEditRange(fromId, entryId)
-    }
-  }
-
-  const onPaste = () => {
-    const lastId = visLog.length > 0 ? visLog[visLog.length - 1].id : null
-    const targetId = truncateCursor ?? lastId
-    if (targetId === null) {
-      actions.dismissNotification()
-      return
-    }
-    void actions.pasteFromClipboard(targetId)
-  }
 
   const defendingShort = teams[otherTeam(state.possession)].short
   const activeTeamColor = teams[activeTeam].color
@@ -118,7 +93,6 @@ export default function LiveEntry() {
         onBack={actions.backToGameList}
       />
 
-      {/* Mode strip — mutually exclusive. */}
       {pickMode && (
         <button
           onClick={actions.cancelPickMode}
@@ -134,40 +108,7 @@ export default function LiveEntry() {
         </button>
       )}
 
-      {editActive && !pickMode && (
-        <div
-          className="flex-shrink-0 h-8 w-full flex items-stretch text-[11px] font-semibold tracking-widest"
-          style={{
-            background: 'var(--color-warn-bg)',
-            color:      'var(--color-warn)',
-            borderBottom: '1px solid var(--color-warn)',
-          }}
-        >
-          <div className="flex-1 flex items-center justify-center">
-            {editMode?.removeFromId !== null && editMode?.removeToId !== null
-              ? `EDITING #${editMode.removeFromId}–#${editMode.removeToId}`
-              : 'EDIT MODE — long-press a log entry to set the range end'}
-          </div>
-          {editMode?.removeFromId !== null && editMode?.removeToId !== null && (
-            <button
-              onClick={() => actions.commitEdit()}
-              className="px-3 cursor-pointer"
-              style={{ borderLeft: '1px solid var(--color-warn)' }}
-            >
-              DONE
-            </button>
-          )}
-          <button
-            onClick={() => actions.cancelEdit()}
-            className="px-3 cursor-pointer"
-            style={{ borderLeft: '1px solid var(--color-warn)' }}
-          >
-            CANCEL
-          </button>
-        </div>
-      )}
-
-      {previewing && !editActive && !pickMode && (
+      {previewing && !pickMode && (
         <button
           onClick={() => actions.setTruncateCursor(null)}
           className="flex-shrink-0 h-8 w-full flex items-center justify-center text-[11px] font-semibold tracking-widest cursor-pointer"
@@ -203,16 +144,15 @@ export default function LiveEntry() {
         visLog={visLog}
         players={[...session.gameConfig.rosters.A, ...session.gameConfig.rosters.B]}
         onOpen={() => openSheet('log')}
+        onUndo={actions.undo}
       />
 
-      {/* Main body: PlayerColumn | PassLane | EventColumn */}
       <div className="flex-1 relative overflow-hidden" style={{ minWidth: 0 }}>
         {isGameOver ? (
           <GameOverBanner
             score={state.score}
             teams={teams}
             onBack={actions.backToGameList}
-            onEdit={editActive ? undefined : actions.beginEdit}
           />
         ) : (
           <div className="h-full grid" style={{ gridTemplateColumns: '1fr auto 1fr' }}>
@@ -254,17 +194,10 @@ export default function LiveEntry() {
           activeTab={sheetTab}
           onTabChange={setSheetTab}
           onClose={() => setSheetOpen(false)}
-          visLog={editActive && editMode ? computeVisLog(editMode.baselineSession.rawLog) : visLog}
+          visLog={visLog}
           players={[...session.gameConfig.rosters.A, ...session.gameConfig.rosters.B]}
-          truncateCursor={editActive ? null : truncateCursor}
-          editRange={editRange}
-          editActive={editActive}
+          truncateCursor={truncateCursor}
           onSetCursor={actions.setTruncateCursor}
-          onLongPress={onLongPress}
-          onUndo={actions.undo}
-          onCopySelection={actions.copyEventsToClipboard}
-          onPaste={onPaste}
-          onBeginEdit={editActive ? undefined : actions.beginEdit}
           state={state}
           recordingOptions={recordingOptions}
           onInjurySub={actions.triggerInjurySub}
@@ -280,12 +213,11 @@ export default function LiveEntry() {
 }
 
 function GameOverBanner({
-  score, teams, onBack, onEdit,
+  score, teams, onBack,
 }: {
   score: { A: number; B: number }
   teams: Record<TeamId, { name: string; short: string; color: string }>
   onBack: () => void
-  onEdit?: () => void
 }) {
   const winner: TeamId = score.A >= score.B ? 'A' : 'B'
   return (
@@ -296,10 +228,7 @@ function GameOverBanner({
           {score.A} – {score.B}
         </div>
         <div className="text-sm text-muted">{teams[winner].name} wins</div>
-        <div className="flex gap-2">
-          <Btn variant="ghost" size="md" onClick={onBack}>Back to games</Btn>
-          {onEdit && <Btn variant="ghost" size="md" onClick={onEdit}>Edit log</Btn>}
-        </div>
+        <Btn variant="ghost" size="md" onClick={onBack}>Back to games</Btn>
       </div>
     </div>
   )

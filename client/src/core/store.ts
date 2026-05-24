@@ -10,24 +10,17 @@ import type {
   GameSession,
   RecordingOptions,
   DerivedGameState,
-  RawEvent,
   Notification,
-  EditModeState,
 } from './types'
 import { otherTeam, DEFAULT_RECORDING_OPTIONS } from './types'
 import {
   deriveGameState,
-  computeVisLog,
   canRecord,
   appendEvents,
-  validateSpliceBlock,
-  nextEventId,
-  resolveLogForDerivation,
   type RawEventInput,
 } from './engine'
 import { PICK_MODES, isPickMode } from './pickModes'
 import { seedTeamsAndGames } from './data'
-import { buildEnvelope, serialize, tryParse } from './clipboard'
 import type { TeamEvent, TeamEventInput, GlobalTeamId } from './teams/types'
 import type { ScheduledGameEvent, ScheduledGameEventInput } from './games/types'
 import { deriveTeamsState } from './teams/engine'
@@ -73,12 +66,9 @@ interface GameStore {
    *  recorded — the action prepends a `truncate` event so the dropped tail
    *  is committed atomically with whatever the user did next. */
   truncateCursor: EventId | null
-  /** Banner notification shown for copy/paste/edit-commit feedback. One at a
-   *  time; auto-clears via setTimeout. */
+  /** Banner notification shown for transient feedback (mostly stoppage
+   *  acks today). One at a time; auto-clears via setTimeout. */
   notification: Notification | null
-  /** Active edit-mode session (post-game splice rewrite). Recording controls
-   *  operate on draftSession via the useSession selector. */
-  editMode: EditModeState | null
 
   // Game / session actions
   selectGame:        (gameId: number, pullingTeam: TeamId) => void
@@ -116,17 +106,6 @@ interface GameStore {
 
   // Notifications
   dismissNotification: () => void
-
-  // Copy / paste
-  copySliceToClipboard:  (fromId: EventId, toId: EventId) => Promise<void>
-  copyEventsToClipboard: (ids: EventId[]) => Promise<void>
-  pasteFromClipboard:    (afterEventId: EventId) => Promise<void>
-
-  // Edit mode
-  beginEdit:    () => void
-  setEditRange: (fromId: EventId, toId: EventId) => void
-  commitEdit:   () => void
-  cancelEdit:   () => void
 
   // ── Teams + scheduled games management (append-only) ──────────────────────
   // Every CRUD funnels through the appendTeam/Game helpers — never a direct
@@ -276,19 +255,17 @@ export function effectiveSession(session: GameSession, cursor: EventId | null): 
   return cursor === null ? session : { ...session, rawLog: session.rawLog.filter(e => e.id <= cursor) }
 }
 
-// The session every recording control reads from. When edit mode is active,
-// the controls operate on the draft instead of the real session — this is the
-// single glue point that lets the entire stat-recording UI work in edit mode
-// for free.
-export function activeSession(state: { session: GameSession | null; editMode: EditModeState | null }): GameSession | null {
-  if (state.editMode?.active) return state.editMode.draftSession
+// The session every recording control reads from. Kept as a wrapper so
+// any future "draft session" shape (e.g. inline-amend preview) slots in
+// without touching every call site.
+export function activeSession(state: { session: GameSession | null }): GameSession | null {
   return state.session
 }
 
 // ─── Notification banner ──────────────────────────────────────────────────────
-
-const SUCCESS_TTL_MS = 3500
-const FAILURE_TTL_MS = 6000
+// Banner shown for transient feedback. Kept minimal — only an idle-timer
+// reset helper for now; the notify() helper went away when copy/paste/edit
+// did, since nothing else writes failure notifications today.
 
 let notificationTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -297,57 +274,6 @@ function clearNotificationTimer() {
     clearTimeout(notificationTimer)
     notificationTimer = null
   }
-}
-
-function notify(
-  set: (partial: Partial<GameStore>) => void,
-  kind: 'success' | 'failure',
-  message: string,
-  detail?: string,
-): void {
-  clearNotificationTimer()
-  const ttl = kind === 'success' ? SUCCESS_TTL_MS : FAILURE_TTL_MS
-  set({ notification: { kind, message, detail, expiresAt: Date.now() + ttl } })
-  notificationTimer = setTimeout(() => {
-    notificationTimer = null
-    useGameStore.setState({ notification: null })
-  }, ttl)
-}
-
-// Per-event-type count over a slice — feeds the success-banner detail line.
-function summariseEvents(events: RawEvent[]): string {
-  const counts = new Map<string, number>()
-  for (const e of events) counts.set(e.type, (counts.get(e.type) ?? 0) + 1)
-  const labels: Record<string, string> = {
-    'point-start': 'point-start',
-    'pull': 'pull',
-    'pull-bonus': 'pull-bonus',
-    'brick': 'brick',
-    'possession': 'possession',
-    'turnover-throw-away': 'throw away',
-    'turnover-receiver-error': 'receiver error',
-    'turnover-stall': 'stall',
-    'block': 'block',
-    'intercept': 'intercept',
-    'goal': 'goal',
-    'injury-sub': 'injury sub',
-    'half-time': 'half-time',
-    'end-game': 'end-game',
-    'foul': 'foul',
-    'pick': 'pick',
-    'timeout': 'timeout',
-    'system': 'note',
-    'undo': 'undo',
-    'amend': 'amend',
-    'truncate': 'truncate',
-    'splice-block': 'splice',
-  }
-  const parts: string[] = []
-  for (const [type, n] of counts) {
-    const label = labels[type] ?? type
-    parts.push(n === 1 ? `1 ${label}` : `${n} ${label}s`)
-  }
-  return parts.join(', ')
 }
 
 // ─── recordVia ────────────────────────────────────────────────────────────────
@@ -368,8 +294,8 @@ function recordVia(
   build: (state: DerivedGameState) => RawEventInput[] | null,
   extra?: Partial<GameStore>,
 ): boolean {
-  const { session, editMode, truncateCursor } = get()
-  const target = activeSession({ session, editMode })
+  const { session, truncateCursor } = get()
+  const target = activeSession({ session })
   if (!target) return false
   const state = deriveGameState(effectiveSession(target, truncateCursor))
   const events = build(state)
@@ -378,19 +304,11 @@ function recordVia(
     ? [{ pointIndex: state.pointIndex, type: 'truncate', truncateAfterId: truncateCursor }]
     : []
   const updated = appendEvents(target, [...head, ...events])
-  if (editMode?.active) {
-    set({
-      editMode: { ...editMode, draftSession: updated },
-      truncateCursor: null,
-      ...extra,
-    })
-  } else {
-    set({
-      session: updated,
-      truncateCursor: null,
-      ...extra,
-    })
-  }
+  set({
+    session: updated,
+    truncateCursor: null,
+    ...extra,
+  })
   return true
 }
 
@@ -410,7 +328,6 @@ export const useGameStore = create<GameStore>()(
       showEventMenu:     false,
       truncateCursor:    null,
       notification:      null,
-      editMode:          null,
       recordingOptions:  DEFAULT_RECORDING_OPTIONS,
 
       // ── selectGame ──────────────────────────────────────────────────────────
@@ -429,7 +346,6 @@ export const useGameStore = create<GameStore>()(
           selPuller:      null,
           showEventMenu:  false,
           truncateCursor: null,
-          editMode:       null,
         })
       },
 
@@ -452,18 +368,13 @@ export const useGameStore = create<GameStore>()(
       // emits 'point-start' carrying lineA/lineB. For an injury sub mid-point,
       // emits a separate 'injury-sub' event for each team whose line changed.
       confirmLine(lineA, lineB) {
-        const { session, editMode, isInjurySub } = get()
-        const target = activeSession({ session, editMode })
+        const { session, isInjurySub } = get()
+        const target = activeSession({ session })
         if (!target) return
 
         const state = deriveGameState(target)
         const idsA  = lineA.map(p => p.id)
         const idsB  = lineB.map(p => p.id)
-
-        const writeBack = (next: GameSession): Partial<GameStore> =>
-          editMode?.active
-            ? { editMode: { ...editMode, draftSession: next } }
-            : { session: next }
 
         if (isInjurySub) {
           const events: RawEventInput[] = []
@@ -475,7 +386,7 @@ export const useGameStore = create<GameStore>()(
             events.push({ pointIndex: state.pointIndex, type: 'injury-sub', teamId: 'B', line: idsB })
           }
           set({
-            ...writeBack(events.length === 0 ? target : appendEvents(target, events)),
+            session: events.length === 0 ? target : appendEvents(target, events),
             screen:  'live-entry',
             isInjurySub: false,
             uiMode:  'idle',
@@ -488,7 +399,7 @@ export const useGameStore = create<GameStore>()(
           { pointIndex: state.pointIndex, type: 'point-start', lineA: idsA, lineB: idsB },
         ])
         set({
-          ...writeBack(updated),
+          session:   updated,
           screen:    'live-entry',
           uiMode:    'idle',
           selPuller: null,
@@ -497,8 +408,8 @@ export const useGameStore = create<GameStore>()(
 
       // ── tapPlayer ───────────────────────────────────────────────────────────
       tapPlayer(player) {
-        const { session, editMode, uiMode, truncateCursor } = get()
-        const target = activeSession({ session, editMode })
+        const { session, uiMode, truncateCursor } = get()
+        const target = activeSession({ session })
         if (!target) return
         // Branch on the cursor-aware state so the canvas tap matches what the
         // user is looking at; recordVia takes care of the truncate prepend.
@@ -599,8 +510,8 @@ export const useGameStore = create<GameStore>()(
 
       // ── triggerReceiverError ────────────────────────────────────────────────
       triggerReceiverError() {
-        const { session, editMode } = get()
-        const target = activeSession({ session, editMode })
+        const { session } = get()
+        const target = activeSession({ session })
         if (!target) return
         // Pick modes are tied to live state's holder/possession; entering one
         // while previewing would point at stale players. Drop the preview so
@@ -713,7 +624,6 @@ export const useGameStore = create<GameStore>()(
           showEventMenu:  false,
           isInjurySub:    false,
           truncateCursor: null,
-          editMode:       null,
         })
       },
 
@@ -793,277 +703,6 @@ export const useGameStore = create<GameStore>()(
         set({ notification: null })
       },
 
-      // ── copySliceToClipboard ───────────────────────────────────────────────
-      // Slice session.rawLog over [fromId..toId] and write a UST envelope to
-      // the system clipboard. Structural events are stripped at envelope-build.
-      async copySliceToClipboard(fromId, toId) {
-        const { session } = get()
-        if (!session) return
-        const lo = Math.min(fromId, toId)
-        const hi = Math.max(fromId, toId)
-        const slice = session.rawLog.filter(e => e.id >= lo && e.id <= hi)
-        const env = buildEnvelope(session.gameConfig.id, slice)
-        if (env.events.length === 0) {
-          notify(set, 'failure', 'Nothing to copy', 'Range had no copyable events')
-          return
-        }
-        try {
-          await navigator.clipboard.writeText(serialize(env))
-        } catch {
-          notify(set, 'failure', 'Clipboard unavailable', 'Browser blocked clipboard write')
-          return
-        }
-        notify(set, 'success', `Copied ${env.events.length} events`, summariseEvents(env.events))
-      },
-
-      // ── copyEventsToClipboard ──────────────────────────────────────────────
-      // Pick the named ids out of session.rawLog (preserving log order) and
-      // write a UST envelope to the system clipboard. Selection may be
-      // non-contiguous; paste validation handles continuity at the destination.
-      async copyEventsToClipboard(ids) {
-        const { session } = get()
-        if (!session) return
-        const wanted = new Set(ids)
-        const slice = session.rawLog.filter(e => wanted.has(e.id))
-        const env = buildEnvelope(session.gameConfig.id, slice)
-        if (env.events.length === 0) {
-          notify(set, 'failure', 'Nothing to copy', 'Selection had no copyable events')
-          return
-        }
-        try {
-          await navigator.clipboard.writeText(serialize(env))
-        } catch {
-          notify(set, 'failure', 'Clipboard unavailable', 'Browser blocked clipboard write')
-          return
-        }
-        notify(set, 'success', `Copied ${env.events.length} events`, summariseEvents(env.events))
-      },
-
-      // ── pasteFromClipboard ─────────────────────────────────────────────────
-      // Read the system clipboard, parse a UST envelope, validate continuity,
-      // and commit the splice on the live session. No raw-log write on
-      // rejection — the failure banner explains why.
-      async pasteFromClipboard(afterEventId) {
-        const { session, editMode } = get()
-        const target = activeSession({ session, editMode })
-        if (!target) return
-        let text: string
-        try {
-          text = await navigator.clipboard.readText()
-        } catch {
-          notify(set, 'failure', 'Clipboard unavailable', 'Browser blocked clipboard read')
-          return
-        }
-        const env = tryParse(text)
-        if (!env) {
-          notify(set, 'failure', "Clipboard isn't a UST log slice")
-          return
-        }
-        if (env.gameId !== target.gameConfig.id) {
-          notify(set, 'failure', 'Clipboard is from a different game')
-          return
-        }
-
-        // Layout the freshly-allocated ids: inner events first, then wrapper,
-        // then provenance row. Future nextEventId reads the rawLog tail (the
-        // provenance row), so the inner events being below the wrapper id
-        // means later appends never collide with them.
-        const startId    = nextEventId(target)
-        const ts = Date.now()
-        const prefixState = deriveGameState({
-          ...target,
-          rawLog: target.rawLog.filter(e => e.id <= afterEventId),
-        })
-        const inner: RawEvent[] = env.events.map((e, i) => ({
-          ...e,
-          id: startId + i,
-          timestamp: ts,
-          pointIndex: prefixState.pointIndex,
-        } as RawEvent))
-        const wrapperId = startId + inner.length
-        const systemId  = wrapperId + 1
-
-        const wrapper: RawEvent = {
-          id: wrapperId,
-          timestamp: ts,
-          pointIndex: prefixState.pointIndex,
-          type: 'splice-block',
-          afterEventId,
-          removeFromId: null,
-          removeToId:   null,
-          events: inner,
-        }
-        const provenance: RawEvent = {
-          id: systemId,
-          timestamp: ts,
-          pointIndex: prefixState.pointIndex,
-          type: 'system',
-          text: `Pasted ${inner.length} events from #${env.fromEventId}–#${env.toEventId}`,
-        }
-
-        const result = validateSpliceBlock(target, wrapper as RawEvent & { type: 'splice-block' })
-        if (!result.ok) {
-          notify(set, 'failure', 'Cannot paste', result.reason)
-          return
-        }
-
-        const updated: GameSession = { ...target, rawLog: [...target.rawLog, wrapper, provenance] }
-        if (editMode?.active) {
-          set({ editMode: { ...editMode, draftSession: updated }, truncateCursor: null })
-        } else {
-          set({ session: updated, truncateCursor: null })
-        }
-        notify(set, 'success', `Pasted ${inner.length} events`, summariseEvents(inner))
-      },
-
-      // ── beginEdit ──────────────────────────────────────────────────────────
-      // Snapshot the live session as baseline; clone for draft. Recording
-      // controls operate against draftSession via the activeSession router.
-      beginEdit() {
-        const { session } = get()
-        if (!session) return
-        const draft: GameSession = { ...session, rawLog: [...session.rawLog] }
-        set({
-          editMode: {
-            active:          true,
-            baselineSession: session,
-            draftSession:    draft,
-            removeFromId:    null,
-            removeToId:      null,
-            draftEvents:     [],
-          },
-          screen:         'live-entry',
-          truncateCursor: null,
-          uiMode:         'idle',
-          selPuller:      null,
-          showEventMenu:  false,
-        })
-      },
-
-      // ── setEditRange ───────────────────────────────────────────────────────
-      // Mark the range to replace. The draft retains the full baseline rawLog
-      // and gets a synthetic truncate appended at id baselineMaxId+1 to drop
-      // every entry from removeFromId onward. This way the canvas reflects
-      // state at the splice point, fresh events get ids starting at
-      // baselineMaxId+2 (no collisions with baseline), and at commit time
-      // the fresh tail is everything in draftResolved with id > baselineMaxId.
-      setEditRange(fromId, toId) {
-        const { editMode } = get()
-        if (!editMode?.active) return
-        const lo = Math.min(fromId, toId)
-        const hi = Math.max(fromId, toId)
-        const baseline = editMode.baselineSession
-        const resolved = resolveLogForDerivation(baseline.rawLog)
-        const fromIdx = resolved.findIndex(e => e.id === lo)
-        if (fromIdx === -1) {
-          notify(set, 'failure', 'Edit range: start id not in resolved log')
-          return
-        }
-        const idBefore = fromIdx === 0 ? 0 : resolved[fromIdx - 1].id
-        const baselineMaxId = baseline.rawLog.length === 0 ? 0 : baseline.rawLog[baseline.rawLog.length - 1].id
-        const truncateEv: RawEvent = {
-          id: baselineMaxId + 1,
-          timestamp: Date.now(),
-          pointIndex: 0,
-          type: 'truncate',
-          truncateAfterId: idBefore,
-        }
-        set({
-          editMode: {
-            ...editMode,
-            draftSession: { ...baseline, rawLog: [...baseline.rawLog, truncateEv] },
-            removeFromId: lo,
-            removeToId:   hi,
-            draftEvents:  [],
-          },
-          truncateCursor: null,
-          selPuller:      null,
-        })
-      },
-
-      // ── commitEdit ─────────────────────────────────────────────────────────
-      // Build a splice-block from the fresh-recorded tail of draftSession,
-      // validate against baseline, and commit on baseline. Rejection keeps
-      // editMode active so the user can fix and retry.
-      commitEdit() {
-        const { editMode } = get()
-        if (!editMode?.active) return
-        if (editMode.removeFromId === null || editMode.removeToId === null) {
-          notify(set, 'failure', 'Select a range first')
-          return
-        }
-        const baseline = editMode.baselineSession
-        const baselineMaxId = baseline.rawLog.length === 0 ? 0 : baseline.rawLog[baseline.rawLog.length - 1].id
-        // Resolved fresh tail: events recorded after edit-mode opened, with
-        // structural noise (undo/truncate during edit) already collapsed.
-        const draftResolved = computeVisLog(editMode.draftSession.rawLog)
-        const inner: RawEvent[] = draftResolved.filter(e => e.id > baselineMaxId) as RawEvent[]
-
-        // Find anchor in baseline's resolved log.
-        const baselineResolved = computeVisLog(baseline.rawLog)
-        const fromIdx = baselineResolved.findIndex(e => e.id === editMode.removeFromId)
-        const toIdx   = baselineResolved.findIndex(e => e.id === editMode.removeToId)
-        if (fromIdx === -1 || toIdx === -1 || fromIdx === 0) {
-          notify(set, 'failure', 'Invalid range')
-          return
-        }
-        const afterEventId = baselineResolved[fromIdx - 1].id
-
-        // Renumber inner events with fresh ids continuing from baseline. Same
-        // layout as paste: inner first, wrapper next, provenance last.
-        const startId = nextEventId(baseline)
-        const ts = Date.now()
-        const renumberedInner: RawEvent[] = inner.map((e, i) => ({
-          ...e,
-          id: startId + i,
-          timestamp: ts,
-        } as RawEvent))
-        const wrapperId = startId + renumberedInner.length
-        const systemId  = wrapperId + 1
-
-        const wrapper: RawEvent = {
-          id: wrapperId,
-          timestamp: ts,
-          pointIndex: 0,
-          type: 'splice-block',
-          afterEventId,
-          removeFromId: editMode.removeFromId,
-          removeToId:   editMode.removeToId,
-          events: renumberedInner,
-        }
-
-        const result = validateSpliceBlock(baseline, wrapper as RawEvent & { type: 'splice-block' })
-        if (!result.ok) {
-          notify(set, 'failure', 'Cannot commit edit', result.reason)
-          return
-        }
-
-        const summary = summariseEvents(renumberedInner)
-        const provenanceText =
-          renumberedInner.length === 0
-            ? `Deleted events #${editMode.removeFromId}–#${editMode.removeToId} (edit mode)`
-            : `Replaced events #${editMode.removeFromId}–#${editMode.removeToId} with ${renumberedInner.length} new events (edit mode)`
-
-        const provenance: RawEvent = {
-          id: systemId,
-          timestamp: ts,
-          pointIndex: 0,
-          type: 'system',
-          text: provenanceText,
-        }
-        const updated: GameSession = { ...baseline, rawLog: [...baseline.rawLog, wrapper, provenance] }
-        set({
-          session: updated,
-          editMode: null,
-          truncateCursor: null,
-        })
-        notify(set, 'success', renumberedInner.length === 0 ? 'Edit committed (delete)' : 'Edit committed', summary || provenanceText)
-      },
-
-      // ── cancelEdit ─────────────────────────────────────────────────────────
-      cancelEdit() {
-        set({ editMode: null, truncateCursor: null, selPuller: null, uiMode: 'idle' })
-      },
 
       // ── Teams CRUD (all append-only) ───────────────────────────────────────
       // Every action funnels through `appendTeamEvents` — never a direct
@@ -1155,7 +794,6 @@ export const useGameStore = create<GameStore>()(
           selPuller:         null,
           showEventMenu:     false,
           truncateCursor:    null,
-          editMode:          null,
           notification:      null,
         })
       },
