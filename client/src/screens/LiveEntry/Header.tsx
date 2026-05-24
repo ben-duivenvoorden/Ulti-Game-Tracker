@@ -19,7 +19,7 @@ export function Header({ teams, score, onBack }: HeaderProps) {
   const names = pickDisplayNames(teams.A, teams.B, NAME_FIT_THRESHOLD)
   return (
     <div
-      className="flex-shrink-0 flex items-center justify-between px-3 h-12"
+      className="flex-shrink-0 flex items-center justify-between px-3 h-16"
       style={{ borderBottom: '1px solid var(--color-border)' }}
     >
       <button

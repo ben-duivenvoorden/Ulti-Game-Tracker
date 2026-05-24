@@ -66,8 +66,11 @@ export default function TeamsManager() {
   // ─── List view (default) ──────────────────────────────────────────────────
   return (
     <div className="h-full flex flex-col bg-bg text-content">
-      <div className="flex-shrink-0 h-12 border-b border-border flex items-center justify-between px-3">
-        <div className="text-base font-bold">Teams</div>
+      <div className="flex-shrink-0 h-16 border-b border-border flex items-center justify-between px-4">
+        <div>
+          <Label block className="mb-0.5">TEAMS MANAGER</Label>
+          <div className="text-base font-bold leading-tight">Roster</div>
+        </div>
         <Btn variant="primary" size="md" onClick={closeTeamsManager}>Done</Btn>
       </div>
 
@@ -148,7 +151,7 @@ function NewTeamView({ onCreate, onCancel }: {
 
   return (
     <div className="h-full flex flex-col bg-bg text-content">
-      <div className="flex-shrink-0 flex items-center justify-between px-3 h-12 border-b border-border">
+      <div className="flex-shrink-0 flex items-center justify-between px-3 h-16 border-b border-border">
         <button
           onClick={onCancel}
           className="text-muted hover:text-content transition-colors cursor-pointer text-lg leading-none"
@@ -184,7 +187,7 @@ function TeamDetailView({ team, roster, onBack, onEditTeam, onArchive, onAddPlay
 }) {
   return (
     <div className="h-full flex flex-col bg-bg text-content">
-      <div className="flex-shrink-0 flex items-center justify-between px-3 h-12 border-b border-border">
+      <div className="flex-shrink-0 flex items-center justify-between px-3 h-16 border-b border-border">
         <button
           onClick={onBack}
           className="text-muted hover:text-content transition-colors cursor-pointer text-lg leading-none"

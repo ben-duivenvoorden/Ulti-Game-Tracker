@@ -55,7 +55,7 @@ export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
     <div className="h-full flex flex-col bg-bg text-content">
       {/* Header */}
       <div
-        className="flex-shrink-0 flex items-center justify-between px-3 h-12"
+        className="flex-shrink-0 flex items-center justify-between px-3 h-16"
         style={{ borderBottom: '1px solid var(--color-border)' }}
       >
         <button

@@ -72,7 +72,7 @@ export default function LineSelection() {
           regardless of how wide the Confirm button is. The score's middle
           column has page_width − 2 × side_width to work with. */}
       <div
-        className="flex-shrink-0 grid items-center h-12"
+        className="flex-shrink-0 grid items-center h-16"
         style={{
           gridTemplateColumns: '100px 1fr 100px',
           borderBottom: '1px solid var(--color-border)',
