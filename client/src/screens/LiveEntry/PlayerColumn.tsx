@@ -53,9 +53,17 @@ export function PlayerColumn(props: PlayerColumnProps) {
               boxShadow:     isActive ? `0 0 14px ${teamColor}66` : 'none',
             }}
           >
-            <span className="block w-full text-center truncate" style={{ fontSize: 19 }}>{first}</span>
+            <span
+              className="block w-full text-center truncate"
+              style={{ fontSize: 'clamp(15px, 5vw, 22px)' }}
+            >
+              {first}
+            </span>
             {rest && (
-              <span className="block w-full text-center truncate" style={{ fontSize: 17, opacity: 0.85 }}>
+              <span
+                className="block w-full text-center truncate"
+                style={{ fontSize: 'clamp(13px, 4.2vw, 19px)', opacity: 0.85 }}
+              >
                 {rest}
               </span>
             )}

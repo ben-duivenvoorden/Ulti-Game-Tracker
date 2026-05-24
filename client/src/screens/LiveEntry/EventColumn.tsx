@@ -4,13 +4,10 @@ import { canRecord } from '@/core/engine'
 interface EventColumnProps {
   state: DerivedGameState
   recordingOptions: RecordingOptions
-  /** True until the active team's current possession run has at least one
-   *  pass recorded — Goal / Receiver Error stay disabled until then. */
   firstPossession: boolean
-  /** A puller has been selected in the player column (awaiting-pull only). */
   pullerSelected: boolean
 
-  // ── In-play actions ────────────────────────────────────────────────────
+  // In-play
   onGoal:          () => void
   onThrowaway:     () => void
   onReceiverError: () => void
@@ -18,33 +15,30 @@ interface EventColumnProps {
   onIntercept:     () => void
   onStall:         () => void
 
-  // ── Awaiting-pull actions ──────────────────────────────────────────────
+  // Awaiting-pull
   onPull:      () => void
   onPullBonus: () => void
   onBrick:     () => void
 
-  /** Opens the bottom sheet's More tab (stoppages, manual half-time, etc). */
   onMore: () => void
 }
 
-type Tone = 'success' | 'warn' | 'block' | 'primary' | 'neutral' | 'danger' | 'stall'
+// Solid colour + inverted text for each event button. The colours
+// mirror format.ts / index.css's --color-<type> tokens so the button
+// for a Goal looks the same colour as the Goal entry in the log.
+//
+// Each event is its own button (no submenus). The set varies with
+// phase; the MORE button is constant at the bottom.
 
 interface EventBtnDef {
   label:    string
-  tone:     Tone
+  fg:       string  // text colour (also the button background)
+  ink:      string  // text colour used on the solid fill — '#fff' or '#111'
   enabled:  boolean
   onTap:    () => void
-  /** When true, the row is rendered but visibly empty (keeps the column
-   *  count stable across configuration changes). */
   hidden?:  boolean
 }
 
-// Flat vertical list of event buttons. The set depends on phase:
-//  - in-play: Goal / Throwaway / Receiver Error / Block / Intercept (+ Stall when enabled)
-//  - awaiting-pull: Pull / Pull Bonus (opt) / Brick (opt)
-//
-// Plus a constant MORE button at the bottom that opens the More sheet.
-// Each event is its own button — flat structure, no submenus.
 export function EventColumn(props: EventColumnProps) {
   const { state, recordingOptions, firstPossession, pullerSelected } = props
   const phase = state.gamePhase
@@ -55,37 +49,43 @@ export function EventColumn(props: EventColumnProps) {
   const inPlayButtons: EventBtnDef[] = [
     {
       label: 'Goal',
-      tone:  'success',
+      fg:    'var(--color-success)',
+      ink:   '#fff',
       enabled: inPlay && hasHolder && !firstPossession && canRecord(state, 'goal'),
       onTap: props.onGoal,
     },
     {
-      label: 'Throwaway',
-      tone:  'warn',
+      label: 'Throw Away',
+      fg:    'var(--color-danger)',
+      ink:   '#fff',
       enabled: inPlay && hasHolder && canRecord(state, 'turnover-throw-away'),
       onTap: props.onThrowaway,
     },
     {
       label: 'Receiver Error',
-      tone:  'danger',
+      fg:    'var(--color-warn)',
+      ink:   '#111',
       enabled: inPlay && hasHolder && !firstPossession && canRecord(state, 'turnover-receiver-error'),
       onTap: props.onReceiverError,
     },
     {
-      label: 'Block',
-      tone:  'block',
+      label: 'Blocked by …',
+      fg:    'var(--color-block)',
+      ink:   '#fff',
       enabled: inPlay && canRecord(state, 'block'),
       onTap: props.onBlock,
     },
     {
-      label: 'Intercept',
-      tone:  'block',
+      label: 'Intercepted by …',
+      fg:    'var(--color-intercept)',
+      ink:   '#111',
       enabled: inPlay && canRecord(state, 'intercept'),
       onTap: props.onIntercept,
     },
     {
       label: 'Stall',
-      tone:  'stall',
+      fg:    'var(--color-stall)',
+      ink:   '#fff',
       hidden: !recordingOptions.stall,
       enabled: inPlay && hasHolder && canRecord(state, 'turnover-stall'),
       onTap: props.onStall,
@@ -95,20 +95,23 @@ export function EventColumn(props: EventColumnProps) {
   const awaitingPullButtons: EventBtnDef[] = [
     {
       label: 'Pull',
-      tone:  'primary',
+      fg:    'var(--color-team-a)',
+      ink:   '#fff',
       enabled: awaitingPull && pullerSelected && canRecord(state, 'pull'),
       onTap: props.onPull,
     },
     {
-      label: 'Bonus',
-      tone:  'primary',
+      label: 'Pull Distance Bonus',
+      fg:    'var(--color-pull-bonus)',
+      ink:   '#fff',
       hidden: !recordingOptions.pullBonus,
       enabled: awaitingPull && pullerSelected && canRecord(state, 'pull-bonus'),
       onTap: props.onPullBonus,
     },
     {
       label: 'Brick',
-      tone:  'warn',
+      fg:    'var(--color-brick)',
+      ink:   '#fff',
       hidden: !recordingOptions.brick,
       enabled: awaitingPull && pullerSelected && canRecord(state, 'brick'),
       onTap: props.onBrick,
@@ -124,42 +127,35 @@ export function EventColumn(props: EventColumnProps) {
           ? <div key={i} className="flex-1" />
           : <EventBtn key={i} {...b} />,
       )}
-      <EventBtn label="More" tone="neutral" enabled onTap={props.onMore} />
+      <EventBtn
+        label="More"
+        fg="var(--color-muted)"
+        ink="var(--color-content)"
+        enabled
+        onTap={props.onMore}
+      />
     </div>
   )
 }
 
-function EventBtn({ label, tone, enabled, onTap }: EventBtnDef) {
-  const { bg, fg, border } = toneColours(tone)
+function EventBtn({ label, fg, ink, enabled, onTap }: EventBtnDef) {
   return (
     <button
       type="button"
       onClick={onTap}
       disabled={!enabled}
-      className="flex-1 min-h-0 rounded-lg border cursor-pointer transition-opacity select-none disabled:opacity-25 disabled:cursor-default"
+      className="flex-1 min-h-0 rounded-lg border-2 cursor-pointer transition-opacity select-none disabled:opacity-25 disabled:cursor-default flex items-center justify-center px-2 text-center"
       style={{
-        background:    bg,
-        color:         fg,
-        borderColor:   border,
-        borderWidth:   1.5,
-        fontSize:      18,
+        background:    fg,
+        color:         ink,
+        borderColor:   fg,
+        fontSize:      'clamp(14px, 4.5vw, 19px)',
         fontWeight:    700,
         letterSpacing: 0.4,
+        lineHeight:    1.15,
       }}
     >
       {label}
     </button>
   )
-}
-
-function toneColours(tone: Tone): { bg: string; fg: string; border: string } {
-  switch (tone) {
-    case 'success': return { bg: 'var(--color-success-bg)', fg: 'var(--color-success)', border: 'var(--color-success)' }
-    case 'warn':    return { bg: 'var(--color-warn-bg)',    fg: 'var(--color-warn)',    border: 'var(--color-warn)'    }
-    case 'danger':  return { bg: 'var(--color-warn-bg)',    fg: 'var(--color-warn)',    border: 'var(--color-warn)'    }
-    case 'block':   return { bg: 'var(--color-block-bg)',   fg: 'var(--color-block)',   border: 'var(--color-block)'   }
-    case 'stall':   return { bg: 'var(--color-warn-bg)',    fg: 'var(--color-warn)',    border: 'var(--color-warn)'    }
-    case 'primary': return { bg: 'var(--color-surf-2)',     fg: 'var(--color-content)', border: 'var(--color-border-2)' }
-    case 'neutral': return { bg: 'var(--color-surf-2)',     fg: 'var(--color-muted)',   border: 'var(--color-border)'   }
-  }
 }
