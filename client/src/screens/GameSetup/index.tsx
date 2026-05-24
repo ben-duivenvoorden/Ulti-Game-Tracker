@@ -9,8 +9,7 @@ import { resolveGameConfig } from '@/core/games/engine'
 import type { TeamId } from '@/core/types'
 import NewGameForm from '@/screens/NewGame'
 
-// Sentinel value for the "+ New Game" row in the left list. Picked far above
-// any plausible GameId.
+// Sentinel that pushes the NewGame form full-screen.
 const NEW_GAME_SENTINEL = -1
 
 export default function GameSetup() {
@@ -22,192 +21,176 @@ export default function GameSetup() {
   const games            = useScheduledGames()
   const teamsState       = useTeamsState()
 
-  const [selectedId, setSelectedId] = useState<number | null>(null)
+  // When set, expand the matching card inline to show pulling-team picker.
+  const [expandedId, setExpandedId] = useState<number | null>(null)
   const [pullingTeam, setPullingTeam] = useState<TeamId | null>(null)
-
-  const isNewGameSelected = selectedId === NEW_GAME_SENTINEL
-  const scheduledGame = selectedId !== null && !isNewGameSelected
-    ? games.find(g => g.id === selectedId)
-    : null
-  const game = scheduledGame ? resolveGameConfig(scheduledGame, teamsState) : null
-
-  // Status and score are derived from the session — never carried as static config.
-  // Only the currently-selected game can have a session attached at any one time.
-  const liveSession = (game && session && session.gameConfig.id === game.id) ? session : null
-  const status      = deriveGameStatus(liveSession)
-  const liveScore   = liveSession ? deriveGameState(liveSession).score : null
-  const isFinished  = status === 'complete'
-  const canResume   = status === 'in-progress'
-  const skipPullPrompt = status !== 'scheduled'
 
   const sessionGameId = session?.gameConfig.id ?? null
 
+  // Full-screen NewGame form pushes over the list.
+  if (expandedId === NEW_GAME_SENTINEL) {
+    return (
+      <NewGameForm
+        onCreated={(newId) => { setExpandedId(newId); setPullingTeam(null) }}
+        onCancel={() => setExpandedId(null)}
+      />
+    )
+  }
+
   return (
-    <div className="h-full flex bg-bg text-content">
-      {/* ── Game list ── */}
-      <div className="w-64 flex-shrink-0 flex flex-col border-r border-border">
-        <div className="px-4 py-3 border-b border-border flex-shrink-0">
-          <div className="flex items-start justify-between">
-            <div>
-              <Label block className="mb-1">GAME SETUP</Label>
-              <div className="text-base font-bold">Select Game</div>
-            </div>
-            <button
-              onClick={openGameSettings}
-              className="mt-0.5 text-[18px] leading-none cursor-pointer transition-opacity hover:opacity-70"
-              style={{ color: 'var(--color-dim)' }}
-              title="Recording Settings"
-            >
-              ⚙
-            </button>
+    <div className="h-full flex flex-col bg-bg text-content">
+      {/* Header */}
+      <div className="flex-shrink-0 px-4 pt-3 pb-2 border-b border-border">
+        <div className="flex items-start justify-between">
+          <div>
+            <Label block className="mb-1">GAME SETUP</Label>
+            <div className="text-base font-bold">Games</div>
           </div>
           <button
-            onClick={openTeamsManager}
-            className="mt-2 text-[10px] font-mono tracking-widest uppercase cursor-pointer transition-colors hover:text-content"
-            style={{ color: 'var(--color-muted)' }}
-            title="Manage teams + players"
+            onClick={openGameSettings}
+            className="text-[18px] leading-none cursor-pointer transition-opacity hover:opacity-70"
+            style={{ color: 'var(--color-dim)' }}
+            title="Recording Settings"
           >
-            ⚙ Manage teams
+            ⚙
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto">
-          {/* + New Game row sits at the top so it's the obvious first action
-              after archival days. */}
-          <button
-            onClick={() => { setSelectedId(NEW_GAME_SENTINEL); setPullingTeam(null) }}
-            className="w-full text-left px-4 py-3 border-b border-border transition-colors cursor-pointer"
-            style={{
-              borderLeft: `3px solid ${isNewGameSelected ? 'var(--color-success)' : 'transparent'}`,
-              background: isNewGameSelected ? 'var(--color-surf-2)' : 'transparent',
-            }}
-          >
-            <div className="text-sm font-semibold text-content mb-1.5">+ New Game</div>
-            <Label>Schedule a new fixture</Label>
-          </button>
-          {games.map(g => {
-            const isActive = selectedId === g.id
-            const rowStatus = (sessionGameId === g.id) ? deriveGameStatus(session) : 'scheduled'
-            const isLive    = rowStatus === 'in-progress'
-            const isDone    = rowStatus === 'complete'
-            const chipColor = isLive ? 'var(--color-success)' : isDone ? 'var(--color-dim)' : 'var(--color-muted)'
-            const chipText  = isLive ? 'LIVE' : isDone ? 'DONE' : 'SCHED'
-            return (
+        <button
+          onClick={openTeamsManager}
+          className="mt-1 text-[10px] font-mono tracking-widest uppercase cursor-pointer transition-colors hover:text-content"
+          style={{ color: 'var(--color-muted)' }}
+        >
+          ⚙ Manage teams →
+        </button>
+      </div>
+
+      {/* Game list */}
+      <div className="flex-1 overflow-y-auto">
+        {games.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full px-6 text-center">
+            <div className="text-5xl mb-4 opacity-30">🥏</div>
+            <Label className="mb-3">No games scheduled yet</Label>
+            <Btn variant="primary" size="md" onClick={() => { setExpandedId(NEW_GAME_SENTINEL); setPullingTeam(null) }}>
+              + New Game
+            </Btn>
+          </div>
+        ) : games.map(g => {
+          const resolved = resolveGameConfig(g, teamsState)
+          const liveSession = (session && sessionGameId === g.id) ? session : null
+          const status = deriveGameStatus(liveSession)
+          const liveScore = liveSession ? deriveGameState(liveSession).score : null
+          const isLive    = status === 'in-progress'
+          const isDone    = status === 'complete'
+          const chipColor = isLive ? 'var(--color-success)' : isDone ? 'var(--color-dim)' : 'var(--color-muted)'
+          const chipText  = isLive ? 'LIVE' : isDone ? 'DONE' : 'SCHED'
+          const expanded  = expandedId === g.id
+
+          return (
+            <div
+              key={g.id}
+              className="border-b border-border"
+              style={{ background: expanded ? 'var(--color-surf-2)' : 'transparent' }}
+            >
               <button
-                key={g.id}
-                onClick={() => { setSelectedId(g.id); setPullingTeam(null) }}
-                className="w-full text-left px-4 py-3 border-b border-border transition-colors cursor-pointer"
-                style={{
-                  borderLeft: `3px solid ${isActive ? 'var(--color-team-a)' : 'transparent'}`,
-                  background: isActive ? 'var(--color-surf-2)' : 'transparent',
+                onClick={() => {
+                  if (expanded) {
+                    setExpandedId(null)
+                    setPullingTeam(null)
+                  } else {
+                    setExpandedId(g.id)
+                    setPullingTeam(null)
+                  }
                 }}
+                className="w-full text-left px-4 py-3 cursor-pointer"
               >
-                <div className="text-sm font-semibold text-content mb-1.5">{g.name}</div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <div className="text-sm font-semibold text-content truncate">{g.name}</div>
                   <Chip color={chipColor}>{chipText}</Chip>
-                  <Label>{g.scheduledTime}</Label>
+                </div>
+                <div className="flex items-center gap-3 text-xs">
+                  <span style={{ color: 'var(--color-muted)' }}>{g.scheduledTime}</span>
+                  <span style={{ color: 'var(--color-muted)' }}>·</span>
+                  <span className="truncate" style={{ color: resolved.teams.A.color }}>{resolved.teams.A.short}</span>
+                  <span style={{ color: 'var(--color-muted)' }}>vs</span>
+                  <span className="truncate" style={{ color: resolved.teams.B.color }}>{resolved.teams.B.short}</span>
+                  {liveScore && (
+                    <span className="ml-auto font-mono font-bold text-content">
+                      {liveScore.A} – {liveScore.B}
+                    </span>
+                  )}
                 </div>
               </button>
-            )
-          })}
-        </div>
-      </div>
 
-      {/* ── Detail pane ── */}
-      <div className="flex-1 flex flex-col items-center justify-center gap-5 p-6 overflow-y-auto">
-        {isNewGameSelected ? (
-          <NewGameForm
-            onCreated={(newId) => { setSelectedId(newId); setPullingTeam(null) }}
-            onCancel={() => setSelectedId(null)}
-          />
-        ) : !game ? (
-          <div className="text-center">
-            <div className="text-4xl mb-3 opacity-30">🥏</div>
-            <Label>Select a game from the list</Label>
-          </div>
-        ) : (
-          <>
-            <div className="w-full max-w-sm bg-surf border border-border-2 rounded-xl p-5 text-center">
-              <Label block className="mb-2">{game.name}</Label>
-              {liveScore ? (
-                <div className="flex items-center justify-center gap-6 my-3">
-                  <div>
-                    <div className="text-xs font-bold mb-1" style={{ color: game.teams.A.color }}>{game.teams.A.short}</div>
-                    <div className="text-5xl font-black text-content leading-none">{liveScore.A}</div>
-                  </div>
-                  <div className="text-muted text-xl">—</div>
-                  <div>
-                    <div className="text-xs font-bold mb-1" style={{ color: game.teams.B.color }}>{game.teams.B.short}</div>
-                    <div className="text-5xl font-black text-content leading-none">{liveScore.B}</div>
-                  </div>
-                </div>
-              ) : (
-                <div className="py-3">
-                  <div className="text-base text-content mb-1">
-                    {game.teams.A.name} <span className="text-muted">vs</span> {game.teams.B.name}
-                  </div>
-                  <Label>Kick-off {game.scheduledTime}</Label>
-                </div>
-              )}
-            </div>
-
-            {/* Who pulls first — only when starting fresh */}
-            {!skipPullPrompt && (
-              <div className="w-full max-w-sm">
-                <div className="text-center text-sm text-content mb-0.5">Who will pull first?</div>
-                <div className="text-center text-xs italic mb-3" style={{ color: 'var(--color-muted)' }}>(Who is on Defence?)</div>
-                <div className="flex gap-3">
-                  {(['A', 'B'] as TeamId[]).map(t => {
-                    const team = game.teams[t]
-                    const selected = pullingTeam === t
-                    return (
-                      <button
-                        key={t}
-                        onClick={() => setPullingTeam(t)}
-                        className="flex-1 h-11 rounded-lg border text-sm font-semibold transition-all cursor-pointer"
-                        style={{
-                          background: selected ? `${team.color}22` : 'transparent',
-                          borderColor: selected ? `${team.color}88` : 'var(--color-border)',
-                          color: selected ? team.color : 'var(--color-muted)',
-                        }}
+              {expanded && (
+                <div className="px-4 pb-4 flex flex-col gap-3">
+                  {isLive ? (
+                    <Btn variant="primary" size="lg" full onClick={() => resumeGame(g.id)}>
+                      ▶  Continue Recording
+                    </Btn>
+                  ) : isDone ? (
+                    <div className="flex gap-2">
+                      <Btn variant="primary" size="md" full onClick={() => resumeGame(g.id)}>View Final Stats</Btn>
+                      <Btn variant="ghost"   size="md" full>Export</Btn>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="text-xs text-content text-center mb-0.5">Who will pull first?</div>
+                      <div className="text-[10px] italic text-center" style={{ color: 'var(--color-muted)' }}>
+                        (Who is on Defence?)
+                      </div>
+                      <div className="flex gap-2">
+                        {(['A', 'B'] as TeamId[]).map(t => {
+                          const team = resolved.teams[t]
+                          const selected = pullingTeam === t
+                          return (
+                            <button
+                              key={t}
+                              onClick={(e) => { e.stopPropagation(); setPullingTeam(t) }}
+                              className="flex-1 h-11 rounded-lg border text-sm font-semibold transition-all cursor-pointer"
+                              style={{
+                                background:  selected ? `${team.color}22` : 'transparent',
+                                borderColor: selected ? `${team.color}88` : 'var(--color-border)',
+                                color:       selected ? team.color : 'var(--color-muted)',
+                              }}
+                            >
+                              {team.name}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      <Btn
+                        variant="primary"
+                        size="lg"
+                        full
+                        disabled={!pullingTeam}
+                        onClick={() => pullingTeam && selectGame(g.id, pullingTeam)}
                       >
-                        {team.name}
-                      </button>
-                    )
-                  })}
+                        Start Recording
+                      </Btn>
+                    </>
+                  )}
                 </div>
-              </div>
-            )}
-
-            {/* Action buttons */}
-            <div className="flex gap-3">
-              {isFinished ? (
-                <>
-                  <Btn variant="primary" size="lg" onClick={() => resumeGame(game.id)}>
-                    View Final Stats
-                  </Btn>
-                  <Btn variant="ghost" size="lg">Export</Btn>
-                </>
-              ) : canResume ? (
-                <>
-                  <Btn variant="primary" size="lg" onClick={() => resumeGame(game.id)}>
-                    ▶  Continue Recording
-                  </Btn>
-                  <Btn variant="ghost" size="lg">Export</Btn>
-                </>
-              ) : (
-                <Btn
-                  variant="primary"
-                  size="lg"
-                  disabled={!pullingTeam}
-                  onClick={() => pullingTeam && selectGame(game.id, pullingTeam)}
-                >
-                  Start Recording
-                </Btn>
               )}
             </div>
-          </>
-        )}
+          )
+        })}
       </div>
+
+      {/* FAB: + New Game (hidden when the empty state already shows the CTA). */}
+      {games.length > 0 && (
+        <button
+          onClick={() => { setExpandedId(NEW_GAME_SENTINEL); setPullingTeam(null) }}
+          className="absolute bottom-6 right-5 w-14 h-14 rounded-full flex items-center justify-center cursor-pointer text-2xl font-bold"
+          style={{
+            background: 'var(--color-team-a)',
+            color:      '#fff',
+            boxShadow:  '0 6px 18px rgba(0,0,0,0.4)',
+          }}
+          title="New game"
+        >
+          +
+        </button>
+      )}
     </div>
   )
 }

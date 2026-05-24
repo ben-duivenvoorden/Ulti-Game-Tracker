@@ -25,8 +25,8 @@ export default function GameSettings() {
         <Btn variant="primary" size="md" onClick={closeGameSettings}>Done</Btn>
       </div>
 
-      {/* Settings body — 2-column landscape layout */}
-      <div className="flex-1 overflow-y-auto p-4 grid grid-cols-2 gap-4 auto-rows-min">
+      {/* Settings body — single column for portrait */}
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
 
         <Section title="GAME MODE & LINE COMPOSITION">
           <div className="flex gap-2">

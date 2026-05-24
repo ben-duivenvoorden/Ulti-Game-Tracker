@@ -52,12 +52,27 @@ export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
   }
 
   return (
-    <div className="w-full max-w-md flex flex-col gap-4">
-      <div className="text-center">
-        <Label block className="mb-1">NEW GAME</Label>
-        <div className="text-base font-bold">Schedule a fixture</div>
+    <div className="h-full flex flex-col bg-bg text-content">
+      {/* Header */}
+      <div
+        className="flex-shrink-0 flex items-center justify-between px-3 h-12"
+        style={{ borderBottom: '1px solid var(--color-border)' }}
+      >
+        <button
+          onClick={onCancel}
+          className="text-muted hover:text-content transition-colors cursor-pointer text-lg leading-none"
+          title="Cancel"
+        >
+          ←
+        </button>
+        <div className="flex-1 text-center">
+          <Label block>NEW GAME</Label>
+        </div>
+        <Btn variant="primary" size="sm" disabled={!canSave} onClick={handleSave}>Save</Btn>
       </div>
 
+      {/* Scrollable form body */}
+      <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
       <Section title="DETAILS">
         <TextField
           label="Name"
@@ -100,10 +115,6 @@ export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
         <Stepper label="Half-time at"  value={halfTimeAt} onChange={setHalfTimeAt} min={1}  max={20} />
         <Stepper label="Score cap"     value={scoreCapAt} onChange={setScoreCapAt} min={1}  max={30} />
       </Section>
-
-      <div className="flex gap-2">
-        <Btn variant="ghost"   size="md" full onClick={onCancel}>Cancel</Btn>
-        <Btn variant="primary" size="md" full disabled={!canSave} onClick={handleSave}>Save</Btn>
       </div>
     </div>
   )
