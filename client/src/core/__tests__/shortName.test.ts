@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { suggestShortName, SHORT_NAME_MAX } from '../teams/shortName'
+import { suggestShortName, pickDisplayNames, SHORT_NAME_MAX } from '../teams/shortName'
 
 describe('suggestShortName', () => {
   it('returns the initials of each word for multi-word names', () => {
@@ -41,5 +41,33 @@ describe('suggestShortName', () => {
 
   it('exposes SHORT_NAME_MAX as 5', () => {
     expect(SHORT_NAME_MAX).toBe(5)
+  })
+})
+
+describe('pickDisplayNames', () => {
+  const teamA = { name: 'Empire', short: 'EMP' }
+  const teamB = { name: 'Breeze', short: 'BRE' }
+  const teamLong = { name: 'Lounge Lizards Eastside', short: 'LLE' }
+
+  it('uses both long names when both fit', () => {
+    expect(pickDisplayNames(teamA, teamB, 10)).toEqual({ A: 'Empire', B: 'Breeze' })
+  })
+
+  it('falls back to short for BOTH teams when either side overflows', () => {
+    expect(pickDisplayNames(teamLong, teamB, 10)).toEqual({ A: 'LLE', B: 'BRE' })
+    expect(pickDisplayNames(teamB, teamLong, 10)).toEqual({ A: 'BRE', B: 'LLE' })
+  })
+
+  it('never mixes long + short', () => {
+    const result = pickDisplayNames(teamLong, teamB, 10)
+    const isAShort = result.A === teamLong.short
+    const isBShort = result.B === teamB.short
+    expect(isAShort).toBe(isBShort)
+  })
+
+  it('respects the threshold (exact-length names stay long)', () => {
+    const tenChar = { name: 'TenChrName', short: 'TCN' }  // exactly 10 chars
+    expect(pickDisplayNames(tenChar, teamB, 10)).toEqual({ A: 'TenChrName', B: 'Breeze' })
+    expect(pickDisplayNames(tenChar, teamB, 9)).toEqual({ A: 'TCN', B: 'BRE' })
   })
 })

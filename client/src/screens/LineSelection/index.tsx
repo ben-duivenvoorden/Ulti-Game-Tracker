@@ -4,7 +4,11 @@ import { Chip } from '@/components/ui/Chip'
 import { useSession, useDerivedState, useRecordingOptions, useSuggestedTransition } from '@/core/selectors'
 import { useGameStore, seedDefaultLine } from '@/core/store'
 import { inkOn } from '@/core/contrast'
+import { pickDisplayNames } from '@/core/teams/shortName'
 import type { Player, GameMode, TeamId } from '@/core/types'
+
+// See Header.tsx — same convention. Score header is the tight context.
+const SCORE_NAME_FIT_THRESHOLD = 10
 
 export default function LineSelection() {
   const session        = useSession()
@@ -55,6 +59,7 @@ export default function LineSelection() {
   }
 
   const score = state?.score ?? { A: 0, B: 0 }
+  const headerNames = pickDisplayNames(teams.A, teams.B, SCORE_NAME_FIT_THRESHOLD)
   const globalIdFor = (slot: TeamId) =>
     slot === 'A' ? session!.gameConfig.teamAGlobalId : session!.gameConfig.teamBGlobalId
 
@@ -86,7 +91,7 @@ export default function LineSelection() {
             style={{ color: teams.A.color }}
             title={teams.A.name}
           >
-            {teams.A.short}
+            {headerNames.A}
           </span>
           <strong className="text-3xl font-black tabular-nums leading-none text-content flex-shrink-0">{score.A}</strong>
           <span className="text-dim text-base flex-shrink-0">–</span>
@@ -96,7 +101,7 @@ export default function LineSelection() {
             style={{ color: teams.B.color }}
             title={teams.B.name}
           >
-            {teams.B.short}
+            {headerNames.B}
           </span>
         </div>
         <div className="flex items-center justify-end pr-3">
