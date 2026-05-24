@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Btn } from '@/components/ui/Btn'
 import { Chip } from '@/components/ui/Chip'
-import { Label } from '@/components/ui/Label'
 import { useSession, useDerivedState, useRecordingOptions, useSuggestedTransition } from '@/core/selectors'
 import { useGameStore, seedDefaultLine } from '@/core/store'
 import { inkOn } from '@/core/contrast'
@@ -61,26 +60,30 @@ export default function LineSelection() {
 
   return (
     <div className="h-full flex flex-col bg-bg text-content">
-      {/* Header — back · score */}
+      {/* Header — back · score · Confirm. The Confirm button lives here so
+          this single top strip carries everything global to the screen
+          (navigation + score + primary action). */}
       <div
-        className="flex-shrink-0 flex items-center justify-between px-3 h-12"
+        className="flex-shrink-0 flex items-center justify-between gap-2 px-3 h-12"
         style={{ borderBottom: '1px solid var(--color-border)' }}
       >
         <button
           onClick={backToGameList}
-          className="text-muted hover:text-content transition-colors cursor-pointer text-lg leading-none"
+          className="text-muted hover:text-content transition-colors cursor-pointer text-lg leading-none flex-shrink-0"
           title="Back to games"
         >
           ←
         </button>
-        <div className="flex-1 flex items-center justify-center gap-2 min-w-0 px-2">
+        <div className="flex-1 flex items-center justify-center gap-2 min-w-0">
           <span className="text-sm font-bold truncate text-right flex-1" style={{ color: teams.A.color }}>{teams.A.name}</span>
           <strong className="text-3xl font-black tabular-nums leading-none text-content flex-shrink-0">{score.A}</strong>
           <span className="text-dim text-base flex-shrink-0">–</span>
           <strong className="text-3xl font-black tabular-nums leading-none text-content flex-shrink-0">{score.B}</strong>
           <span className="text-sm font-bold truncate text-left flex-1" style={{ color: teams.B.color }}>{teams.B.name}</span>
         </div>
-        <span className="w-4" />
+        <Btn variant="primary" size="sm" onClick={onConfirmClick}>
+          {isInjurySub ? 'Sub' : 'Confirm'}
+        </Btn>
       </div>
 
       {/* Half-time / end-game suggestion banner */}
@@ -118,15 +121,20 @@ export default function LineSelection() {
         </div>
       )}
 
-      {/* Title row + Confirm */}
-      <div className="flex-shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-border">
-        <Label block>
-          {isInjurySub ? 'INJURY SUB — MID-POINT' : 'LINE SELECTION'}
-        </Label>
-        <Btn variant="primary" size="md" onClick={onConfirmClick}>
-          {isInjurySub ? 'Confirm Substitutions' : 'Confirm Line'}
-        </Btn>
-      </div>
+      {/* Injury-sub banner replaces the tab switcher; for normal line
+          selection the tab switcher carries the screen's identity. */}
+      {isInjurySub && (
+        <div
+          className="flex-shrink-0 flex items-center justify-center px-3 py-2 text-[11px] font-semibold tracking-widest"
+          style={{
+            background:   'var(--color-warn-bg)',
+            color:        'var(--color-warn)',
+            borderBottom: '1px solid var(--color-warn)',
+          }}
+        >
+          INJURY SUB — MID-POINT
+        </div>
+      )}
 
       {/* Tab switcher — between-points only. Injury sub locks the team. */}
       {!isInjurySub && (
