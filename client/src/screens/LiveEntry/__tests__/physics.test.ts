@@ -55,14 +55,25 @@ describe('sampleBezier', () => {
 })
 
 describe('pillLabel', () => {
-  it('returns the full name regardless of length', () => {
+  it('keeps short names unchanged (≤ 12 chars)', () => {
     expect(pillLabel('Wen')).toBe('Wen')
+    expect(pillLabel('Ben D')).toBe('Ben D')
+    expect(pillLabel('Marcus')).toBe('Marcus')
+    expect(pillLabel('Marcus Salt')).toBe('Marcus Salt')  // exactly 11
+  })
+
+  it('keeps long single-token names unchanged (no last-name initial to use)', () => {
     expect(pillLabel('Stephanopoulos')).toBe('Stephanopoulos')
+  })
+
+  it('collapses long multi-token names to "First L"', () => {
+    expect(pillLabel('Wiebe van den Brink')).toBe('Wiebe B')
+    expect(pillLabel('Solomon Rueschemeyer-Bailey')).toBe('Solomon R')
   })
 })
 
 describe('pillHalfWidth', () => {
-  it('grows with name length (longer name → wider pill)', () => {
+  it('grows with the rendered label length (longer label → wider pill)', () => {
     const short = pillHalfWidth('Wen')
     const long  = pillHalfWidth('Stephanopoulos')
     expect(long).toBeGreaterThan(short)

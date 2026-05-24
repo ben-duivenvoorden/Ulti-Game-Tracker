@@ -3,15 +3,34 @@ import { SLOT_POSITIONS } from './constants'
 export interface Vec { x: number; y: number }
 export interface Rect { l: number; r: number; t: number; b: number }
 
-// Pill label is the player's full name. The pill itself sizes to its
-// content (`width: max-content` in PlayerNode), and physics uses the
-// rendered half-width measured by ResizeObserver.
-export const pillLabel = (name: string): string => name
+// Pill label is the player's name, shortened if the full name is too long
+// for the portrait canvas to comfortably fit alongside two neighbour pills.
+// "First Last" stays as-is; "First Middle Last" or single names longer than
+// the threshold collapse to "First L" (first name + first letter of last
+// token).
+//
+// PlayerNode renders with `width: max-content`, and physics uses the
+// rendered half-width measured by ResizeObserver — this label just bounds
+// the upper limit so a 19-char name doesn't push the pill past its
+// neighbours on a narrow phone.
+const SHORT_NAME_THRESHOLD = 12
 
-// Approx rendered pill width for the fixed pill typography (15px / 600 weight).
-// Used as a placeholder until ResizeObserver reports the real measured width.
+export function pillLabel(name: string): string {
+  const trimmed = name.trim()
+  if (trimmed.length <= SHORT_NAME_THRESHOLD) return trimmed
+  const parts = trimmed.split(/\s+/)
+  if (parts.length < 2) return trimmed
+  const first = parts[0]
+  const lastInitial = parts[parts.length - 1].charAt(0).toUpperCase()
+  return `${first} ${lastInitial}`
+}
+
+// Approx rendered pill width for the fixed pill typography. Used as a
+// placeholder until ResizeObserver reports the real measured width.
+// The constants match the bumped portrait pill size in constants.ts
+// (PILL_FONT_SIZE=22, PILL_PADDING_X=24).
 export const pillHalfWidth = (name: string): number =>
-  Math.round((pillLabel(name).length * 9 + 36 + 4) / 2)
+  Math.round((pillLabel(name).length * 12 + 48 + 4) / 2)
 
 export function rectExitDist(ux: number, uy: number, hw: number, hh: number): number {
   const tx = ux !== 0 ? hw / Math.abs(ux) : Infinity
