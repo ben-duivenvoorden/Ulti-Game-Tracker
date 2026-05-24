@@ -40,9 +40,9 @@ export function Header({ teams, score, onBack }: HeaderProps) {
             {names.A}
           </span>
         </span>
-        <strong className="text-3xl font-black tabular-nums leading-none text-content flex-shrink-0">{score.A}</strong>
+        <strong className="text-3xl font-black tabular-nums leading-none text-content flex-shrink-0 ml-2">{score.A}</strong>
         <span className="text-dim text-base flex-shrink-0">–</span>
-        <strong className="text-3xl font-black tabular-nums leading-none text-content flex-shrink-0">{score.B}</strong>
+        <strong className="text-3xl font-black tabular-nums leading-none text-content flex-shrink-0 mr-2">{score.B}</strong>
         <span className="flex-1 flex justify-start min-w-0">
           <span
             className="text-sm font-bold truncate px-2 py-0.5 rounded"
