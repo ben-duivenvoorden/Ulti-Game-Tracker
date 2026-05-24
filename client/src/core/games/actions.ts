@@ -7,7 +7,6 @@ import type {
   GameAddEvent,
   GameCancelEvent,
   GameEditEvent,
-  ScheduledGameEventInput,
 } from './types'
 
 export function addScheduledGame(args: {
@@ -39,7 +38,3 @@ export function editScheduledGame(
 export function cancelScheduledGame(gameId: GameId): Omit<GameCancelEvent, 'id' | 'timestamp'> {
   return { type: 'game-cancel', gameId }
 }
-
-export function asScheduledGameEventInput(
-  e: Omit<ScheduledGameEventInput, never>,
-): ScheduledGameEventInput { return e }

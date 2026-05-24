@@ -96,7 +96,7 @@ function applyAmend(entries: Resolved[], event: AmendRawEvent): void {
     return
   }
   const r = event.replacement
-  if (r.type !== 'undo' && r.type !== 'amend' && r.type !== 'reorder-line' && r.type !== 'truncate') {
+  if (r.type !== 'undo' && r.type !== 'amend' && r.type !== 'reorder-line' && r.type !== 'truncate' && r.type !== 'splice-block') {
     entries[idx] = r
   }
 }
@@ -309,6 +309,7 @@ export function canRecord(state: DerivedGameState, eventType: RawEventType): boo
     case 'undo':
     case 'amend':
     case 'truncate':
+    case 'splice-block':
       return true
   }
 }

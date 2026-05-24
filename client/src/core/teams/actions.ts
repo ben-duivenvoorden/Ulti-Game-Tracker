@@ -11,7 +11,6 @@ import type {
   TeamAddEvent,
   TeamArchiveEvent,
   TeamEditEvent,
-  TeamEventInput,
 } from './types'
 
 export function addTeam(
@@ -60,8 +59,3 @@ export function editPlayer(
 export function removePlayer(playerId: PlayerId): Omit<PlayerRemoveEvent, 'id' | 'timestamp'> {
   return { type: 'player-remove', playerId }
 }
-
-// Type narrowing helper — `Omit` distributes over the union above, but TS
-// sometimes drops the discriminator on assignment. This forces the result back
-// into the TeamEventInput union so callers don't need a cast.
-export function asTeamEventInput(e: Omit<TeamEventInput, never>): TeamEventInput { return e }
