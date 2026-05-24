@@ -4,6 +4,7 @@ import { Label } from '@/components/ui/Label'
 import { useGameStore } from '@/core/store'
 import { useTeamsState } from '@/core/selectors'
 import type { GlobalTeamId } from '@/core/teams/types'
+import { suggestShortName } from '@/core/teams/shortName'
 
 interface NewGameFormProps {
   onCreated: (newGameId: number) => void
@@ -44,8 +45,7 @@ export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
   const handleCreateTeam = (slot: 'A' | 'B'): GlobalTeamId | null => {
     const proposed = window.prompt('Team name:')
     if (!proposed || !proposed.trim()) return null
-    const short = proposed.trim().slice(0, 3).toUpperCase()
-    const id = addTeam(proposed.trim(), short, DEFAULT_TEAM_COLOR)
+    const id = addTeam(proposed.trim(), suggestShortName(proposed), DEFAULT_TEAM_COLOR)
     if (slot === 'A') setTeamA(id)
     else              setTeamB(id)
     return id

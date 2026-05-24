@@ -81,11 +81,23 @@ export default function LineSelection() {
           </button>
         </div>
         <div className="flex items-center justify-center gap-2 min-w-0 px-2">
-          <span className="text-sm font-bold truncate text-right flex-1" style={{ color: teams.A.color }}>{teams.A.name}</span>
+          <span
+            className="text-sm font-bold truncate text-right flex-1"
+            style={{ color: teams.A.color }}
+            title={teams.A.name}
+          >
+            {teams.A.short}
+          </span>
           <strong className="text-3xl font-black tabular-nums leading-none text-content flex-shrink-0">{score.A}</strong>
           <span className="text-dim text-base flex-shrink-0">–</span>
           <strong className="text-3xl font-black tabular-nums leading-none text-content flex-shrink-0">{score.B}</strong>
-          <span className="text-sm font-bold truncate text-left flex-1" style={{ color: teams.B.color }}>{teams.B.name}</span>
+          <span
+            className="text-sm font-bold truncate text-left flex-1"
+            style={{ color: teams.B.color }}
+            title={teams.B.name}
+          >
+            {teams.B.short}
+          </span>
         </div>
         <div className="flex items-center justify-end pr-3">
           <Btn variant="primary" size="sm" onClick={onConfirmClick}>

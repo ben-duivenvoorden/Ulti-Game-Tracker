@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/Label'
 import { useGameStore } from '@/core/store'
 import { useTeamsState } from '@/core/selectors'
 import type { GlobalTeam, GlobalPlayer, GlobalTeamId } from '@/core/teams/types'
+import { suggestShortName, SHORT_NAME_MAX } from '@/core/teams/shortName'
 
 const DEFAULT_NEW_TEAM_COLOR = '#1f4788'
 
@@ -133,7 +134,19 @@ function NewTeamView({ onCreate, onCancel }: {
 }) {
   const [name, setName] = useState('')
   const [short, setShort] = useState('')
+  const [shortDirty, setShortDirty] = useState(false)
   const [color, setColor] = useState(DEFAULT_NEW_TEAM_COLOR)
+
+  // Auto-suggest the short until the user manually edits it. After they
+  // touch the field, their input takes over and we stop suggesting.
+  const onNameChange = (v: string) => {
+    setName(v)
+    if (!shortDirty) setShort(suggestShortName(v))
+  }
+  const onShortChange = (v: string) => {
+    setShortDirty(true)
+    setShort(v.toUpperCase().slice(0, SHORT_NAME_MAX))
+  }
   const canSave = name.trim().length > 0 && short.trim().length > 0
 
   return (
@@ -152,8 +165,8 @@ function NewTeamView({ onCreate, onCancel }: {
         </Btn>
       </div>
       <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
-        <TextField label="Name"  value={name}  onChange={setName}  placeholder="Empire" autoFocus />
-        <TextField label="Short" value={short} onChange={s => setShort(s.toUpperCase())} placeholder="NYE" />
+        <TextField label="Name"  value={name}  onChange={onNameChange}  placeholder="Lounge Lizards Eastside" autoFocus />
+        <TextField label={`Short (max ${SHORT_NAME_MAX})`} value={short} onChange={onShortChange} placeholder="LLE" />
         <ColorField label="Colour" value={color} onChange={setColor} />
       </div>
     </div>
@@ -193,7 +206,11 @@ function TeamDetailView({ team, roster, onBack, onEditTeam, onArchive, onAddPlay
         <TextField label="Name"  value={team.name}  onChange={v => onEditTeam({ name: v })} />
         <div className="flex gap-2">
           <div className="flex-1">
-            <TextField label="Short" value={team.short} onChange={v => onEditTeam({ short: v.toUpperCase().slice(0, 4) })} />
+            <TextField
+              label={`Short (max ${SHORT_NAME_MAX})`}
+              value={team.short}
+              onChange={v => onEditTeam({ short: v.toUpperCase().slice(0, SHORT_NAME_MAX) })}
+            />
           </div>
           <ColorField label="Colour" value={team.color} onChange={v => onEditTeam({ color: v })} />
         </div>

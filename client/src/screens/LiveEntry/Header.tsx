@@ -26,8 +26,9 @@ export function Header({ teams, score, onBack }: HeaderProps) {
         <span
           className="text-sm font-bold truncate text-right flex-1"
           style={{ color: teams.A.color }}
+          title={teams.A.name}
         >
-          {teams.A.name}
+          {teams.A.short}
         </span>
         <strong className="text-3xl font-black tabular-nums leading-none text-content flex-shrink-0">{score.A}</strong>
         <span className="text-dim text-base flex-shrink-0">–</span>
@@ -35,8 +36,9 @@ export function Header({ teams, score, onBack }: HeaderProps) {
         <span
           className="text-sm font-bold truncate text-left flex-1"
           style={{ color: teams.B.color }}
+          title={teams.B.name}
         >
-          {teams.B.name}
+          {teams.B.short}
         </span>
       </div>
       <span className="w-4" />
