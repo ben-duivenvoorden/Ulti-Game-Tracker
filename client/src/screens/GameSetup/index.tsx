@@ -40,14 +40,11 @@ export default function GameSetup() {
 
   return (
     <div className="h-full flex flex-col bg-bg text-content">
-      {/* Header — title on the left, two large action icons on the right.
-          Teams and Settings are siblings; matching tap targets, different
-          icons. */}
-      <div className="flex-shrink-0 px-4 py-3 border-b border-border flex items-center justify-between gap-3">
-        <div>
-          <Label block className="mb-1">GAME SETUP</Label>
-          <div className="text-base font-bold">Games</div>
-        </div>
+      {/* Header — same 48 px height across every screen. Title on the left,
+          two large action icons on the right. Teams and Settings are
+          siblings: matching tap targets, different icons. */}
+      <div className="flex-shrink-0 h-12 border-b border-border flex items-center justify-between px-3 gap-3">
+        <div className="text-base font-bold">Games</div>
         <div className="flex items-center gap-1">
           <IconBtn onClick={openTeamsManager} title="Manage teams">
             <TeamsIcon />

@@ -10,18 +10,16 @@ export default function GameSettings() {
 
   return (
     <div className="h-full flex flex-col bg-bg text-content">
-      {/* Header */}
-      <div className="flex-shrink-0 flex items-center gap-3 px-4 py-3 border-b border-border">
+      {/* Header — same 48 px height as every other screen. */}
+      <div className="flex-shrink-0 h-12 border-b border-border flex items-center justify-between gap-3 px-3">
         <button
           onClick={closeGameSettings}
-          className="text-sm text-muted hover:text-content transition-colors cursor-pointer"
+          className="text-muted hover:text-content transition-colors cursor-pointer text-lg leading-none flex-shrink-0"
+          title="Back"
         >
           ←
         </button>
-        <div className="flex-1">
-          <Label block className="mb-0.5">RECORDING SETTINGS</Label>
-          <div className="text-sm font-bold">Configure what events are tracked</div>
-        </div>
+        <div className="text-base font-bold flex-1 text-center">Settings</div>
         <Btn variant="primary" size="md" onClick={closeGameSettings}>Done</Btn>
       </div>
 

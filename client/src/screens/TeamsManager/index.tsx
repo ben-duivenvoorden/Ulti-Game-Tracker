@@ -66,11 +66,8 @@ export default function TeamsManager() {
   // ─── List view (default) ──────────────────────────────────────────────────
   return (
     <div className="h-full flex flex-col bg-bg text-content">
-      <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-border">
-        <div>
-          <Label block className="mb-1">TEAMS MANAGER</Label>
-          <div className="text-base font-bold">Roster</div>
-        </div>
+      <div className="flex-shrink-0 h-12 border-b border-border flex items-center justify-between px-3">
+        <div className="text-base font-bold">Teams</div>
         <Btn variant="primary" size="md" onClick={closeTeamsManager}>Done</Btn>
       </div>
 
