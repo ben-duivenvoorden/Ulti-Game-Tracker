@@ -148,8 +148,7 @@ export interface DerivedGameState {
   discHolder: PlayerId | null  // null between possession events / turnovers
   pointIndex: number           // total goals scored so far
   /** Players on the field for each team, in roster order. Derived from
-   *  point-start / injury-sub events. Visual pill reorder is per-device
-   *  transient state (see `store.lineOrderOverride`), not part of the log. */
+   *  point-start / injury-sub events. */
   activeLine: ActiveLine
 }
 

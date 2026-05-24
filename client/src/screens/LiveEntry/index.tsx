@@ -3,24 +3,20 @@ import {
   useSession, useDerivedState, useVisLog, useGameActions, useUiState, useRecordingOptions,
   useTruncateCursor, useEditMode, useNotification,
 } from '@/core/selectors'
-import { useGameStore, applyLineOverride } from '@/core/store'
 import { computeVisLog } from '@/core/engine'
 import { otherTeam, type EventId, type Player, type TeamId, type VisLogEntry } from '@/core/types'
 import { isPickMode, pickActiveTeam, resolveContextLabel } from '@/core/pickModes'
 import { Header } from './Header'
-import { Stage, type StageMode } from './Canvas/Stage'
-import type { PassArrowSpec } from './Canvas/PassArrowLayer'
-import { useStageSize } from './Canvas/useStageSize'
 import { LogPeek } from './LogPeek'
-import { ActionZone } from './ActionZone'
+import { PlayerColumn } from './PlayerColumn'
+import { EventColumn } from './EventColumn'
+import { PassLane } from './PassLane'
 import { BottomSheet, type SheetTab } from './BottomSheet'
 import { Btn } from '@/components/ui/Btn'
 
 // True until the active team's possession run has at least 2 recorded
 // possession events — i.e. the current holder hasn't received a pass yet
-// (they picked up after a pull / turnover, or are the interceptor). On
-// each new possession run for the team this resets, so the "first pass"
-// rule applies *every* time they get the disc fresh.
+// (they picked up after a pull / turnover, or are the interceptor).
 function isFirstPossession(visLog: VisLogEntry[], teamId: TeamId): boolean {
   let count = 0
   for (let i = visLog.length - 1; i >= 0; i--) {
@@ -35,34 +31,6 @@ function isFirstPossession(visLog: VisLogEntry[], teamId: TeamId): boolean {
   return true
 }
 
-// Derive pass arrows for the active team's *current* possession run.
-function derivePassArrows(
-  visLog: VisLogEntry[],
-  teamId: TeamId,
-  players: Player[],
-  maxArrows = 2,
-): PassArrowSpec[] {
-  type Possession = Extract<VisLogEntry, { type: 'possession' }>
-  const chain: Possession[] = []
-  for (let i = visLog.length - 1; i >= 0; i--) {
-    const e = visLog[i]
-    if (e.type === 'possession' && e.teamId === teamId) {
-      chain.push(e)
-    } else {
-      break
-    }
-  }
-  chain.reverse()
-
-  const arrows: PassArrowSpec[] = []
-  for (let i = 1; i < chain.length; i++) {
-    const fromIdx = players.findIndex(p => p.id === chain[i - 1].playerId)
-    const toIdx   = players.findIndex(p => p.id === chain[i].playerId)
-    if (fromIdx >= 0 && toIdx >= 0) arrows.push({ fromIdx, toIdx })
-  }
-  return arrows.slice(-maxArrows)
-}
-
 export default function LiveEntry() {
   const session          = useSession()
   const state            = useDerivedState()
@@ -70,19 +38,15 @@ export default function LiveEntry() {
   const ui               = useUiState()
   const actions          = useGameActions()
   const recordingOptions = useRecordingOptions()
-  const pillSize         = useGameStore(s => s.pillSize)
-  const stageSize        = useStageSize()
   const truncateCursor   = useTruncateCursor()
   const editMode         = useEditMode()
   const notification     = useNotification()
-  const lineOverride     = useGameStore(s => s.lineOrderOverride)
 
   // Bottom sheet — opens on log-peek tap or on MORE button.
   const [sheetOpen, setSheetOpen] = useState(false)
   const [sheetTab, setSheetTab] = useState<SheetTab>('log')
   const openSheet = (tab: SheetTab) => { setSheetTab(tab); setSheetOpen(true) }
 
-  // Derived flags before the early return (so hook order stays stable).
   const phase   = state?.gamePhase
   const pickMode = isPickMode(ui.uiMode) ? ui.uiMode : null
 
@@ -95,33 +59,18 @@ export default function LiveEntry() {
     : null
 
   const activePlayers = useMemo<Player[]>(
-    () => {
-      if (!state || !activeTeam) return []
-      const engineLine = state.activeLine[activeTeam]
-      const order = applyLineOverride(engineLine.map(p => p.id), lineOverride[activeTeam])
-      const byId = new Map(engineLine.map(p => [p.id, p]))
-      return order.map(id => byId.get(id)).filter((p): p is Player => p !== undefined)
-    },
-    [state, activeTeam, lineOverride],
+    () => (state && activeTeam ? state.activeLine[activeTeam] : []),
+    [state, activeTeam],
   )
 
-  // For arrows + first-possession gating, use the cursor-aware view of the
-  // log. The bottom sheet's log tab still gets the full vis log.
   const effectiveVisLog = useMemo(
     () => (truncateCursor === null ? visLog : visLog.filter(e => e.id <= truncateCursor)),
     [visLog, truncateCursor],
   )
 
-  const arrows = useMemo(
-    () => (activeTeam ? derivePassArrows(effectiveVisLog, activeTeam, activePlayers) : []),
-    [effectiveVisLog, activeTeam, activePlayers],
-  )
-
   const firstPossession = !!activeTeam && phase === 'in-play' && isFirstPossession(effectiveVisLog, activeTeam)
 
-  // Auto-advance to LineSelection after a goal or half-time. Skip while
-  // previewing — otherwise rewinding to a goal would silently navigate the
-  // user out of LiveEntry.
+  // Auto-advance to LineSelection after a goal or half-time.
   useEffect(() => {
     if (truncateCursor !== null) return
     if (phase === 'point-over' || phase === 'half-time') actions.nextPoint()
@@ -130,12 +79,6 @@ export default function LiveEntry() {
   if (!session || !state || !activeTeam) return null
 
   const { teams } = session.gameConfig
-  const stageMode: StageMode = pickMode
-    ? 'pick'
-    : phase === 'awaiting-pull'
-      ? 'awaiting-pull'
-      : 'in-play'
-
   const ineligibleIds = pickMode === 'receiver-error-pick' && state.discHolder !== null
     ? [state.discHolder]
     : []
@@ -147,7 +90,6 @@ export default function LiveEntry() {
     ? { from: editMode.removeFromId, to: editMode.removeToId }
     : null
 
-  // Long-press in edit mode sets the replace range.
   const onLongPress = (entryId: EventId) => {
     if (editActive) {
       const fromId = truncateCursor ?? entryId
@@ -155,8 +97,6 @@ export default function LiveEntry() {
     }
   }
 
-  // Paste lands at the truncate cursor if set, else after the most recent
-  // event.
   const onPaste = () => {
     const lastId = visLog.length > 0 ? visLog[visLog.length - 1].id : null
     const targetId = truncateCursor ?? lastId
@@ -167,9 +107,8 @@ export default function LiveEntry() {
     void actions.pasteFromClipboard(targetId)
   }
 
-  const stageW = Math.max(0, stageSize.w)
-  const stageH = Math.max(0, stageSize.h)
   const defendingShort = teams[otherTeam(state.possession)].short
+  const activeTeamColor = teams[activeTeam].color
 
   return (
     <div className="h-full flex flex-col" style={{ background: 'var(--color-bg)' }}>
@@ -252,7 +191,6 @@ export default function LiveEntry() {
             color:      notification.kind === 'success' ? 'var(--color-success)'    : 'var(--color-warn)',
             borderBottom: `1px solid ${notification.kind === 'success' ? 'var(--color-success)' : 'var(--color-warn)'}`,
           }}
-          title="Tap to dismiss"
         >
           {notification.message}
           {notification.detail && (
@@ -261,15 +199,13 @@ export default function LiveEntry() {
         </button>
       )}
 
-      {/* Log peek strip — tap to open the bottom sheet's Log tab. */}
       <LogPeek
         visLog={visLog}
         players={[...session.gameConfig.rosters.A, ...session.gameConfig.rosters.B]}
         onOpen={() => openSheet('log')}
       />
 
-      {/* Main body: canvas (top) + action zone (bottom). Sheet floats above
-          when open. */}
+      {/* Main body: PlayerColumn | PassLane | EventColumn */}
       <div className="flex-1 relative overflow-hidden" style={{ minWidth: 0 }}>
         {isGameOver ? (
           <GameOverBanner
@@ -279,24 +215,40 @@ export default function LiveEntry() {
             onEdit={editActive ? undefined : actions.beginEdit}
           />
         ) : (
-          <Stage
-            key={activeTeam}
-            teamId={activeTeam}
-            players={activePlayers}
-            teamColor={teams[activeTeam].color}
-            mode={stageMode}
-            holderId={state.discHolder}
-            pullerId={ui.selPuller}
-            ineligibleIds={ineligibleIds}
-            pillSize={pillSize}
-            arrows={arrows}
-            bounds={{ w: stageW, h: stageH }}
-            onPillTap={actions.tapPlayer}
-            onBackgroundTap={() => { if (pickMode) actions.cancelPickMode() }}
-          />
+          <div className="h-full grid" style={{ gridTemplateColumns: '1fr auto 1fr' }}>
+            <PlayerColumn
+              players={activePlayers}
+              teamColor={activeTeamColor}
+              holderId={state.discHolder}
+              pullerId={ui.selPuller}
+              ineligibleIds={ineligibleIds}
+              onTap={actions.tapPlayer}
+            />
+            <PassLane
+              visLog={effectiveVisLog}
+              players={activePlayers}
+              activeTeam={activeTeam}
+              teamColor={activeTeamColor}
+            />
+            <EventColumn
+              state={state}
+              recordingOptions={recordingOptions}
+              firstPossession={firstPossession}
+              pullerSelected={ui.selPuller !== null}
+              onGoal={actions.recordGoal}
+              onThrowaway={actions.recordThrowAway}
+              onReceiverError={actions.triggerReceiverError}
+              onBlock={() => actions.triggerDefBlock('block')}
+              onIntercept={() => actions.triggerDefBlock('intercept')}
+              onStall={actions.recordStall}
+              onPull={() => actions.recordPull(false)}
+              onPullBonus={() => actions.recordPull(true)}
+              onBrick={actions.recordBrick}
+              onMore={() => openSheet('more')}
+            />
+          </div>
         )}
 
-        {/* Bottom sheet overlays the body when open. */}
         <BottomSheet
           open={sheetOpen}
           activeTab={sheetTab}
@@ -315,8 +267,6 @@ export default function LiveEntry() {
           onBeginEdit={editActive ? undefined : actions.beginEdit}
           state={state}
           recordingOptions={recordingOptions}
-          pillSize={pillSize}
-          onCyclePillSize={actions.cyclePillSize}
           onInjurySub={actions.triggerInjurySub}
           onTimeout={actions.recordTimeout}
           onFoul={actions.recordFoul}
@@ -325,26 +275,6 @@ export default function LiveEntry() {
           onEndGame={actions.triggerEndGame}
         />
       </div>
-
-      {/* Fixed action zone — bottom of screen. */}
-      {!isGameOver && !pickMode && (
-        <ActionZone
-          state={state}
-          recordingOptions={recordingOptions}
-          firstPossession={firstPossession}
-          pullerSelected={ui.selPuller !== null}
-          onGoal={actions.recordGoal}
-          onThrowaway={actions.recordThrowAway}
-          onStall={actions.recordStall}
-          onReceiverError={actions.triggerReceiverError}
-          onBlock={() => actions.triggerDefBlock('block')}
-          onIntercept={() => actions.triggerDefBlock('intercept')}
-          onPull={() => actions.recordPull(false)}
-          onPullBonus={() => actions.recordPull(true)}
-          onBrick={actions.recordBrick}
-          onMore={() => openSheet('more')}
-        />
-      )}
     </div>
   )
 }

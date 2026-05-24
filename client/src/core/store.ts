@@ -14,8 +14,6 @@ import type {
   Notification,
   EditModeState,
 } from './types'
-import type { PillSize } from '@/screens/LiveEntry/Canvas/constants'
-import { PILL_SIZE_CYCLE } from '@/screens/LiveEntry/Canvas/constants'
 import { otherTeam, DEFAULT_RECORDING_OPTIONS } from './types'
 import {
   deriveGameState,
@@ -66,14 +64,6 @@ interface GameStore {
   uiMode: UiMode
   selPuller: PlayerId | null
   recordingOptions: RecordingOptions
-  /** Player pill size — per-device display preference. */
-  pillSize: PillSize
-  /** Per-device visual reorder of pills on the canvas — never goes on the wire.
-   *  Each value is the preferred player-id order for that team. Stale ids
-   *  (players no longer on the field) are filtered out at apply-time; the
-   *  engine's `activeLine` order remains authoritative for any id not present
-   *  here. See `applyLineOverride`. */
-  lineOrderOverride: Record<TeamId, PlayerId[]>
 
   // Transient (not persisted)
   showEventMenu: boolean
@@ -96,8 +86,6 @@ interface GameStore {
   confirmLine:       (lineA: Player[], lineB: Player[]) => void
   nextPoint:         () => void
   backToGameList:    () => void
-  reorderActiveLine: (teamId: TeamId, fromIdx: number, toIdx: number) => void
-  swapLineSlots:     (teamId: TeamId, i: number, j: number) => void
 
   // Recording actions (all funnel through canRecord guards)
   tapPlayer:            (player: Player) => void
@@ -124,7 +112,6 @@ interface GameStore {
 
   // Pure UI
   setShowEventMenu:    (show: boolean) => void
-  cyclePillSize:       () => void
   setTruncateCursor:   (cursor: EventId | null) => void
 
   // Notifications
@@ -191,10 +178,10 @@ interface GameStore {
 
 // ─── Persistence ──────────────────────────────────────────────────────────────
 
-const STORAGE_VERSION = 11
+const STORAGE_VERSION = 12
 const STORAGE_KEY     = 'ust-game'
 /** Tagged at build time so hydration logs identify which bundle is running. */
-const BUILD_MARKER    = 'ust-build-2026-05-24-v11'
+const BUILD_MARKER    = 'ust-build-2026-05-24-v12'
 
 // ─── Initial seeds ────────────────────────────────────────────────────────────
 // `seedTeamsAndGames()` produces deterministic id 1.. events; the same seed
@@ -274,20 +261,6 @@ export function seedDefaultLine(roster: Player[]): Player[] {
   const males   = roster.filter(p => p.gender === 'M').slice(0, 4)
   const females = roster.filter(p => p.gender === 'F').slice(0, 3)
   return [...males, ...females]
-}
-
-/** Apply a per-device visual order to the engine's `activeLine`. Override
- *  entries that are no longer on the field are silently dropped; engine
- *  entries not present in the override appear at the end in engine order.
- *  This way the override degrades gracefully across line changes
- *  (injury subs, new points) without needing explicit invalidation. */
-export function applyLineOverride(engineLine: PlayerId[], override: PlayerId[]): PlayerId[] {
-  if (override.length === 0) return engineLine
-  const inEngine = new Set(engineLine)
-  const ordered  = override.filter(id => inEngine.has(id))
-  const inOverride = new Set(ordered)
-  const newcomers = engineLine.filter(id => !inOverride.has(id))
-  return [...ordered, ...newcomers]
 }
 
 function sameLine(a: PlayerId[], b: PlayerId[]): boolean {
@@ -439,8 +412,6 @@ export const useGameStore = create<GameStore>()(
       notification:      null,
       editMode:          null,
       recordingOptions:  DEFAULT_RECORDING_OPTIONS,
-      pillSize:          'md',
-      lineOrderOverride: { A: [], B: [] },
 
       // ── selectGame ──────────────────────────────────────────────────────────
       // Start a fresh game session (overwrites any existing one). Resolves
@@ -732,44 +703,6 @@ export const useGameStore = create<GameStore>()(
         })
       },
 
-      // ── reorderActiveLine ────────────────────────────────────────────────────
-      // Reorders the on-field display order for a team. Per-device visual
-      // preference only — never written to the rawLog or sent on the wire.
-      reorderActiveLine(teamId, fromIdx, toIdx) {
-        if (fromIdx === toIdx) return
-        const { session, editMode, truncateCursor, lineOrderOverride } = get()
-        const target = activeSession({ session, editMode })
-        if (!target) return
-        const state = deriveGameState(effectiveSession(target, truncateCursor))
-        const engineLine = state.activeLine[teamId].map(p => p.id)
-        const effective = applyLineOverride(engineLine, lineOrderOverride[teamId])
-        if (fromIdx < 0 || fromIdx >= effective.length || toIdx < 0 || toIdx >= effective.length) return
-        const next = [...effective]
-        const [moved] = next.splice(fromIdx, 1)
-        next.splice(toIdx, 0, moved)
-        set({ lineOrderOverride: { ...lineOrderOverride, [teamId]: next } })
-      },
-
-      // ── swapLineSlots ────────────────────────────────────────────────────────
-      // Swap two players' positions in a team's on-field line. Used by the
-      // canvas drag-onto-pill interaction. Per-device visual preference only —
-      // never written to the rawLog or sent on the wire.
-      swapLineSlots(teamId, i, j) {
-        if (i === j) return
-        const { session, editMode, truncateCursor, lineOrderOverride } = get()
-        const target = activeSession({ session, editMode })
-        if (!target) return
-        const state = deriveGameState(effectiveSession(target, truncateCursor))
-        const engineLine = state.activeLine[teamId].map(p => p.id)
-        const effective = applyLineOverride(engineLine, lineOrderOverride[teamId])
-        if (i < 0 || i >= effective.length || j < 0 || j >= effective.length) return
-        const next = [...effective]
-        const tmp = next[i]
-        next[i] = next[j]
-        next[j] = tmp
-        set({ lineOrderOverride: { ...lineOrderOverride, [teamId]: next } })
-      },
-
       // ── backToGameList ───────────────────────────────────────────────────────
       // Returns to game-setup, preserving the session so it can be viewed again.
       backToGameList() {
@@ -843,13 +776,6 @@ export const useGameStore = create<GameStore>()(
       // ── setShowEventMenu ─────────────────────────────────────────────────────
       setShowEventMenu(show) {
         set({ showEventMenu: show })
-      },
-
-      // ── cyclePillSize ───────────────────────────────────────────────────────
-      // Cycle through small / medium / large pill sizes. Per-device display
-      // preference — what feels right for thumbs / screen size.
-      cyclePillSize() {
-        set(s => ({ pillSize: PILL_SIZE_CYCLE[s.pillSize] }))
       },
 
       // ── setTruncateCursor ──────────────────────────────────────────────────
@@ -1231,7 +1157,6 @@ export const useGameStore = create<GameStore>()(
           truncateCursor:    null,
           editMode:          null,
           notification:      null,
-          lineOrderOverride: { A: [], B: [] },
         })
       },
     }),
@@ -1256,10 +1181,9 @@ export const useGameStore = create<GameStore>()(
         const needsSeed = fromVersion < 10 || teamsLogMissing || gamesLogMissing
         const seed = needsSeed ? seedTeamsAndGames() : null
 
-        // v10 → v11: `reorder-line` was dropped from the event-type union
-        // (pill display order is now per-device transient state on
-        // `lineOrderOverride`). Strip any legacy entries from the persisted
-        // rawLog so the live engine never sees a now-unknown event type.
+        // v10 → v11: `reorder-line` was dropped from the event-type union.
+        // Strip any legacy entries from the persisted rawLog so the live
+        // engine never sees a now-unknown event type.
         const session = dropping ? null : (obj.session ?? null)
         const cleanedSession = (session && Array.isArray(session.rawLog) && fromVersion < 11)
           ? { ...session, rawLog: session.rawLog.filter(e => e.type !== 'reorder-line') }
@@ -1291,8 +1215,6 @@ export const useGameStore = create<GameStore>()(
         uiMode:            state.uiMode,
         selPuller:         state.selPuller,
         recordingOptions:  state.recordingOptions,
-        pillSize:          state.pillSize,
-        lineOrderOverride: state.lineOrderOverride,
       }),
       // Defensive overlay. The default merge lets `{ teamsLog: [] }` from a
       // corrupted localStorage clobber the seeded initial state — which is

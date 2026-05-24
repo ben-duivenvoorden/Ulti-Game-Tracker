@@ -1,6 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { VisLogEntry, Player, EventId, DerivedGameState, RecordingOptions } from '@/core/types'
-import type { PillSize } from './Canvas/constants'
 import { formatVisLogEntry, getVisLogColor, isMutedLogEntry } from '@/core/format'
 import { canRecord } from '@/core/engine'
 import { Btn } from '@/components/ui/Btn'
@@ -30,8 +29,6 @@ interface BottomSheetProps {
   // More tab
   state:            DerivedGameState
   recordingOptions: RecordingOptions
-  pillSize:         PillSize
-  onCyclePillSize:  () => void
   onInjurySub:      () => void
   onTimeout:        () => void
   onFoul:           () => void
@@ -292,12 +289,10 @@ function ToolBtn({ children, onClick, disabled }: { children: React.ReactNode; o
 }
 
 // ─── More tab ────────────────────────────────────────────────────────────────
-// Stoppages + manual half-time / end-game + display prefs.
-
-const PILL_SIZE_LABELS: Record<PillSize, string> = { sm: 'Small', md: 'Medium', lg: 'Large' }
+// Stoppages + manual half-time / end-game.
 
 function MoreTab(props: BottomSheetProps) {
-  const { state, recordingOptions, pillSize, onCyclePillSize,
+  const { state, recordingOptions,
           onInjurySub, onTimeout, onFoul, onPick, onHalfTime, onEndGame } = props
   const can = (t: Parameters<typeof canRecord>[1]) => canRecord(state, t)
 
@@ -317,12 +312,6 @@ function MoreTab(props: BottomSheetProps) {
       <Section title="MANUAL TRIGGERS">
         <Btn variant="ghost" size="sm" full disabled={!can('half-time')} onClick={onHalfTime}>Half Time</Btn>
         <Btn variant="ghost" size="sm" full disabled={!can('end-game')}  onClick={onEndGame}>End Game</Btn>
-      </Section>
-
-      <Section title="DISPLAY">
-        <Btn variant="ghost" size="sm" full onClick={onCyclePillSize}>
-          Pill size: {PILL_SIZE_LABELS[pillSize]}
-        </Btn>
       </Section>
     </div>
   )
