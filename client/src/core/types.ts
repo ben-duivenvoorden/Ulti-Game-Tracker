@@ -198,6 +198,15 @@ export interface RecordingOptions {
   foul:      boolean
   pick:      boolean
   stall:     boolean
+  /** Default player-tap action: record a possession (pass) event. When
+   *  disabled, taps on players in `in-play` are no-ops, no `possession`
+   *  events land in the log, and the pass lane draws no arrows. The
+   *  awaiting-pull puller select still works either way. */
+  passes:    boolean
+  /** How many recent passes are drawn in the Pass Lane on Live Entry.
+   *  Sub-setting of `passes` — meaningful only when passes is enabled.
+   *  Clamped to [0, 3] (the lane has three styled tracks). */
+  passArrowsShown: number
   /** 'mixed' = male/female-matching ratio enforced; 'open' = total count only. */
   gameMode:  GameMode
   /** In mixed: M and F counts must match. In open: M+F is the total line size. */
@@ -210,6 +219,8 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
   foul:      false,
   pick:      false,
   stall:     false,
+  passes:    true,
+  passArrowsShown: 2,
   gameMode:  'mixed',
   lineRatio: { M: 4, F: 3 },
 }

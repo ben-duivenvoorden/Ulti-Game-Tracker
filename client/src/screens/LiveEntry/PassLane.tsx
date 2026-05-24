@@ -5,6 +5,8 @@ interface PassLaneProps {
   visLog: VisLogEntry[]
   players: Player[]
   activeTeam: TeamId
+  /** How many recent passes to render. Clamped to [0, MAX_ARROWS_HARD]. */
+  maxArrows: number
 }
 
 // Thin vertical pane between PlayerColumn and EventColumn. The last
@@ -22,7 +24,10 @@ interface PassLaneProps {
 // — oldest tightest, newest furthest. Newer arrows also draw thicker and
 // at full opacity; older fade.
 
-const MAX_ARROWS         = 3
+// Hard cap — three styled tracks (oldest / middle / newest) exist in
+// the emphasis arrays below, so anything higher just degrades to the
+// newest treatment. The configurable user setting clamps to this.
+export const MAX_PASS_ARROWS_HARD = 3
 const LANE_WIDTH         = 48   // px
 const LEFT_ANCHOR_X      = 3    // px in from the lane's left edge — where arrowhead tips land
 const LINE_START_INSET   = 2    // px past LEFT_ANCHOR_X where the SENDING line starts (small visual inset; head/tail separation comes from the Y-offset below)
@@ -61,8 +66,9 @@ const DASH_PATTERNS = ['3 5', '6 4', undefined] as const
 const OPACITIES     = [0.42, 0.7, 1]   as const
 const STROKE_WIDTHS = [1.6, 2, 2.4]    as const
 
-export function PassLane({ visLog, players, activeTeam }: PassLaneProps) {
-  const arrows = derivePassArrows(visLog, activeTeam, players, MAX_ARROWS)
+export function PassLane({ visLog, players, activeTeam, maxArrows }: PassLaneProps) {
+  const clampedMax = Math.max(0, Math.min(MAX_PASS_ARROWS_HARD, maxArrows))
+  const arrows = derivePassArrows(visLog, activeTeam, players, clampedMax)
   const N = players.length
 
   // Measure the container in real pixels so SVG coords stay 1-to-1 and
@@ -92,7 +98,7 @@ export function PassLane({ visLog, players, activeTeam }: PassLaneProps) {
             // full three-slot scale). When there are fewer than three
             // arrows, we align to the right so the latest arrow always
             // gets the newest treatment.
-            const emphasisIdx = MAX_ARROWS - arrows.length + i
+            const emphasisIdx = MAX_PASS_ARROWS_HARD - arrows.length + i
             const opacity = OPACITIES[emphasisIdx]
             const stroke  = STROKE_WIDTHS[emphasisIdx]
             const dash    = DASH_PATTERNS[emphasisIdx]

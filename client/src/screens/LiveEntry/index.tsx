@@ -168,6 +168,7 @@ export default function LiveEntry() {
               visLog={effectiveVisLog}
               players={activePlayers}
               activeTeam={activeTeam}
+              maxArrows={recordingOptions.passes ? recordingOptions.passArrowsShown : 0}
             />
             <EventColumn
               state={state}

@@ -443,8 +443,11 @@ export const useGameStore = create<GameStore>()(
           return
         }
 
-        // Pass chain: tap = possession transfer
+        // Pass chain: tap = possession transfer. Suppressed when the
+        // user has disabled the Passes recording option — in that mode
+        // pass events are not logged and the pass lane stays empty.
         if (state.gamePhase === 'in-play') {
+          if (!get().recordingOptions.passes) return
           recordVia(get, set, s => {
             if (!canRecord(s, 'possession')) return null
             // Don't record if they already have possession
