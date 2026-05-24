@@ -5,92 +5,108 @@ interface PassLaneProps {
   players: Player[]
   activeTeam: TeamId
   teamColor: string
-  /** Cap how many recent passes are shown — older ones get earlier lanes. */
-  maxArrows?: number
 }
 
-// Thin vertical pane between PlayerColumn and EventColumn. Each recent
-// pass gets its OWN horizontal track so the start and end of each arrow
-// are unambiguous — never overlapping. Arrows curve slightly so the
-// reader's eye can follow them as discrete strokes rather than a stacked
-// pile of lines.
+// Thin vertical pane between PlayerColumn and EventColumn. The last two
+// passes are drawn as curves that BOTH start and end on a single vertical
+// "left plane" — the line nearest the PlayerColumn — and bow out to the
+// right of the lane. The newer pass bows further (more prominent); the
+// older pass is a tighter curve closer to the plane.
 //
-// Layout: the lane has N tracks side-by-side (one per arrow). Tracks
-// are ordered oldest-leftmost → newest-rightmost so the most recent
-// pass sits closest to the EventColumn. Each track contains:
-//   - a curved SVG path from sender's row-centre to receiver's row-centre
-//   - a small arrowhead at the receiver end
-//
-// SVG here is unavoidable for the curve — but the curves are small and
-// deterministic so this isn't the canvas-style physics rendering we
-// retired.
-const TRACK_WIDTH = 18  // px per arrow track
-const PAD_TOP     = 6   // px — matches PlayerColumn's p-1.5
-const PAD_BOT     = 6
+// Why the shared-left-plane layout: every arrow's endpoint sits next to
+// its player's row in the PlayerColumn. That makes "where did the disc
+// come from / go to" unambiguous — the reader's eye runs along the left
+// plane to find the row, then follows the curve to read sender vs
+// receiver. No two arrows ever overlap because their bow depths differ.
 
-export function PassLane({ visLog, players, activeTeam, teamColor, maxArrows = 3 }: PassLaneProps) {
-  const arrows = derivePassArrows(visLog, activeTeam, players, maxArrows)
+const MAX_ARROWS = 2
+const LANE_WIDTH = 56          // px — wider than before so curves have room to bow
+const LEFT_ANCHOR_X = 3        // px in from the lane's left edge; arrows pin here
+const VIEW_H = 100             // viewBox vertical units (paths use this same scale)
+
+// Bow depths (in viewBox X units) per arrow, oldest first. The newer
+// arrow gets the larger bow so it reads as the dominant curve.
+const BOW_DEPTHS = [LANE_WIDTH * 0.45, LANE_WIDTH * 0.78] as const
+
+export function PassLane({ visLog, players, activeTeam, teamColor }: PassLaneProps) {
+  const arrows = derivePassArrows(visLog, activeTeam, players, MAX_ARROWS)
   const N = players.length
-
-  if (arrows.length === 0) {
-    return (
-      <div
-        className="relative h-full"
-        style={{ width: TRACK_WIDTH }}
-        aria-hidden
-      >
-        <div
-          className="absolute left-1/2 -translate-x-1/2"
-          style={{ top: PAD_TOP, bottom: PAD_BOT, width: 1, background: 'var(--color-border)' }}
-        />
-      </div>
-    )
-  }
-
-  const laneWidth = TRACK_WIDTH * arrows.length
 
   return (
     <svg
       className="h-full"
-      style={{ width: laneWidth, display: 'block' }}
-      viewBox={`0 0 ${laneWidth} 100`}
+      style={{ width: LANE_WIDTH, display: 'block' }}
+      viewBox={`0 0 ${LANE_WIDTH} ${VIEW_H}`}
       preserveAspectRatio="none"
       aria-hidden
     >
+      {/* Vertical "left plane" — the spine that arrows pin to. Faint so
+          empty-lane states still read as a deliberate area. */}
+      <line
+        x1={LEFT_ANCHOR_X} x2={LEFT_ANCHOR_X}
+        y1={4} y2={VIEW_H - 4}
+        stroke="var(--color-border)"
+        strokeWidth={1}
+        vectorEffect="non-scaling-stroke"
+      />
+
       {arrows.map((a, i) => {
-        const isMostRecent = i === arrows.length - 1
-        const opacity      = isMostRecent ? 1 : 0.55 - (arrows.length - 1 - i) * 0.18
-        const trackX       = (i + 0.5) * TRACK_WIDTH
-        const fromY        = rowCenter(a.fromIdx, N)
-        const toY          = rowCenter(a.toIdx,   N)
+        const newest = i === arrows.length - 1
+        const opacity = newest ? 1 : 0.55
+        const stroke  = newest ? 2 : 1.4
+        const bow     = BOW_DEPTHS[i] ?? BOW_DEPTHS[BOW_DEPTHS.length - 1]
 
-        // Curve: bow the path outward by ~45% of the track width so
-        // adjacent tracks don't visually merge. Direction of bow
-        // alternates per track to spread them visually.
-        const bow = (i % 2 === 0 ? 1 : -1) * TRACK_WIDTH * 0.45
-        const cx = trackX + bow
+        const fromY = rowCenter(a.fromIdx, N)
+        const toY   = rowCenter(a.toIdx,   N)
+        const midY  = (fromY + toY) / 2
 
-        // Arrowhead at the receiver — small triangle aligned to the
-        // tangent. For a quadratic curve P0→C→P1 the end tangent is
-        // (P1 - C); approximated for the head orientation.
-        const ah = 4 // arrowhead half-length in y (small)
-        const aw = 3 // arrowhead half-width
-        const downward = toY > fromY
-        const headTipY  = toY
-        const headBaseY = toY + (downward ? -ah * 2 : ah * 2)
+        // Control point bowed to the right. Same x for both endpoints
+        // anchors them on the left plane; the bezier passes through a
+        // point further right at midY.
+        const cx = LEFT_ANCHOR_X + bow
+
+        // Arrowhead at the receiver end, pointing back toward the
+        // control point (i.e. along the curve's exit tangent).
+        const ah = 5  // arrowhead length (in viewBox X units)
+        const aw = 2.5
+        // Approximate end-tangent direction: from cx,midY toward
+        // LEFT_ANCHOR_X,toY. The arrowhead sits along that direction
+        // so the tip is at (LEFT_ANCHOR_X, toY).
+        const tdx = LEFT_ANCHOR_X - cx
+        const tdy = toY - midY
+        const tlen = Math.hypot(tdx, tdy) || 1
+        const tx = tdx / tlen
+        const ty = tdy / tlen
+        // Tip:
+        const tipX = LEFT_ANCHOR_X
+        const tipY = toY
+        // Base centre (back along the tangent from the tip):
+        const baseX = tipX - tx * ah
+        const baseY = tipY - ty * ah
+        // Perpendicular (-ty, tx) for the base wings:
+        const lX = baseX + (-ty) * aw
+        const lY = baseY +   tx  * aw
+        const rX = baseX -  (-ty) * aw
+        const rY = baseY -    tx  * aw
+
+        // Truncate the path so the curve ends at the arrowhead's base
+        // rather than the player's row centre — keeps the line from
+        // peeking out of the arrowhead.
+        const pathEndX = baseX
+        const pathEndY = baseY
 
         return (
           <g key={i} opacity={opacity}>
             <path
-              d={`M ${trackX} ${fromY} Q ${cx} ${(fromY + toY) / 2} ${trackX} ${headBaseY}`}
+              d={`M ${LEFT_ANCHOR_X} ${fromY} Q ${cx} ${midY} ${pathEndX} ${pathEndY}`}
               stroke={teamColor}
-              strokeWidth={isMostRecent ? 1.8 : 1.3}
+              strokeWidth={stroke}
               fill="none"
               strokeLinecap="round"
               vectorEffect="non-scaling-stroke"
             />
             <polygon
-              points={`${trackX},${headTipY} ${trackX - aw},${headBaseY} ${trackX + aw},${headBaseY}`}
+              points={`${tipX},${tipY} ${lX},${lY} ${rX},${rY}`}
               fill={teamColor}
             />
           </g>
@@ -102,9 +118,6 @@ export function PassLane({ visLog, players, activeTeam, teamColor, maxArrows = 3
 
 interface PassArrow { fromIdx: number; toIdx: number }
 
-// Walk visLog backwards collecting consecutive possession events for
-// the active team. Returns arrows oldest-first (so caller can render
-// oldest on the left, newest on the right).
 function derivePassArrows(
   visLog: VisLogEntry[],
   teamId: TeamId,
@@ -132,15 +145,12 @@ function derivePassArrows(
   return arrows.slice(-maxArrows)
 }
 
-// Y-centre of row idx, in the SVG's 0-100 viewBox space, accounting
-// for the PlayerColumn's top/bottom padding. The lane visually mirrors
-// the PlayerColumn's row layout one-to-one.
+// Y-centre of row `idx` within the viewBox, accounting for the
+// PlayerColumn's vertical padding (p-1.5 → ~6 px ≈ 4 viewBox units).
 function rowCenter(idx: number, n: number): number {
-  if (n <= 0) return 50
-  // PlayerColumn uses p-1.5 (6px). At viewBox height 100 the padding
-  // proportionally is small but we still bias the rows slightly inset.
+  if (n <= 0) return VIEW_H / 2
   const top = 4
   const bot = 4
-  const usable = 100 - top - bot
+  const usable = VIEW_H - top - bot
   return top + ((idx + 0.5) / n) * usable
 }
