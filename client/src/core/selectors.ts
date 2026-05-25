@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useGameStore, effectiveSession } from './store'
-import { computeVisLog, deriveGameState } from './engine'
+import { computeVisLog, deriveGameState, deriveEndsSwapped } from './engine'
 import { deriveTeamsState } from './teams/engine'
 import { deriveScheduledGamesState, resolveGameConfig } from './games/engine'
 import type { DerivedGameState, VisLogEntry, GameSession, RecordingOptions, EventId, Notification } from './types'
@@ -128,6 +128,15 @@ export function useUiState() {
     isInjurySub:   s.isInjurySub,
     showEventMenu: s.showEventMenu,
   })))
+}
+
+// Display orientation — manual baseline (scorer's swap button) plus a flip
+// per goal and a conditional flip at half-time. Drives Header chip order,
+// LiveEntry column order, and LineSelection tab order.
+export function useDisplayEndsSwapped(): boolean {
+  const baseline = useGameStore(s => s.endsSwappedBaseline)
+  const visLog   = useVisLog()
+  return useMemo(() => deriveEndsSwapped(baseline, visLog), [baseline, visLog])
 }
 
 // ─── Suggested transitions ────────────────────────────────────────────────────

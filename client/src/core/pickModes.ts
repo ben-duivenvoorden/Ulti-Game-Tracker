@@ -42,14 +42,6 @@ export const PICK_MODES = {
     bgColor:      'var(--color-intercept-bg)',
     onTap:        { eventType: 'intercept', team: 'defending' },
   },
-  'receiver-error-pick': {
-    paneLabel:    'PICK PLAYER',
-    contextLabel: 'TAP PLAYER WHO HAD ERROR',
-    displayName:  'Receiver Error',
-    color:        'var(--color-warn)',
-    bgColor:      'var(--color-warn-bg)',
-    onTap:        { eventType: 'turnover-receiver-error', team: 'possession' },
-  },
 } as const satisfies Record<Exclude<UiMode, 'idle'>, PickModeConfig>
 
 export type PickUiMode = keyof typeof PICK_MODES

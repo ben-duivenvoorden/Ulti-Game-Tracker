@@ -158,7 +158,6 @@ export type UiMode =
   | 'idle'               // default — no special interaction in progress
   | 'block-pick'         // recorder tapped "Blocked by Defence", picking blocker
   | 'intercept-pick'     // recorder tapped "Intercepted by Defence", picking interceptor
-  | 'receiver-error-pick' // recorder tapped "Receiver Error", picking player who had error
 
 export type AppScreen = 'game-setup' | 'game-settings' | 'line-selection' | 'live-entry' | 'teams-manager'
 
@@ -200,13 +199,9 @@ export interface RecordingOptions {
   stall:     boolean
   /** Default player-tap action: record a possession (pass) event. When
    *  disabled, taps on players in `in-play` are no-ops, no `possession`
-   *  events land in the log, and the pass lane draws no arrows. The
+   *  events land in the log, and the pass notation draws nothing. The
    *  awaiting-pull puller select still works either way. */
   passes:    boolean
-  /** How many recent passes are drawn in the Pass Lane on Live Entry.
-   *  Sub-setting of `passes` — meaningful only when passes is enabled.
-   *  Clamped to [0, 3] (the lane has three styled tracks). */
-  passArrowsShown: number
   /** 'mixed' = male/female-matching ratio enforced; 'open' = total count only. */
   gameMode:  GameMode
   /** In mixed: M and F counts must match. In open: M+F is the total line size. */
@@ -220,7 +215,6 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
   pick:      false,
   stall:     false,
   passes:    true,
-  passArrowsShown: 2,
   gameMode:  'mixed',
   lineRatio: { M: 4, F: 3 },
 }

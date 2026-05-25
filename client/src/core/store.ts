@@ -69,6 +69,11 @@ interface GameStore {
   /** Banner notification shown for transient feedback (mostly stoppage
    *  acks today). One at a time; auto-clears via setTimeout. */
   notification: Notification | null
+  /** Manual baseline for the scorer's preferred orientation. The displayed
+   *  `endsSwapped` is derived by `deriveEndsSwapped(baseline, visLog)` — the
+   *  baseline contributes one term, each goal flips, each half-time may add
+   *  one more flip. Toggled by the swap button in the Header. */
+  endsSwappedBaseline: boolean
 
   // Game / session actions
   selectGame:        (gameId: number, pullingTeam: TeamId) => void
@@ -103,6 +108,7 @@ interface GameStore {
   // Pure UI
   setShowEventMenu:    (show: boolean) => void
   setTruncateCursor:   (cursor: EventId | null) => void
+  toggleEndsSwapped:   () => void
 
   // Notifications
   dismissNotification: () => void
@@ -157,10 +163,10 @@ interface GameStore {
 
 // ─── Persistence ──────────────────────────────────────────────────────────────
 
-const STORAGE_VERSION = 12
+const STORAGE_VERSION = 13
 const STORAGE_KEY     = 'ust-game'
 /** Tagged at build time so hydration logs identify which bundle is running. */
-const BUILD_MARKER    = 'ust-build-2026-05-24-v12'
+const BUILD_MARKER    = 'ust-build-2026-05-25-v13'
 
 // ─── Initial seeds ────────────────────────────────────────────────────────────
 // `seedTeamsAndGames()` produces deterministic id 1.. events; the same seed
@@ -328,6 +334,7 @@ export const useGameStore = create<GameStore>()(
       showEventMenu:     false,
       truncateCursor:    null,
       notification:      null,
+      endsSwappedBaseline: false,
       recordingOptions:  DEFAULT_RECORDING_OPTIONS,
 
       // ── selectGame ──────────────────────────────────────────────────────────
@@ -423,8 +430,6 @@ export const useGameStore = create<GameStore>()(
           recordVia(get, set, s => {
             const { onTap } = PICK_MODES[pickMode]
             if (!canRecord(s, onTap.eventType)) return null
-            // Receiver Error can't be the thrower — guard against UI bypass
-            if (onTap.eventType === 'turnover-receiver-error' && player.id === s.discHolder) return null
             const teamId = onTap.team === 'defending' ? otherTeam(s.possession) : s.possession
             return [{
               pointIndex: s.pointIndex,
@@ -444,10 +449,11 @@ export const useGameStore = create<GameStore>()(
         }
 
         // Pass chain: tap = possession transfer. Suppressed when the
-        // user has disabled the Passes recording option — in that mode
-        // pass events are not logged and the pass lane stays empty.
+        // user has explicitly disabled the Passes recording option —
+        // legacy persisted state from before the toggle existed leaves
+        // `passes` undefined, which we treat the same as the `true` default.
         if (state.gamePhase === 'in-play') {
-          if (!get().recordingOptions.passes) return
+          if (get().recordingOptions.passes === false) return
           recordVia(get, set, s => {
             if (!canRecord(s, 'possession')) return null
             // Don't record if they already have possession
@@ -512,19 +518,19 @@ export const useGameStore = create<GameStore>()(
       },
 
       // ── triggerReceiverError ────────────────────────────────────────────────
+      // Records receiver error directly against the current holder — the
+      // recorder doesn't need to pick a player. Mental model: the recorder
+      // taps the player who was the intended receiver (recording a
+      // possession), then taps Receiver Error to mark it as a drop.
       triggerReceiverError() {
-        const { session } = get()
-        const target = activeSession({ session })
-        if (!target) return
-        // Pick modes are tied to live state's holder/possession; entering one
-        // while previewing would point at stale players. Drop the preview so
-        // the pick reflects what's actually on the field.
-        const state = deriveGameState(target)
-        if (!canRecord(state, 'turnover-receiver-error') || !state.discHolder) return
-        set({
-          uiMode:         'receiver-error-pick',
-          showEventMenu:  false,
-          truncateCursor: null,
+        recordVia(get, set, state => {
+          if (!canRecord(state, 'turnover-receiver-error') || !state.discHolder) return null
+          return [{
+            pointIndex: state.pointIndex,
+            type:     'turnover-receiver-error',
+            playerId: state.discHolder,
+            teamId:   state.possession,
+          }]
         })
       },
 
@@ -700,6 +706,11 @@ export const useGameStore = create<GameStore>()(
         set({ truncateCursor: cursor, selPuller: null })
       },
 
+      // ── toggleEndsSwapped ─────────────────────────────────────────────────
+      toggleEndsSwapped() {
+        set({ endsSwappedBaseline: !get().endsSwappedBaseline })
+      },
+
       // ── dismissNotification ────────────────────────────────────────────────
       dismissNotification() {
         clearNotificationTimer()
@@ -830,6 +841,14 @@ export const useGameStore = create<GameStore>()(
           ? { ...session, rawLog: session.rawLog.filter(e => e.type !== 'reorder-line') }
           : session
 
+        // v12 → v13: `passArrowsShown` was removed from RecordingOptions
+        // (the visible-passes count is now hardcoded to 2 in the notation
+        // component). Strip it from any persisted recordingOptions blob so
+        // the type and the in-memory state stay aligned.
+        const rawRecOpts = (obj.recordingOptions ?? {}) as Record<string, unknown>
+        const { passArrowsShown: _passArrowsShown, ...recOptsNoLegacy } = rawRecOpts
+        void _passArrowsShown
+
         console.info('[ust-game] migrate', {
           build: BUILD_MARKER,
           fromVersion,
@@ -837,6 +856,7 @@ export const useGameStore = create<GameStore>()(
           gamesLogMissing,
           reseeded: needsSeed,
           strippedReorderLine: cleanedSession !== session,
+          strippedPassArrowsShown: 'passArrowsShown' in rawRecOpts,
         })
         return {
           ...obj,
@@ -844,7 +864,7 @@ export const useGameStore = create<GameStore>()(
           screen:            dropping ? 'game-setup'    : (obj.screen ?? 'game-setup'),
           teamsLog:          seed ? seed.teamEvents : obj.teamsLog!,
           scheduledGamesLog: seed ? seed.gameEvents : obj.scheduledGamesLog!,
-          recordingOptions:  { ...DEFAULT_RECORDING_OPTIONS, ...(obj.recordingOptions ?? {}) },
+          recordingOptions:  { ...DEFAULT_RECORDING_OPTIONS, ...recOptsNoLegacy },
         }
       },
       partialize: (state) => ({
@@ -887,7 +907,16 @@ export const useGameStore = create<GameStore>()(
           resultTeamsLogLen:     teamsLog.length,
           resultGamesLogLen:     scheduledGamesLog.length,
         })
-        return { ...c, ...p, teamsLog, scheduledGamesLog }
+        // Shallow-merge recordingOptions so new fields added to
+        // DEFAULT_RECORDING_OPTIONS post-launch are always present even
+        // when the persisted snapshot predates them. (Without this, a
+        // raw `...p` spread overwrites the seeded defaults with the
+        // older partial.)
+        const recordingOptions = {
+          ...DEFAULT_RECORDING_OPTIONS,
+          ...(p.recordingOptions ?? {}),
+        }
+        return { ...c, ...p, teamsLog, scheduledGamesLog, recordingOptions }
       },
       onRehydrateStorage: () => (state, error) => {
         if (error) {

@@ -109,6 +109,33 @@ export function computeVisLog(rawLog: RawEvent[]): VisLogEntry[] {
   return resolveRawLog(rawLog) as VisLogEntry[]
 }
 
+// ─── Display orientation derivation ──────────────────────────────────────────
+// `endsSwapped` controls header chip order, grid column order, and line-tab
+// order. It's derived from a manual baseline (set by the scorer's swap
+// button) plus the visible log:
+//
+//   - Each `goal` flips orientation once (teams switch ends every point).
+//   - Each `half-time` adds one extra flip when the goal count BEFORE that
+//     half-time event is even — second-half ends are the opposite of the
+//     game-start ends, so when N is even we're back at start and need to
+//     flip; when N is odd we're already at NOT(start) so no extra flip.
+//
+// Deriving from the log gives us undo-for-free: pop the goal, the count
+// drops, orientation recomputes.
+export function deriveEndsSwapped(baseline: boolean, visLog: VisLogEntry[]): boolean {
+  let swapped = baseline
+  let goalsSoFar = 0
+  for (const e of visLog) {
+    if (e.type === 'goal') {
+      swapped = !swapped
+      goalsSoFar++
+    } else if (e.type === 'half-time') {
+      if (goalsSoFar % 2 === 0) swapped = !swapped
+    }
+  }
+  return swapped
+}
+
 // ─── Derived game state ───────────────────────────────────────────────────────
 // Pure function: walks the rawLog (after undo/amend resolution) and computes
 // everything. This is the ONLY place game state is computed. The store holds
@@ -185,11 +212,16 @@ function step(state: DerivedGameState, event: Resolved, session: GameSession): v
       break
 
     case 'block':
+      // Disc is knocked down, not caught — the defending team gets
+      // possession but there's no holder yet. The next event is a
+      // `possession` recording whoever picks up the dead disc.
       state.possession = event.teamId
       state.discHolder = null
       break
 
     case 'intercept':
+      // Defender catches the disc cleanly — they're the new holder
+      // immediately, no follow-up possession event needed.
       state.possession = event.teamId
       state.discHolder = event.playerId
       break

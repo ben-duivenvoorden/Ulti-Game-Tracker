@@ -5,6 +5,11 @@ import { inkOn } from '@/core/contrast'
 interface HeaderProps {
   teams: Record<TeamId, Team>
   score: Score
+  /** When true, render Team B's chip + score on the left and Team A's
+   *  on the right. The actual A/B identity in state never changes;
+   *  this is presentation only. */
+  endsSwapped: boolean
+  onToggleEnds: () => void
   onBack: () => void
 }
 
@@ -13,11 +18,15 @@ interface HeaderProps {
 // Never one long + one short.
 const NAME_FIT_THRESHOLD = 10
 
-// Top strip on Live Entry: back arrow + live score. Transient mode strips
-// (pick mode, truncate preview, edit mode, suggestion, notification) are
+// Top strip on Live Entry: back arrow + live score. The "–" between
+// the two score numbers doubles as the swap-ends control — tap it to
+// flip which team renders on which side. Transient mode strips (pick
+// mode, truncate preview, edit mode, suggestion, notification) are
 // stacked separately below this header by the parent screen.
-export function Header({ teams, score, onBack }: HeaderProps) {
+export function Header({ teams, score, endsSwapped, onToggleEnds, onBack }: HeaderProps) {
   const names = pickDisplayNames(teams.A, teams.B, NAME_FIT_THRESHOLD)
+  const left:  TeamId = endsSwapped ? 'B' : 'A'
+  const right: TeamId = endsSwapped ? 'A' : 'B'
   return (
     <div
       className="flex-shrink-0 flex items-center justify-between px-3 h-16"
@@ -34,26 +43,55 @@ export function Header({ teams, score, onBack }: HeaderProps) {
         <span className="flex-1 flex justify-end min-w-0">
           <span
             className="text-sm font-bold truncate px-2 py-0.5 rounded"
-            style={{ background: teams.A.color, color: inkOn(teams.A.color) }}
-            title={teams.A.name}
+            style={{ background: teams[left].color, color: inkOn(teams[left].color) }}
+            title={teams[left].name}
           >
-            {names.A}
+            {names[left]}
           </span>
         </span>
-        <strong className="text-3xl font-black tabular-nums leading-none text-content flex-shrink-0 ml-2">{score.A}</strong>
-        <span className="text-dim text-base flex-shrink-0">–</span>
-        <strong className="text-3xl font-black tabular-nums leading-none text-content flex-shrink-0 mr-2">{score.B}</strong>
+        <strong className="text-3xl font-black tabular-nums leading-none text-content flex-shrink-0 ml-2">{score[left]}</strong>
+        <button
+          onClick={onToggleEnds}
+          aria-label="Swap ends"
+          title="Swap ends"
+          className="flex-shrink-0 flex items-center justify-center cursor-pointer text-muted hover:text-content transition-colors"
+          style={{ background: 'transparent', padding: 1 }}
+        >
+          <SwapEndsIcon size={14} />
+        </button>
+        <strong className="text-3xl font-black tabular-nums leading-none text-content flex-shrink-0 mr-2">{score[right]}</strong>
         <span className="flex-1 flex justify-start min-w-0">
           <span
             className="text-sm font-bold truncate px-2 py-0.5 rounded"
-            style={{ background: teams.B.color, color: inkOn(teams.B.color) }}
-            title={teams.B.name}
+            style={{ background: teams[right].color, color: inkOn(teams[right].color) }}
+            title={teams[right].name}
           >
-            {names.B}
+            {names[right]}
           </span>
         </span>
       </div>
       <span className="w-4" />
     </div>
+  )
+}
+
+function SwapEndsIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M7 7h12" />
+      <path d="m15 3 4 4-4 4" />
+      <path d="M17 17H5" />
+      <path d="m9 21-4-4 4-4" />
+    </svg>
   )
 }

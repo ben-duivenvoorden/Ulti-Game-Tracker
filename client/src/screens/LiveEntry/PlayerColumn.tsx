@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import type { Player, PlayerId } from '@/core/types'
 import { inkOn } from '@/core/contrast'
 
@@ -11,58 +12,111 @@ interface PlayerColumnProps {
   /** Dimmed and untappable (e.g. thrower during Receiver Error Pick). */
   ineligibleIds: PlayerId[]
   onTap: (player: Player) => void
+  /** Long-press a player to enter Move mode with that player selected. */
+  onLongPress?: (player: Player) => void
+  /** When non-null, Move mode is active and this player is the one
+   *  selected to be moved. All other tiles render with a dashed outline
+   *  to mark them as swap targets. */
+  moveSelectedId?: PlayerId | null
 }
 
-// Vertical stack of player buttons — one row per active-line player. Tap
-// to record a possession (or to enter the equivalent pick-mode action
-// during a pick state). Names render on two centred lines: first name on
-// top, surname (or remaining tokens) on the bottom. Visual states:
-// holder / puller / ineligible / default — communicated via borders +
-// tinted backgrounds.
+const LONG_PRESS_MS = 450
+
+// Vertical stack of player buttons — one row per active-line player.
+// Tap to record a possession; long-press a player to enter Move mode,
+// then tap another player to swap their positions.
 export function PlayerColumn(props: PlayerColumnProps) {
-  const { players, teamColor, holderId, pullerId, ineligibleIds, onTap } = props
+  const { players, teamColor, holderId, pullerId, ineligibleIds, onTap, onLongPress, moveSelectedId } = props
+  const timerRef    = useRef<number | null>(null)
+  const triggeredRef = useRef(false)
+  const downIdRef   = useRef<PlayerId | null>(null)
+  const inMoveMode = moveSelectedId !== null && moveSelectedId !== undefined
+
+  const clearTimer = () => {
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+  }
+
   return (
-    <div className="flex flex-col gap-1.5 p-1.5 h-full overflow-y-auto">
+    <div className="flex flex-col gap-4 p-3 h-full overflow-y-auto">
       {players.map(p => {
         const isHolder = p.id === holderId
         const isPuller = p.id === pullerId
         const isActive = isHolder || isPuller
         const ineligible = ineligibleIds.includes(p.id)
+        const isMoveSelected = moveSelectedId === p.id
+        const isMoveTarget   = inMoveMode && !isMoveSelected
         const [first, rest] = splitName(p.name)
         return (
           <button
             key={p.id}
             disabled={ineligible}
-            onClick={() => onTap(p)}
-            className="flex-1 min-h-0 rounded-lg border cursor-pointer transition-all select-none flex flex-col items-center justify-center px-2"
+            onPointerDown={() => {
+              triggeredRef.current = false
+              downIdRef.current = p.id
+              if (onLongPress) {
+                timerRef.current = window.setTimeout(() => {
+                  triggeredRef.current = true
+                  onLongPress(p)
+                }, LONG_PRESS_MS)
+              }
+            }}
+            onPointerUp={() => {
+              clearTimer()
+              if (!triggeredRef.current && downIdRef.current === p.id) {
+                onTap(p)
+              }
+              downIdRef.current = null
+            }}
+            onPointerLeave={() => {
+              clearTimer()
+              downIdRef.current = null
+            }}
+            onPointerCancel={() => {
+              clearTimer()
+              downIdRef.current = null
+            }}
+            className="flex-1 min-h-0 rounded-xl border cursor-pointer transition-all select-none flex flex-col items-center justify-center px-2"
             style={{
-              background:    ineligible ? 'var(--color-surf-2)'
-                            : isActive  ? teamColor
-                            : `${teamColor}14`,
+              background:    ineligible       ? 'var(--color-surf-2)'
+                            : isMoveSelected ? `${teamColor}66`
+                            : isActive       ? 'transparent'
+                            : teamColor,
+              // When active, the pill is transparent and the dark sankey
+              // wash sits behind — so contrast against the team colour
+              // (which inkOn assumes) gives unreadable dark text for
+              // light team kits. Force light ink in that case.
               color:         ineligible ? 'var(--color-dim)'
-                            : isActive  ? inkOn(teamColor)
-                            : 'var(--color-content)',
-              borderColor:   ineligible ? 'var(--color-border)'
-                            : isActive  ? teamColor
-                            : `${teamColor}55`,
-              borderWidth:   isActive ? 2 : 1.5,
+                            : isActive  ? '#fff'
+                            : inkOn(teamColor),
+              borderColor:   ineligible       ? 'var(--color-border)'
+                            : isMoveSelected ? teamColor
+                            : isMoveTarget   ? teamColor
+                            : isActive       ? 'transparent'
+                            : teamColor,
+              borderStyle:   isMoveTarget ? 'dashed' : 'solid',
+              borderWidth:   isMoveSelected ? 3 : 2,
               opacity:       ineligible ? 0.45 : 1,
-              fontWeight:    isActive ? 700 : 600,
+              fontWeight:    700,
               letterSpacing: 0.2,
               lineHeight:    1.1,
-              boxShadow:     isActive ? `0 0 14px ${teamColor}66` : 'none',
+              boxShadow:     !ineligible && !isActive && !inMoveMode
+                            ? `0 0 14px ${teamColor}33`
+                            : 'none',
             }}
           >
             <span
               className="block w-full text-center truncate"
-              style={{ fontSize: 'clamp(15px, 5vw, 22px)' }}
+              style={{ fontSize: 'clamp(14px, 4.5vw, 20px)' }}
             >
               {first}
             </span>
             {rest && (
               <span
                 className="block w-full text-center truncate"
-                style={{ fontSize: 'clamp(15px, 5vw, 22px)', opacity: 0.85 }}
+                style={{ fontSize: 'clamp(14px, 4.5vw, 20px)' }}
               >
                 {rest}
               </span>

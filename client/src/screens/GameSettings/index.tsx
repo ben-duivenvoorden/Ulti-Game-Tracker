@@ -76,15 +76,6 @@ export default function GameSettings() {
               checked={options.passes}
               onChange={v => updateRecordingOption('passes', v)}
             />
-            {options.passes && (
-              <CompactStepper
-                label="Pass arrows on screen"
-                value={options.passArrowsShown}
-                onChange={v => updateRecordingOption('passArrowsShown', v)}
-                min={0}
-                max={3}
-              />
-            )}
             <CompactToggle
               label="Pull Distance Bonus"
               hint="End-zone pulls"
