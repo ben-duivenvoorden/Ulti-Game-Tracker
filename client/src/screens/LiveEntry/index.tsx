@@ -429,29 +429,8 @@ function SankeyBridge({
   // EVT_PAD pushes the outline OUTWARD on all four event-side edges so the
   // encompass visibly surrounds the action tiles without sitting on top of
   // their borders.
-  const evtTop         = COL_PAD - EVT_PAD
-  const evtStackBottom = COL_PAD + actionCount * (tileH + GAP) - GAP + EVT_PAD
-
-  // When the action list has fewer items than the player column (some
-  // Recording Options disabled), the spacer between the last action
-  // tile and More leaves vertical room that the encompass can sweep
-  // into for a comfier bottom corner. The further down we extend, the
-  // larger the BR/BL corner radius — so the curve eases gracefully into
-  // the previously-vacant rows rather than tucking tight against Goal.
-  const vacantBelow = Math.max(
-    0,
-    (playerCount - 1 - actionCount) * (tileH + GAP) - EVT_PAD,
-  )
-  const COMFY_EXT   = Math.min(vacantBelow * 0.5, tileH * 0.4)
-  const evtBottom   = evtStackBottom + COMFY_EXT
-  // Bottom event-side corner radius scales with the extension so the
-  // curve visibly sweeps when there's room, and falls back to RADIUS
-  // when the stack fills the column.
-  const BR_RADIUS_RAW = RADIUS + COMFY_EXT * 1.5
-  const BR_RADIUS     = Math.max(
-    RADIUS,
-    Math.min(BR_RADIUS_RAW, evtBottom - evtTop - RADIUS - 4),
-  )
+  const evtTop    = COL_PAD - EVT_PAD
+  const evtBottom = COL_PAD + actionCount * (tileH + GAP) - GAP + EVT_PAD
 
   // Active-tile horizontal extent — also pushed out by PLAYER_PAD on
   // both the outer side AND the bridge-facing side.
@@ -492,8 +471,8 @@ function SankeyBridge({
         `C ${ctrlPX} ${activeTop}, ${ctrlEX} ${evtTop}, ${targetX} ${evtTop}`,
         `L ${evtR - RADIUS} ${evtTop}`,
         arc(evtR, evtTop + RADIUS),
-        `L ${evtR} ${evtBottom - BR_RADIUS}`,
-        `A ${BR_RADIUS} ${BR_RADIUS} 0 0 1 ${evtR - BR_RADIUS} ${evtBottom}`,
+        `L ${evtR} ${evtBottom - RADIUS}`,
+        arc(evtR - RADIUS, evtBottom),
         `L ${targetX} ${evtBottom}`,
         `C ${ctrlEX} ${evtBottom}, ${ctrlPX} ${activeBottom}, ${sourceX} ${activeBottom}`,
         `L ${tileL + RADIUS} ${activeBottom}`,
@@ -508,8 +487,8 @@ function SankeyBridge({
         `C ${ctrlPX} ${activeTop}, ${ctrlEX} ${evtTop}, ${targetX} ${evtTop}`,
         `L ${evtL + RADIUS} ${evtTop}`,
         `A ${RADIUS} ${RADIUS} 0 0 0 ${evtL} ${evtTop + RADIUS}`,
-        `L ${evtL} ${evtBottom - BR_RADIUS}`,
-        `A ${BR_RADIUS} ${BR_RADIUS} 0 0 0 ${evtL + BR_RADIUS} ${evtBottom}`,
+        `L ${evtL} ${evtBottom - RADIUS}`,
+        `A ${RADIUS} ${RADIUS} 0 0 0 ${evtL + RADIUS} ${evtBottom}`,
         `L ${targetX} ${evtBottom}`,
         `C ${ctrlEX} ${evtBottom}, ${ctrlPX} ${activeBottom}, ${sourceX} ${activeBottom}`,
         `L ${tileR - RADIUS} ${activeBottom}`,
