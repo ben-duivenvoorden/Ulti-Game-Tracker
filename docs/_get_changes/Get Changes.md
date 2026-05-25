@@ -1,8 +1,0 @@
-- player line input takes too long 
-- address difficult to resume
-  - ie miss a point, can't resume due to the app being too smart and enforcing possession to start from the other team
-- explore portrait
-- - reciever error shouldn't ask which player. it is the player who was tapped. they never had possesion.
-- user can't copy/paste actions. just basic actions.
-- scorer information splash screen
-- no handling for calahan at the moment.
