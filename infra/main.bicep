@@ -1,0 +1,159 @@
+// Azure resources for the Ultimate Stat Tracker pipeline.
+//
+// Resources:
+//   - Storage account with a public-read `raw` container (live event log)
+//   - Linux Consumption Function App (the api/) with system-assigned identity
+//   - Static Web App (the SPA host)
+//   - Role assignment: function identity -> Storage Blob Data Contributor
+//
+// Deploy with either `azd up` (preferred — see azure.yaml at repo root) or
+// directly:
+//   az group create --name rg-ultimate --location australiaeast
+//   az deployment group create --resource-group rg-ultimate \
+//     --template-file infra/main.bicep \
+//     --parameters infra/main.parameters.json
+
+targetScope = 'resourceGroup'
+
+@description('Short token used as a suffix in every resource name so they stay unique within the subscription. Lowercase alphanumeric. e.g. "ust1".')
+@minLength(3)
+@maxLength(8)
+param namePrefix string = 'ust'
+
+@description('Azure region for all resources.')
+param location string = resourceGroup().location
+
+@description('Environment label baked into names (e.g. "dev", "prod"). Lowercase alphanumeric.')
+@allowed([ 'dev', 'prod' ])
+param environment string = 'dev'
+
+@description('GitHub repository URL — used to bind Static Web Apps. e.g. https://github.com/<user>/<repo>')
+param repositoryUrl string = ''
+
+@description('Default branch the SWA deploys from.')
+param branch string = 'main'
+
+// ─── Naming ───────────────────────────────────────────────────────────────────
+
+var resourceToken = uniqueString(resourceGroup().id, environment, namePrefix)
+var storageAccountName = toLower('${namePrefix}st${resourceToken}')   // <=24 chars, lowercase alnum
+var planName           = '${namePrefix}-plan-${environment}'
+var functionAppName    = '${namePrefix}-api-${environment}-${resourceToken}'
+var staticWebAppName   = '${namePrefix}-spa-${environment}'
+var rawContainerName   = 'raw'
+
+// ─── Storage ──────────────────────────────────────────────────────────────────
+
+resource storage 'Microsoft.Storage/storageAccounts@2024-01-01' = {
+  name:     storageAccountName
+  location: location
+  kind:     'StorageV2'
+  sku:      { name: 'Standard_LRS' }
+  properties: {
+    allowBlobPublicAccess: true   // required so the dbt pipeline can fetch raw/events.csv.gz anonymously
+    minimumTlsVersion:     'TLS1_2'
+    supportsHttpsTrafficOnly: true
+    defaultToOAuthAuthentication: true
+  }
+}
+
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2024-01-01' = {
+  parent: storage
+  name:   'default'
+}
+
+resource rawContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2024-01-01' = {
+  parent: blobService
+  name:   rawContainerName
+  properties: {
+    publicAccess: 'Blob'   // public read on blobs only (not container listing)
+  }
+}
+
+// ─── Function App + plan ──────────────────────────────────────────────────────
+
+resource plan 'Microsoft.Web/serverfarms@2024-04-01' = {
+  name:     planName
+  location: location
+  kind:     'functionapp,linux'
+  sku: {
+    name: 'Y1'
+    tier: 'Dynamic'
+  }
+  properties: {
+    reserved: true   // Linux
+  }
+}
+
+resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
+  name:     functionAppName
+  location: location
+  kind:     'functionapp,linux'
+  identity: { type: 'SystemAssigned' }
+  properties: {
+    serverFarmId: plan.id
+    httpsOnly:    true
+    siteConfig: {
+      linuxFxVersion: 'Node|22'
+      appSettings: [
+        { name: 'AzureWebJobsStorage',          value: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};EndpointSuffix=${az.environment().suffixes.storage};AccountKey=${storage.listKeys().keys[0].value}' }
+        { name: 'FUNCTIONS_EXTENSION_VERSION',  value: '~4' }
+        { name: 'FUNCTIONS_WORKER_RUNTIME',     value: 'node' }
+        { name: 'WEBSITE_NODE_DEFAULT_VERSION', value: '~22' }
+        { name: 'RAW_BLOB_ACCOUNT_URL',         value: storage.properties.primaryEndpoints.blob }
+        { name: 'RAW_BLOB_CONTAINER',           value: rawContainerName }
+        { name: 'RAW_BLOB_NAME',                value: 'events.csv' }
+      ]
+      cors: {
+        allowedOrigins:     [ 'https://${staticWebApp.properties.defaultHostname}' ]
+        supportCredentials: false
+      }
+    }
+  }
+}
+
+// ─── Role assignment: Function identity -> Storage Blob Data Contributor ──────
+// Allows the api/'s DefaultAzureCredential to read/append the raw blob without
+// using the storage account key. Connection-string + AccountKey above is still
+// needed for AzureWebJobsStorage internals; this is the path the app code uses.
+
+var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+
+resource blobRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: storage
+  name:  guid(storage.id, functionApp.id, storageBlobDataContributorRoleId)
+  properties: {
+    principalId:      functionApp.identity.principalId
+    principalType:    'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataContributorRoleId)
+  }
+}
+
+// ─── Static Web App ───────────────────────────────────────────────────────────
+
+resource staticWebApp 'Microsoft.Web/staticSites@2024-04-01' = {
+  name:     staticWebAppName
+  location: location
+  sku: { name: 'Free', tier: 'Free' }
+  properties: {
+    // Repository binding is optional — set repositoryUrl to wire CI. If left
+    // blank, the SWA is created bare and a deployment token can be fetched
+    // and used with the github action manually.
+    repositoryUrl:    empty(repositoryUrl) ? null : repositoryUrl
+    branch:           empty(repositoryUrl) ? null : branch
+    buildProperties: {
+      appLocation:      'client'
+      apiLocation:      ''
+      outputLocation:   'dist'
+    }
+  }
+}
+
+// ─── Outputs ──────────────────────────────────────────────────────────────────
+
+output storageAccountName string = storage.name
+output rawEventsUrl       string = '${storage.properties.primaryEndpoints.blob}${rawContainerName}/events.csv'
+output functionAppName    string = functionApp.name
+output functionAppUrl     string = 'https://${functionApp.properties.defaultHostName}'
+output staticWebAppName   string = staticWebApp.name
+output staticWebAppUrl    string = 'https://${staticWebApp.properties.defaultHostname}'

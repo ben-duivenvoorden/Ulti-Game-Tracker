@@ -1,0 +1,35 @@
+# Azure Developer CLI (azd) configuration.
+#
+# To bring the whole stack up from a fresh subscription:
+#   1. Install azd: https://aka.ms/azd-install
+#   2. `az login` (CLI sign-in)
+#   3. `azd init` once (creates an .azure/<env>/ folder locally)
+#   4. `azd up` — provisions infra and deploys api + client in one go
+#
+# `azd up` runs:
+#   provision -> deploys infra/main.bicep
+#   deploy    -> publishes each `services` entry below
+#
+# Tear down with `azd down`.
+
+name: ultimate-stat-tracker
+metadata:
+  template: ultimate-stat-tracker@0.1.0
+
+services:
+  api:
+    project: ./api
+    language: ts
+    host: function
+
+  web:
+    project: ./client
+    language: ts
+    host: staticwebapp
+    dist: dist
+
+hooks:
+  preprovision:
+    shell: pwsh
+    run: |
+      Write-Host "Provisioning Azure resources via infra/main.bicep..."
