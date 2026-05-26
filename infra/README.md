@@ -34,9 +34,9 @@ secret so the build-data workflow points at real data instead of the sample).
 ## Deploy without azd
 
 ```pwsh
-az group create --name rg-ultimate-dev --location australiaeast
+az group create --name rg-ugt-prod-aue --location australiaeast
 az deployment group create `
-  --resource-group rg-ultimate-dev `
+  --resource-group rg-ugt-prod-aue `
   --template-file infra/main.bicep `
   --parameters infra/main.parameters.json `
   --parameters location=australiaeast repositoryUrl=https://github.com/<user>/<repo>
@@ -51,7 +51,7 @@ Then deploy the apps separately with `func azure functionapp publish ...` and
 azd down --purge
 ```
 
-Or `az group delete --name rg-ultimate-dev --yes`.
+Or `az group delete --name rg-ugt-prod-aue --yes`.
 
 ## Defaults worth knowing
 
@@ -63,4 +63,8 @@ Or `az group delete --name rg-ultimate-dev --yes`.
   hobby data; bump to `Standard_ZRS` if you want intra-region replication.
 - **Public access:** the `raw` container is set to `Blob` (anonymous read on
   individual blobs, no container listing). This is what lets dbt fetch
-  `events.csv.gz` without auth.
+  `events.csv` without auth.
+- **Naming:** follows CAF — `<type>-<workload>-<env>-<region>`. Resources will
+  be named `rg-ugt-prod-aue`, `stugtprodaue`, `func-ugt-prod-aue`, etc.
+  Workload short-name `ugt` and env `prod` are defaults; override via
+  `main.parameters.json` or `--parameters`.

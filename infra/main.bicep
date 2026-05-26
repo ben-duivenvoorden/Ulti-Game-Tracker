@@ -1,4 +1,4 @@
-// Azure resources for the Ultimate Stat Tracker pipeline.
+// Azure resources for the Ulti Game Tracker pipeline.
 //
 // Resources:
 //   - Storage account with a public-read `raw` container (live event log)
@@ -15,17 +15,17 @@
 
 targetScope = 'resourceGroup'
 
-@description('Short token used as a suffix in every resource name so they stay unique within the subscription. Lowercase alphanumeric. e.g. "ust1".')
+@description('Workload short name embedded in every resource name (CAF: <type>-<workload>-<env>-<region>). Lowercase alphanumeric, 3-8 chars. Default "ugt" = Ulti Game Tracker.')
 @minLength(3)
 @maxLength(8)
-param namePrefix string = 'ust'
+param namePrefix string = 'ugt'
 
 @description('Azure region for all resources.')
 param location string = resourceGroup().location
 
 @description('Environment label baked into names (e.g. "dev", "prod"). Lowercase alphanumeric.')
 @allowed([ 'dev', 'prod' ])
-param environment string = 'dev'
+param environment string = 'prod'
 
 @description('GitHub repository URL — used to bind Static Web Apps. e.g. https://github.com/<user>/<repo>')
 param repositoryUrl string = ''
@@ -34,23 +34,51 @@ param repositoryUrl string = ''
 param branch string = 'main'
 
 // ─── Naming ───────────────────────────────────────────────────────────────────
+// Follows CAF convention: <type>-<workload>-<env>-<region>. Instance suffix
+// (`-001`) deliberately omitted — single-instance hobby project. Global-unique
+// resources rely on the workload+env+region combo; if a name collides on
+// deploy, append a uniqueString suffix in the var below as a fallback.
+// See: Atlas/Maps/Azure naming convention (personal Obsidian vault).
 
-var resourceToken = uniqueString(resourceGroup().id, environment, namePrefix)
-var storageAccountName = toLower('${namePrefix}st${resourceToken}')   // <=24 chars, lowercase alnum
-var planName           = '${namePrefix}-plan-${environment}'
-var functionAppName    = '${namePrefix}-api-${environment}-${resourceToken}'
-var staticWebAppName   = '${namePrefix}-spa-${environment}'
+// Map full Azure region names to CAF short codes for use in resource names.
+var regionShort = {
+  australiaeast:      'aue'
+  australiasoutheast: 'ause'
+  eastus:             'eus'
+  eastus2:            'eus2'
+  westus2:            'wus2'
+  westeurope:         'weu'
+  northeurope:        'neu'
+  southeastasia:      'sea'
+}
+
+var regionCode = contains(regionShort, location) ? regionShort[location] : substring(location, 0, 3)
+
+var storageAccountName = toLower('st${namePrefix}${environment}${regionCode}')   // e.g. stugtprodaue (<=24, no hyphens allowed)
+var planName           = 'asp-${namePrefix}-${environment}-${regionCode}'         // e.g. asp-ugt-prod-aue
+var functionAppName    = 'func-${namePrefix}-${environment}-${regionCode}'        // e.g. func-ugt-prod-aue
+var staticWebAppName   = 'stapp-${namePrefix}-${environment}-${regionCode}'       // e.g. stapp-ugt-prod-aue
 var rawContainerName   = 'raw'
+
+// Common tags applied to every resource. The Bicep file declares this once;
+// child resources inherit via `tags: commonTags`.
+var commonTags = {
+  workload:    namePrefix
+  environment: environment
+  'managed-by': 'azd'
+  repo:        repositoryUrl
+}
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 
 resource storage 'Microsoft.Storage/storageAccounts@2024-01-01' = {
   name:     storageAccountName
   location: location
+  tags:     commonTags
   kind:     'StorageV2'
   sku:      { name: 'Standard_LRS' }
   properties: {
-    allowBlobPublicAccess: true   // required so the dbt pipeline can fetch raw/events.csv.gz anonymously
+    allowBlobPublicAccess: true   // required so the dbt pipeline can fetch raw/events.csv anonymously
     minimumTlsVersion:     'TLS1_2'
     supportsHttpsTrafficOnly: true
     defaultToOAuthAuthentication: true
@@ -75,6 +103,7 @@ resource rawContainer 'Microsoft.Storage/storageAccounts/blobServices/containers
 resource plan 'Microsoft.Web/serverfarms@2024-04-01' = {
   name:     planName
   location: location
+  tags:     commonTags
   kind:     'functionapp,linux'
   sku: {
     name: 'Y1'
@@ -88,6 +117,7 @@ resource plan 'Microsoft.Web/serverfarms@2024-04-01' = {
 resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
   name:     functionAppName
   location: location
+  tags:     commonTags
   kind:     'functionapp,linux'
   identity: { type: 'SystemAssigned' }
   properties: {
@@ -134,6 +164,7 @@ resource blobRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01'
 resource staticWebApp 'Microsoft.Web/staticSites@2024-04-01' = {
   name:     staticWebAppName
   location: location
+  tags:     commonTags
   sku: { name: 'Free', tier: 'Free' }
   properties: {
     // Repository binding is optional — set repositoryUrl to wire CI. If left

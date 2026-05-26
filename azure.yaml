@@ -12,9 +12,9 @@
 #
 # Tear down with `azd down`.
 
-name: ultimate-stat-tracker
+name: ulti-game-tracker
 metadata:
-  template: ultimate-stat-tracker@0.1.0
+  template: ulti-game-tracker@0.1.0
 
 services:
   api:
