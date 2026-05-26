@@ -31,8 +31,8 @@ jobs:
       PBI_CLIENT_SECRET: ${{ secrets.PBI_CLIENT_SECRET }}
       PBI_WORKSPACE_ID:  ${{ secrets.PBI_WORKSPACE_ID }}
       # Name of the report file under reports/ (without extension).
-      # e.g. PBI_REPORT_NAME=ultimate -> reports/ultimate.pbip
-      PBI_REPORT_NAME:   ${{ vars.PBI_REPORT_NAME || 'ultimate' }}
+      # e.g. PBI_REPORT_NAME=ulti-game-tracker -> reports/ulti-game-tracker.pbip
+      PBI_REPORT_NAME:   ${{ vars.PBI_REPORT_NAME || 'ulti-game-tracker' }}
 
     steps:
       - uses: actions/checkout@v4

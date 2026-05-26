@@ -8,7 +8,7 @@ name: deploy-spa
 #   1. After `azd up` (or manual provisioning) creates the SWA, grab its
 #      deployment token:
 #        az staticwebapp secrets list \
-#          --name ust-spa-dev --query properties.apiKey -o tsv
+#          --name stapp-ugt-prod-aue --query properties.apiKey -o tsv
 #   2. Save as repo secret AZURE_STATIC_WEB_APPS_API_TOKEN.
 
 on:

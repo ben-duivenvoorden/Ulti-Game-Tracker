@@ -1,4 +1,4 @@
-# Ultimate Stat Tracker — Project Instructions
+# Ulti Game Tracker — Project Instructions
 
 ## Stack
 

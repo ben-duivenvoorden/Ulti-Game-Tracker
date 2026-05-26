@@ -23,7 +23,7 @@ jobs:
       # If unset, the workflow falls back to scripts/sample-events.csv so it
       # still exercises end-to-end (with sample data) before infra is wired up.
       RAW_EVENTS_URL:   ${{ secrets.RAW_EVENTS_URL || 'scripts/sample-events.csv' }}
-      DUCKDB_PATH:      /tmp/ultimate.duckdb
+      DUCKDB_PATH:      /tmp/ulti-game-tracker.duckdb
       GOLD_EXPORT_DIR:  /tmp/gold
 
     steps:

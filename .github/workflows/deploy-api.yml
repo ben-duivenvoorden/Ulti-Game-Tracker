@@ -10,7 +10,7 @@ name: deploy-api
 #      credential and sets the repo secrets automatically.
 #   2. Or manually: see https://learn.microsoft.com/en-us/azure/developer/github/connect-from-azure
 #   3. Set GitHub Actions repo *variables* (not secrets):
-#        AZURE_FUNCTIONAPP_NAME    e.g. ust-api-dev-xxxxxx
+#        AZURE_FUNCTIONAPP_NAME    e.g. func-ugt-prod-aue
 #      and GitHub Actions repo *secrets*:
 #        AZURE_CLIENT_ID
 #        AZURE_TENANT_ID
