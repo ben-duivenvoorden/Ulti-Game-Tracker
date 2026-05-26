@@ -163,10 +163,10 @@ interface GameStore {
 
 // ─── Persistence ──────────────────────────────────────────────────────────────
 
-const STORAGE_VERSION = 13
-const STORAGE_KEY     = 'ust-game'
+const STORAGE_VERSION = 14
+const STORAGE_KEY     = 'ugt-game'
 /** Tagged at build time so hydration logs identify which bundle is running. */
-const BUILD_MARKER    = 'ust-build-2026-05-25-v13'
+const BUILD_MARKER    = 'ugt-build-2026-05-27-v14'
 
 // ─── Initial seeds ────────────────────────────────────────────────────────────
 // `seedTeamsAndGames()` produces deterministic id 1.. events; the same seed
@@ -849,7 +849,7 @@ export const useGameStore = create<GameStore>()(
         const { passArrowsShown: _passArrowsShown, ...recOptsNoLegacy } = rawRecOpts
         void _passArrowsShown
 
-        console.info('[ust-game] migrate', {
+        console.info('[ugt-game] migrate', {
           build: BUILD_MARKER,
           fromVersion,
           teamsLogMissing,
@@ -890,7 +890,7 @@ export const useGameStore = create<GameStore>()(
       merge: (persisted, current) => {
         const c = current as GameStore
         if (!persisted || typeof persisted !== 'object' || Array.isArray(persisted)) {
-          console.warn('[ust-game] merge: persisted state is missing/invalid — falling back to seed')
+          console.warn('[ugt-game] merge: persisted state is missing/invalid — falling back to seed')
           return { ...c, teamsLog: INITIAL_SEED.teamEvents, scheduledGamesLog: INITIAL_SEED.gameEvents }
         }
         const p = persisted as Partial<GameStore>
@@ -900,7 +900,7 @@ export const useGameStore = create<GameStore>()(
         const scheduledGamesLog = (Array.isArray(p.scheduledGamesLog) && p.scheduledGamesLog.length > 0)
           ? p.scheduledGamesLog
           : INITIAL_SEED.gameEvents
-        console.info('[ust-game] merge', {
+        console.info('[ugt-game] merge', {
           build: BUILD_MARKER,
           persistedTeamsLogLen:  Array.isArray(p.teamsLog) ? p.teamsLog.length : 'n/a',
           persistedGamesLogLen:  Array.isArray(p.scheduledGamesLog) ? p.scheduledGamesLog.length : 'n/a',
@@ -920,10 +920,10 @@ export const useGameStore = create<GameStore>()(
       },
       onRehydrateStorage: () => (state, error) => {
         if (error) {
-          console.error('[ust-game] hydration error', { build: BUILD_MARKER, error })
+          console.error('[ugt-game] hydration error', { build: BUILD_MARKER, error })
           return
         }
-        console.info('[ust-game] hydrated', {
+        console.info('[ugt-game] hydrated', {
           build:           BUILD_MARKER,
           teamsLogLen:     state?.teamsLog?.length ?? 0,
           gamesLogLen:     state?.scheduledGamesLog?.length ?? 0,

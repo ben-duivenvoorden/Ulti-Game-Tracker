@@ -70,7 +70,7 @@ describe('seedTeamsAndGames', () => {
 // Exercises the persist middleware's migrate + merge for every corruption mode
 // we've seen — empty arrays, missing keys, old versions, malformed JSON.
 
-const STORAGE_KEY = 'ust-game'
+const STORAGE_KEY = 'ugt-game'
 
 // Minimal localStorage stub — vitest runs node-side, so we have to provide
 // one ourselves before the store module loads.

@@ -12,7 +12,7 @@ import type { RawEvent, GameId, EventId } from './types'
 // that won't survive renumbering; v1 strips them at copy time.
 
 export interface ClipboardEnvelope {
-  app:         'UST'
+  app:         'UGT'
   v:           1
   kind:        'log-slice'
   gameId:      GameId
@@ -35,7 +35,7 @@ export function buildEnvelope(
   const fromEventId = rawLogSlice.length === 0 ? 0 : rawLogSlice[0].id
   const toEventId   = rawLogSlice.length === 0 ? 0 : rawLogSlice[rawLogSlice.length - 1].id
   return {
-    app: 'UST',
+    app: 'UGT',
     v: 1,
     kind: 'log-slice',
     gameId,
@@ -61,7 +61,7 @@ export function tryParse(text: string): ClipboardEnvelope | null {
   }
   if (!obj || typeof obj !== 'object') return null
   const o = obj as Record<string, unknown>
-  if (o.app !== 'UST') return null
+  if (o.app !== 'UGT') return null
   if (o.v !== 1) return null
   if (o.kind !== 'log-slice') return null
   if (typeof o.gameId !== 'number') return null

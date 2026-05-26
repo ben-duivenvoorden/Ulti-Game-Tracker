@@ -16,7 +16,7 @@ import type { GameSession, RawEvent } from './types'
 import { useGameStore } from './store'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '')
-const CURSOR_KEY = 'ust-sync-cursor'
+const CURSOR_KEY = 'ugt-sync-cursor'
 const RETRY_INTERVAL_MS = 30_000
 
 interface SyncCursor { [gameId: number]: number }
