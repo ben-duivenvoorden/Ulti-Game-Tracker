@@ -1,0 +1,13 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "RAW_BLOB_ACCOUNT_URL": "https://<account>.blob.core.windows.net",
+    "RAW_BLOB_CONTAINER": "raw",
+    "RAW_BLOB_NAME": "events.csv"
+  },
+  "Host": {
+    "CORS": "*"
+  }
+}
