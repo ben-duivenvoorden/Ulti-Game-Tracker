@@ -26,6 +26,21 @@ export function eventToCsvRow(e: IncomingEvent): string {
   ].join(',')
 }
 
+/** Extract a single field by 0-based column index from a raw CSV row.
+ *  Assumes the requested field — and every field before it — contains no
+ *  commas. Safe for the integer-only `event_id,game_id,timestamp_ms,
+ *  point_index,type` prefix; NOT safe for the trailing quoted JSON payload. */
+export function fieldAt(row: string, colIndex: number): string {
+  let start = 0
+  for (let i = 0; i < colIndex; i++) {
+    const next = row.indexOf(',', start)
+    if (next === -1) return ''
+    start = next + 1
+  }
+  const end = row.indexOf(',', start)
+  return end === -1 ? row.slice(start) : row.slice(start, end)
+}
+
 /** Shallow shape check — server-side defensive validation. The real schema
  *  contract lives in client/src/core/types.ts (RawEvent). */
 export function validateIncoming(input: unknown): asserts input is IncomingEvent {

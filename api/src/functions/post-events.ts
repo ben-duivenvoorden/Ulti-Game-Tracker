@@ -6,7 +6,17 @@ import { appendRow } from '../shared/blob.js'
 // Body: a single RawEvent JSON object (see client/src/core/types.ts).
 // Appends a CSV row to the public raw events blob.
 
+// Anonymous endpoint — defence-in-depth bound on a request body that should
+// only ever be one small event (~1 KB worst case). Missing/invalid header
+// falls through to the JSON parser as before.
+const MAX_EVENT_BYTES = 16 * 1024
+
 export async function postEvents(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
+  const declaredLen = Number(req.headers.get('content-length'))
+  if (declaredLen > MAX_EVENT_BYTES) {
+    return { status: 413, jsonBody: { error: 'event too large' } }
+  }
+
   let body: unknown
   try {
     body = await req.json()

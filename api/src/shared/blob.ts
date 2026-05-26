@@ -1,4 +1,4 @@
-import { AppendBlobClient } from '@azure/storage-blob'
+import { AppendBlobClient, BlobClient } from '@azure/storage-blob'
 import { DefaultAzureCredential } from '@azure/identity'
 
 // Append-only blob holding the raw event log. The append-blob type is the
@@ -21,35 +21,45 @@ if (!ACCOUNT_URL) {
   throw new Error('RAW_BLOB_ACCOUNT_URL is not configured')
 }
 
+const BLOB_URL = `${ACCOUNT_URL}/${CONTAINER}/${BLOB_NAME}`
 const credential = new DefaultAzureCredential()
 
-let cachedClient: AppendBlobClient | null = null
+let cachedAppendClient: AppendBlobClient | null = null
+let cachedReadClient: BlobClient | null = null
 
 export function getAppendClient(): AppendBlobClient {
-  if (!cachedClient) {
-    const url = `${ACCOUNT_URL}/${CONTAINER}/${BLOB_NAME}`
-    cachedClient = new AppendBlobClient(url, credential)
+  if (!cachedAppendClient) {
+    cachedAppendClient = new AppendBlobClient(BLOB_URL, credential)
   }
-  return cachedClient
+  return cachedAppendClient
 }
 
-/** Idempotent — safe to call on every request. */
-export async function ensureBlobExists(client: AppendBlobClient): Promise<void> {
-  try {
-    await client.createIfNotExists({
-      blobHTTPHeaders: { blobContentType: 'text/csv; charset=utf-8' },
-    })
-  } catch (err) {
-    // If two cold-starts race the create, both will return success-or-conflict;
-    // surface anything else.
-    throw err
+export function getReadClient(): BlobClient {
+  if (!cachedReadClient) {
+    cachedReadClient = new BlobClient(BLOB_URL, credential)
   }
+  return cachedReadClient
+}
+
+// Once the blob has been created in this process we don't need to re-check on
+// every request. Surviving a cold-start race is fine — `createIfNotExists`
+// returns success for both racers.
+let ensured = false
+
+/** Idempotent — safe to call on every request, but typically called once. */
+export async function ensureBlobExists(client: AppendBlobClient): Promise<void> {
+  await client.createIfNotExists({
+    blobHTTPHeaders: { blobContentType: 'text/csv; charset=utf-8' },
+  })
 }
 
 /** Appends one CSV row. Row must NOT include a trailing newline — added here. */
 export async function appendRow(row: string): Promise<void> {
   const client = getAppendClient()
-  await ensureBlobExists(client)
+  if (!ensured) {
+    await ensureBlobExists(client)
+    ensured = true
+  }
   const payload = Buffer.from(row + '\n', 'utf-8')
   await client.appendBlock(payload, payload.length)
 }

@@ -1,6 +1,6 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
-import { BlobClient } from '@azure/storage-blob'
-import { DefaultAzureCredential } from '@azure/identity'
+import { getReadClient } from '../shared/blob.js'
+import { CSV_HEADER, fieldAt } from '../shared/csv.js'
 
 // GET /game/{gameId}
 // Returns every CSV row for the requested game_id. Used by the SPA on resume
@@ -11,14 +11,8 @@ import { DefaultAzureCredential } from '@azure/identity'
 // only rows whose `game_id` matches. Fine for our scale (small log, infrequent
 // resume). For a larger app we'd index by game_id or partition per-game.
 
-const ACCOUNT_URL = process.env.RAW_BLOB_ACCOUNT_URL
-const CONTAINER   = process.env.RAW_BLOB_CONTAINER ?? 'raw'
-const BLOB_NAME   = process.env.RAW_BLOB_NAME ?? 'events.csv'
-
-if (!ACCOUNT_URL) throw new Error('RAW_BLOB_ACCOUNT_URL is not configured')
-
-const credential = new DefaultAzureCredential()
-const blobClient = new BlobClient(`${ACCOUNT_URL}/${CONTAINER}/${BLOB_NAME}`, credential)
+const GAME_ID_COL = CSV_HEADER.split(',').indexOf('game_id')
+const CSV_CONTENT_TYPE = 'text/csv; charset=utf-8'
 
 export async function getGame(req: HttpRequest, ctx: InvocationContext): Promise<HttpResponseInit> {
   const gameIdStr = req.params.gameId
@@ -27,12 +21,19 @@ export async function getGame(req: HttpRequest, ctx: InvocationContext): Promise
     return { status: 400, jsonBody: { error: 'gameId must be an integer' } }
   }
 
+  const blobClient = getReadClient()
+
   let buf: Buffer
   try {
-    const dl = await blobClient.downloadToBuffer()
-    buf = dl
+    buf = await blobClient.downloadToBuffer()
   } catch (err: any) {
-    if (err?.statusCode === 404) return { status: 200, body: 'event_id,game_id,timestamp_ms,point_index,type,payload\n' }
+    if (err?.statusCode === 404) {
+      return {
+        status: 200,
+        headers: { 'content-type': CSV_CONTENT_TYPE },
+        body: CSV_HEADER + '\n',
+      }
+    }
     ctx.error('blob read failed', err)
     return { status: 502, jsonBody: { error: 'blob read failed' } }
   }
@@ -41,15 +42,12 @@ export async function getGame(req: HttpRequest, ctx: InvocationContext): Promise
   const header = lines[0]
   const matching = lines.slice(1).filter(line => {
     if (!line) return false
-    // game_id is the second column; cheaper than a full CSV parse for filter
-    const secondComma = line.indexOf(',', line.indexOf(',') + 1)
-    const gid = line.slice(line.indexOf(',') + 1, secondComma)
-    return Number(gid) === gameId
+    return Number(fieldAt(line, GAME_ID_COL)) === gameId
   })
 
   return {
     status: 200,
-    headers: { 'content-type': 'text/csv; charset=utf-8' },
+    headers: { 'content-type': CSV_CONTENT_TYPE },
     body: [header, ...matching, ''].join('\n'),
   }
 }
