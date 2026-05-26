@@ -1,6 +1,6 @@
-name: 'ultimate'
+name: 'ulti_game_tracker'
 version: '0.1.0'
-profile: 'ultimate'
+profile: 'ulti_game_tracker'
 config-version: 2
 
 model-paths: ["models"]
@@ -20,7 +20,7 @@ vars:
   gold_export_dir: "{{ env_var('GOLD_EXPORT_DIR', 'target/gold') }}"
 
 models:
-  ultimate:
+  ulti_game_tracker:
     raw:
       +schema: raw
       +materialized: table

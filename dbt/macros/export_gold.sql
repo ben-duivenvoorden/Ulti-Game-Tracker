@@ -1,6 +1,7 @@
 {# Exports every gold-layer table to a gzipped CSV in `gold_export_dir`.
    These files are the side-car artefact Power BI's Web connector reads — the
-   `ultimate.duckdb` file itself is not consumable by PBI Service over HTTPS.
+   `ulti-game-tracker.duckdb` file itself is not consumable by PBI Service
+   over HTTPS.
 
    Usage:
      dbt run-operation export_gold --profiles-dir .

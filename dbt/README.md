@@ -1,9 +1,9 @@
-# dbt project — ultimate
+# dbt project — ulti_game_tracker
 
 Builds the `raw` → `transformed` → `gold` star schema on top of the live
-append-only event log. Output is `ultimate.duckdb` (single-file data product
-with all three schemas) plus a set of `gold/*.csv.gz` files for Power BI and
-similar consumers.
+append-only event log. Output is `ulti-game-tracker.duckdb` (single-file data
+product with all three schemas) plus a set of `gold/*.csv.gz` files for Power
+BI and similar consumers.
 
 See `docs/design/architecture-data-pipeline.md` for the end-to-end context.
 
@@ -30,14 +30,14 @@ dbt run-operation export_gold --profiles-dir .
 ```
 
 By default it reads from `../scripts/sample-events.csv` (committed sample data)
-and writes to `target/ultimate.duckdb` plus `target/gold/*.csv.gz`. The wrapper
-script `scripts/build-data.sh` (or `build-data.ps1`) does all of the above for
-you.
+and writes to `target/ulti-game-tracker.duckdb` plus `target/gold/*.csv.gz`.
+The wrapper script `scripts/build-data.sh` (or `build-data.ps1`) does all of
+the above for you.
 
 ## Point at real data
 
 ```bash
-RAW_EVENTS_URL='https://<account>.blob.core.windows.net/raw/events.csv.gz' \
+RAW_EVENTS_URL='https://stugtprodaue.blob.core.windows.net/raw/events.csv' \
   scripts/build-data.sh
 ```
 

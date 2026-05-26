@@ -1,9 +1,9 @@
-ultimate:
+ulti_game_tracker:
   target: dev
   outputs:
     dev:
       type: duckdb
-      path: "{{ env_var('DUCKDB_PATH', 'target/ultimate.duckdb') }}"
+      path: "{{ env_var('DUCKDB_PATH', 'target/ulti-game-tracker.duckdb') }}"
       threads: 4
       extensions:
         - httpfs

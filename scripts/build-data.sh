@@ -10,7 +10,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 export RAW_EVENTS_URL="${RAW_EVENTS_URL:-$repo_root/scripts/sample-events.csv}"
-export DUCKDB_PATH="${DUCKDB_PATH:-$repo_root/dbt/target/ultimate.duckdb}"
+export DUCKDB_PATH="${DUCKDB_PATH:-$repo_root/dbt/target/ulti-game-tracker.duckdb}"
 export GOLD_EXPORT_DIR="${GOLD_EXPORT_DIR:-$repo_root/dbt/target/gold}"
 
 mkdir -p "$GOLD_EXPORT_DIR"
