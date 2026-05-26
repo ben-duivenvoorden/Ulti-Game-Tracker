@@ -1,6 +1,6 @@
 # Azure Functions API
 
-Append-only event-log API for the Ultimate Stat Tracker SPA. Two endpoints:
+Append-only event-log API for the Ulti Game Tracker SPA. Two endpoints:
 
 - `POST /api/events` — body is one `RawEvent` JSON object, appends a CSV row
   to the public raw events blob.

@@ -1,8 +1,8 @@
 {
-  "name": "ultimate-api",
+  "name": "ulti-game-tracker-api",
   "version": "0.1.0",
   "private": true,
-  "description": "Azure Functions backend for the Ultimate Stat Tracker — append-only event log + game reads.",
+  "description": "Azure Functions backend for Ulti Game Tracker — append-only event log + game reads.",
   "main": "dist/src/functions/*.js",
   "scripts": {
     "build": "tsc",
