@@ -1,0 +1,9 @@
+ultimate:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('DUCKDB_PATH', 'target/ultimate.duckdb') }}"
+      threads: 4
+      extensions:
+        - httpfs

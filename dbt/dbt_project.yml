@@ -1,0 +1,32 @@
+name: 'ultimate'
+version: '0.1.0'
+profile: 'ultimate'
+config-version: 2
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+vars:
+  raw_events_url: "{{ env_var('RAW_EVENTS_URL', '../scripts/sample-events.csv') }}"
+  gold_export_dir: "{{ env_var('GOLD_EXPORT_DIR', 'target/gold') }}"
+
+models:
+  ultimate:
+    raw:
+      +schema: raw
+      +materialized: table
+    transformed:
+      +schema: transformed
+      +materialized: table
+    gold:
+      +schema: gold
+      +materialized: table
