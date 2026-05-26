@@ -1,0 +1,90 @@
+name: deploy-pbi
+
+# Deploys the Power BI report whenever the .pbip source under `reports/`
+# changes. The .pbip is text-diffable and committed; the .pbix it produces is
+# a built artefact and is NOT committed (see feedback_no_committed_binaries).
+#
+# Build pipeline:
+#   1. Windows runner (pbi-tools is .NET / Windows-only)
+#   2. pbi-tools compiles reports/<name>.pbip -> <name>.pbix
+#   3. Workflow uploads the .pbix to the configured Power BI workspace via REST
+#
+# Skipped end-to-end if any PBI_* secret is missing — workflow won't fail,
+# just no-ops the deploy step. Lets you commit a .pbip and iterate before
+# wiring up the tenant/service-principal.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'reports/**'
+      - '.github/workflows/deploy-pbi.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: windows-latest
+
+    env:
+      PBI_TENANT_ID:     ${{ secrets.PBI_TENANT_ID }}
+      PBI_CLIENT_ID:     ${{ secrets.PBI_CLIENT_ID }}
+      PBI_CLIENT_SECRET: ${{ secrets.PBI_CLIENT_SECRET }}
+      PBI_WORKSPACE_ID:  ${{ secrets.PBI_WORKSPACE_ID }}
+      # Name of the report file under reports/ (without extension).
+      # e.g. PBI_REPORT_NAME=ultimate -> reports/ultimate.pbip
+      PBI_REPORT_NAME:   ${{ vars.PBI_REPORT_NAME || 'ultimate' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip if PBI not configured
+        id: gate
+        shell: pwsh
+        run: |
+          if (-not $env:PBI_WORKSPACE_ID -or -not $env:PBI_CLIENT_ID) {
+            Write-Host "Power BI secrets not set — skipping deploy."
+            "configured=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            "configured=true"  | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+
+      - name: Install pbi-tools
+        if: steps.gate.outputs.configured == 'true'
+        shell: pwsh
+        run: |
+          # Latest stable from the official repo. Pin a version if you want
+          # reproducibility (e.g. `Invoke-WebRequest .../pbi-tools.1.2.0.zip`).
+          $url = "https://github.com/pbi-tools/pbi-tools/releases/latest/download/pbi-tools.zip"
+          Invoke-WebRequest -Uri $url -OutFile pbi-tools.zip
+          Expand-Archive pbi-tools.zip -DestinationPath pbi-tools
+          echo "$PWD\pbi-tools" >> $env:GITHUB_PATH
+
+      - name: Compile .pbip -> .pbix
+        if: steps.gate.outputs.configured == 'true'
+        shell: pwsh
+        run: |
+          $src = "reports/$env:PBI_REPORT_NAME.pbip"
+          $out = "reports/$env:PBI_REPORT_NAME.pbix"
+          pbi-tools compile-pbix --pbixProj $src --outPath $out --overwrite
+          Test-Path $out  # fails the step if compile didn't produce output
+
+      - name: Upload .pbix to workspace
+        if: steps.gate.outputs.configured == 'true'
+        shell: pwsh
+        run: |
+          $body = @{
+            client_id     = $env:PBI_CLIENT_ID
+            client_secret = $env:PBI_CLIENT_SECRET
+            scope         = "https://analysis.windows.net/powerbi/api/.default"
+            grant_type    = "client_credentials"
+          }
+          $tokenResp = Invoke-RestMethod -Method Post `
+            -Uri "https://login.microsoftonline.com/$env:PBI_TENANT_ID/oauth2/v2.0/token" `
+            -Body $body
+          $headers = @{ Authorization = "Bearer $($tokenResp.access_token)" }
+
+          $pbix = "reports/$env:PBI_REPORT_NAME.pbix"
+          $importUrl = "https://api.powerbi.com/v1.0/myorg/groups/$env:PBI_WORKSPACE_ID/imports?datasetDisplayName=$env:PBI_REPORT_NAME&nameConflict=CreateOrOverwrite"
+
+          $form = @{ file = Get-Item $pbix }
+          Invoke-RestMethod -Method Post -Uri $importUrl -Headers $headers -Form $form

@@ -1,0 +1,66 @@
+name: deploy-spa
+
+# Deploys the React SPA to Azure Static Web Apps.
+# Uses a per-SWA deployment token (not OIDC) — that's how the official
+# Static Web Apps GitHub action authenticates.
+#
+# One-time setup:
+#   1. After `azd up` (or manual provisioning) creates the SWA, grab its
+#      deployment token:
+#        az staticwebapp secrets list \
+#          --name ust-spa-dev --query properties.apiKey -o tsv
+#   2. Save as repo secret AZURE_STATIC_WEB_APPS_API_TOKEN.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'client/**'
+      - '.github/workflows/deploy-spa.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'client/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write   # so the action can post preview-environment comments
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Skip if SWA not configured
+        id: gate
+        run: |
+          if [ -z "${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}" ]; then
+            echo "SWA token not set — skipping deploy."
+            echo "configured=false" >> $GITHUB_OUTPUT
+          else
+            echo "configured=true" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.configured == 'true'
+        with:
+          submodules: false
+          lfs: false
+
+      - uses: Azure/static-web-apps-deploy@v1
+        if: steps.gate.outputs.configured == 'true'
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token:                      ${{ secrets.GITHUB_TOKEN }}
+          action:                          ${{ github.event_name == 'pull_request' && 'upload' || 'upload' }}
+          app_location:                    client
+          api_location:                    ''
+          output_location:                 dist
+          skip_app_build:                  false
+          # Vite reads VITE_* vars at build time. The API base URL is the only
+          # public config the SPA needs; safe to expose via repo *variable*.
+          # If unset the SPA falls back to "no sync" mode (localStorage only).
+          # See client/src/core/sync.ts.
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
