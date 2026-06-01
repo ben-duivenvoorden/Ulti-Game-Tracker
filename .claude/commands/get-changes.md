@@ -8,11 +8,11 @@ disable-model-invocation: true
 > vault via the `Obsidian-Personal` MCP server. It will not work for other
 > users without that MCP configured and the note in place.
 
-The queue note is **`Efforts/On/Ulti Game Tracker/Active Changes.md`** in the
+The queue note is **`Efforts/On/Ulti Game Tracker/UGT Active Changes.md`** in the
 `Obsidian-Personal` vault.
 
 1. Read the note with `mcp__Obsidian-Personal__read_note` at path
-   `Efforts/On/Ulti Game Tracker/Active Changes.md`. The note body is the
+   `Efforts/On/Ulti Game Tracker/UGT Active Changes.md`. The note body is the
    queued changes.
 
 2. If the note is missing, empty, or contains only whitespace, tell the user

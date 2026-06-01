@@ -42,7 +42,7 @@ The expectation is that anyone reading the codebase right now should see only wh
 ## Pending changes workflow
 
 Queue feature requests in the Obsidian note **`Efforts/On/Ulti Game Tracker/
-Active Changes.md`** (in the `Obsidian-Personal` vault) — one bullet per change.
+UGT Active Changes.md`** (in the `Obsidian-Personal` vault) — one bullet per change.
 
 Run `/get-changes` to implement everything queued — the skill reads the note,
 clears it, and then implements the captured changes. The skill is
