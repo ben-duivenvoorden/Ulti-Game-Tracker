@@ -93,11 +93,16 @@ models:
                 where: "winner is not null"
 
   - name: dim_players
-    description: Per-game player dimension. Key = (game_id, player_id).
+    description: |
+      Per-game player dimension. Key = (game_id, player_id). Anonymisation =
+      hashed IDs: player_hash is the public-safe player key; real names are
+      never exposed (enforced by the dim_players_no_raw_player_names test).
     columns:
       - name: game_id
         tests: [not_null]
       - name: player_id
+        tests: [not_null]
+      - name: player_hash
         tests: [not_null]
       - name: team_id
         tests:
