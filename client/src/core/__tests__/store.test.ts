@@ -115,5 +115,25 @@ describe('segment identity', () => {
     expect(state.pointIndex).toBe(14)
     expect(useGameStore.getState().screen).toBe('line-selection')
   })
+
+  it('forkSegment copies the prefix into a new segment pointing at its parent', () => {
+    resetAndStartGame()                            // a session with a point-start logged
+    const parent = useGameStore.getState().session!
+    const parentId = parent.segment.segmentId
+    const parentLogLen = parent.rawLog.length
+    expect(parentLogLen).toBeGreaterThan(0)
+
+    useGameStore.getState().forkSegment()
+    const fork = useGameStore.getState().session!
+    expect(fork.segment.segmentId).not.toBe(parentId)
+    expect(fork.segment.parentSegmentId).toBe(parentId)
+    expect(fork.segment.scorerId).toBe(parent.segment.scorerId)
+    // Prefix copied verbatim, but it's a fresh array (not the same reference).
+    expect(fork.rawLog).toHaveLength(parentLogLen)
+    expect(fork.rawLog).not.toBe(parent.rawLog)
+    expect(fork.rawLog.map(e => e.id)).toEqual(parent.rawLog.map(e => e.id))
+    // The fork derives the same state as the parent did.
+    expect(deriveGameState(fork)).toEqual(deriveGameState(parent))
+  })
 })
 

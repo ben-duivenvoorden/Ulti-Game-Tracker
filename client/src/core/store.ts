@@ -89,6 +89,12 @@ interface GameStore {
    *  (no event needed) and seeds the engine; the non-offence team pulls the
    *  resumed point. Overwrites any current session, like `selectGame`. */
   startSegmentFromScore: (gameId: number, scoreA: number, scoreB: number, offence: TeamId) => void
+  /** Adopt the current recording as a new segment of my own and continue from
+   *  it: copies the prefix into a fresh segment (new `segmentId`, this device's
+   *  `scorerId`, `parentSegmentId` = the source). The copied prefix re-records
+   *  the same points under the new segment — the canonical layer dedupes the
+   *  overlap. No-op if there's no current session. */
+  forkSegment:       () => void
   resumeGame:        (gameId: number) => void
   confirmLine:       (lineA: Player[], lineB: Player[]) => void
   nextPoint:         () => void
@@ -388,6 +394,36 @@ export const useGameStore = create<GameStore>()(
         set({
           session,
           screen:         'line-selection',
+          isInjurySub:    false,
+          uiMode:         'idle',
+          selPuller:      null,
+          showEventMenu:  false,
+          truncateCursor: null,
+        })
+      },
+
+      // ── forkSegment ───────────────────────────────────────────────────────────
+      // Adopt the current recording as my own new segment. The prefix is copied
+      // verbatim (event ids stay — they're unique per segment), the segment gets
+      // a fresh id + this device's scorerId + a parent pointer, and the anchor
+      // (if any) carries over so the engine seeds the same origin.
+      forkSegment() {
+        const { session, scorerId } = get()
+        if (!session) return
+        const forked: GameSession = {
+          ...session,
+          segment: {
+            segmentId:       newSegmentId(),
+            scorerId,
+            createdAt:       Date.now(),
+            parentSegmentId: session.segment.segmentId,
+            ...(session.segment.anchor ? { anchor: session.segment.anchor } : {}),
+          },
+          rawLog: [...session.rawLog],
+        }
+        set({
+          session:        forked,
+          screen:         'live-entry',
           isInjurySub:    false,
           uiMode:         'idle',
           selPuller:      null,
