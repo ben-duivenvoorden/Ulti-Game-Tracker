@@ -244,10 +244,47 @@ export interface ActiveLine {
   B: Player[]
 }
 
+// ─── Segment identity ─────────────────────────────────────────────────────────
+// A *segment* is one scorer's independent, single-writer recording of a game.
+// One game can have many segments (one per scorer / device); each owns its own
+// append-only rawLog with its own monotonic event ids — so two scorers never
+// collide on an id. The backend assembles segments on the point axis into a
+// coverage map and a single canonical log. See the Segmented Scoring plan.
+
+/** Opaque, globally-unique id for one scorer's recording of a game. */
+export type SegmentId = string
+/** Lightweight, stable scorer identity (a generated id today; no auth). */
+export type ScorerId = string
+
+/** The game-state checkpoint a segment was started from. Absent when the
+ *  segment recorded from the opening pull; present when it was started
+ *  mid-game from a known score (mirrors the `score-resume` payload). */
+export interface SegmentAnchor {
+  scoreA:  number
+  scoreB:  number
+  offence: TeamId
+}
+
+/** Per-recording identity carried on every `GameSession`. The `rawLog` stays
+ *  the single source of truth for game *history*; this is the single source of
+ *  truth for *whose* recording it is and where it began. */
+export interface SegmentMeta {
+  segmentId: SegmentId
+  scorerId:  ScorerId
+  /** Wall-clock creation time of the segment (ms since epoch). */
+  createdAt: number
+  /** Set when the segment was started from a score checkpoint. */
+  anchor?:   SegmentAnchor
+  /** Set when this segment was forked from another (deferred feature). */
+  parentSegmentId?: SegmentId
+}
+
 // activeLine is no longer stored — it's reconstructed from rawLog by the engine.
 // Anything that needs the line reads it from `DerivedGameState.activeLine`.
 export interface GameSession {
   gameConfig: GameConfig
   gameStartPullingTeam: TeamId
+  /** Identity of this scorer's recording. One game → many segments. */
+  segment: SegmentMeta
   rawLog: RawEvent[]
 }

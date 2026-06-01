@@ -10,6 +10,7 @@ function makeSession(pullingTeam: 'A' | 'B' = 'A'): GameSession {
   return {
     gameConfig:           config,
     gameStartPullingTeam: pullingTeam,
+    segment:              { segmentId: 'seg_test', scorerId: 'scorer_test', createdAt: 0 },
     rawLog:               [],
   }
 }

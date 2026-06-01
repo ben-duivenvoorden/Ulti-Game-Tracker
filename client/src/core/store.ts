@@ -11,8 +11,10 @@ import type {
   RecordingOptions,
   DerivedGameState,
   Notification,
+  ScorerId,
 } from './types'
 import { otherTeam, DEFAULT_RECORDING_OPTIONS } from './types'
+import { newSegmentId, newScorerId } from './ids'
 import {
   deriveGameState,
   canRecord,
@@ -46,6 +48,10 @@ import {
 interface GameStore {
   // Persisted
   session: GameSession | null
+  /** This device's stable scorer identity. Generated once on first boot and
+   *  persisted; stamped onto every segment this device creates so the backend
+   *  can attribute recordings. No auth — just a durable per-device handle. */
+  scorerId: ScorerId
   /** Append-only teams + players log (mirrors session.rawLog). Seeded from
    *  `seedTeamsAndGames()` on first boot. Never mutated — every CRUD action
    *  appends a new event. */
@@ -163,10 +169,10 @@ interface GameStore {
 
 // ─── Persistence ──────────────────────────────────────────────────────────────
 
-const STORAGE_VERSION = 14
+const STORAGE_VERSION = 15
 const STORAGE_KEY     = 'ugt-game'
 /** Tagged at build time so hydration logs identify which bundle is running. */
-const BUILD_MARKER    = 'ugt-build-2026-05-27-v14'
+const BUILD_MARKER    = 'ugt-build-2026-06-01-v15'
 
 // ─── Initial seeds ────────────────────────────────────────────────────────────
 // `seedTeamsAndGames()` produces deterministic id 1.. events; the same seed
@@ -181,6 +187,7 @@ const INITIAL_SEED = seedTeamsAndGames()
 function freshSession(
   gameId: number,
   pullingTeam: TeamId,
+  scorerId: ScorerId,
   teamsLog: TeamEvent[],
   scheduledGamesLog: ScheduledGameEvent[],
 ): GameSession | null {
@@ -192,6 +199,7 @@ function freshSession(
   return {
     gameConfig:           config,
     gameStartPullingTeam: pullingTeam,
+    segment:              { segmentId: newSegmentId(), scorerId, createdAt: Date.now() },
     rawLog:               [],
   }
 }
@@ -325,6 +333,7 @@ export const useGameStore = create<GameStore>()(
     (set, get) => ({
       // Initial state
       session:           null,
+      scorerId:          newScorerId(),
       teamsLog:          INITIAL_SEED.teamEvents,
       scheduledGamesLog: INITIAL_SEED.gameEvents,
       screen:            'game-setup',
@@ -342,8 +351,8 @@ export const useGameStore = create<GameStore>()(
       // teams + rosters from the live teamsLog at the moment of creation —
       // subsequent reads via `resolveSession` re-resolve on every render.
       selectGame(gameId, pullingTeam) {
-        const { teamsLog, scheduledGamesLog } = get()
-        const session = freshSession(gameId, pullingTeam, teamsLog, scheduledGamesLog)
+        const { teamsLog, scheduledGamesLog, scorerId } = get()
+        const session = freshSession(gameId, pullingTeam, scorerId, teamsLog, scheduledGamesLog)
         if (!session) return
         set({
           session,
@@ -819,7 +828,8 @@ export const useGameStore = create<GameStore>()(
       migrate: (persisted, fromVersion) => {
         const obj = persisted as {
           recordingOptions?:   Partial<RecordingOptions>
-          session?:            { rawLog?: Array<{ type: string }> } | null
+          session?:            ({ rawLog?: Array<{ type: string }>; segment?: unknown } & Record<string, unknown>) | null
+          scorerId?:           ScorerId
           screen?:             AppScreen
           teamsLog?:           TeamEvent[]
           scheduledGamesLog?:  ScheduledGameEvent[]
@@ -849,6 +859,15 @@ export const useGameStore = create<GameStore>()(
         const { passArrowsShown: _passArrowsShown, ...recOptsNoLegacy } = rawRecOpts
         void _passArrowsShown
 
+        // v14 → v15: segment identity. Every device gets a stable `scorerId`,
+        // and any in-progress session is backfilled with a `segment` so the
+        // engine and sync layer always see the new shape. A backfilled segment
+        // has no anchor — it's treated as a from-the-start recording.
+        const scorerId = obj.scorerId ?? newScorerId()
+        const sessionWithSegment = (cleanedSession && !cleanedSession.segment)
+          ? { ...cleanedSession, segment: { segmentId: newSegmentId(), scorerId, createdAt: Date.now() } }
+          : cleanedSession
+
         console.info('[ugt-game] migrate', {
           build: BUILD_MARKER,
           fromVersion,
@@ -857,10 +876,13 @@ export const useGameStore = create<GameStore>()(
           reseeded: needsSeed,
           strippedReorderLine: cleanedSession !== session,
           strippedPassArrowsShown: 'passArrowsShown' in rawRecOpts,
+          backfilledSegment: sessionWithSegment !== cleanedSession,
+          mintedScorerId: !obj.scorerId,
         })
         return {
           ...obj,
-          session:           cleanedSession,
+          session:           sessionWithSegment,
+          scorerId,
           screen:            dropping ? 'game-setup'    : (obj.screen ?? 'game-setup'),
           teamsLog:          seed ? seed.teamEvents : obj.teamsLog!,
           scheduledGamesLog: seed ? seed.gameEvents : obj.scheduledGamesLog!,
@@ -869,6 +891,7 @@ export const useGameStore = create<GameStore>()(
       },
       partialize: (state) => ({
         session:           state.session,
+        scorerId:          state.scorerId,
         teamsLog:          state.teamsLog,
         scheduledGamesLog: state.scheduledGamesLog,
         screen:            state.screen,

@@ -83,3 +83,25 @@ describe('truncateCursor flow through recordVia', () => {
   })
 })
 
+describe('segment identity', () => {
+  it('selectGame stamps a fresh segment carrying the device scorerId', () => {
+    const { scorerId } = useGameStore.getState()
+    useGameStore.getState().selectGame(MOCK_GAMES[0].id, 'A')
+    const seg = useGameStore.getState().session!.segment
+    expect(seg.segmentId).toMatch(/^seg_/)
+    expect(seg.scorerId).toBe(scorerId)
+    expect(seg.createdAt).toBeGreaterThan(0)
+    // A from-the-start recording has no anchor.
+    expect(seg.anchor).toBeUndefined()
+  })
+
+  it('each game selection gets a distinct segmentId, same scorerId', () => {
+    useGameStore.getState().selectGame(MOCK_GAMES[0].id, 'A')
+    const first = useGameStore.getState().session!.segment
+    useGameStore.getState().selectGame(MOCK_GAMES[0].id, 'A')
+    const second = useGameStore.getState().session!.segment
+    expect(second.segmentId).not.toBe(first.segmentId)
+    expect(second.scorerId).toBe(first.scorerId)
+  })
+})
+
