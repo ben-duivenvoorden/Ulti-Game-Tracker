@@ -22,7 +22,7 @@ jobs:
       # Set RAW_EVENTS_URL in repo secrets once Azure Blob exists.
       # If unset, the workflow falls back to scripts/sample-events.csv so it
       # still exercises end-to-end (with sample data) before infra is wired up.
-      RAW_EVENTS_URL:   ${{ secrets.RAW_EVENTS_URL || 'scripts/sample-events.csv' }}
+      RAW_EVENTS_URL:   ${{ secrets.RAW_EVENTS_URL || format('{0}/scripts/sample-events.csv', github.workspace) }}
       DUCKDB_PATH:      /tmp/ulti-game-tracker.duckdb
       GOLD_EXPORT_DIR:  /tmp/gold
 
