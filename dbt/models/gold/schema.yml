@@ -122,3 +122,16 @@ models:
     columns:
       - name: game_id
         tests: [unique, not_null]
+
+  - name: dim_segments
+    description: |
+      Segment dimension. One scorer's recording of a game. Key =
+      (game_id, segment_id). Stub — enriched later with anchor, covered point
+      range, and a canonical flag for stitching one authoritative log per game.
+    columns:
+      - name: game_id
+        tests: [not_null]
+      - name: segment_id
+        tests: [not_null]
+      - name: scorer_id
+        tests: [not_null]

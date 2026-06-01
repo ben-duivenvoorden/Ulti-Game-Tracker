@@ -1,11 +1,19 @@
 // Header for the raw events CSV. Must stay in lock-step with
 // dbt/models/raw/raw_events.sql.
 
-export const CSV_HEADER = 'event_id,game_id,timestamp_ms,point_index,type,payload'
+// `segment_id` / `scorer_id` sit right after `game_id`: event_id is only unique
+// *within* a segment (every segment's log restarts at 1), so the real row key is
+// (game_id, segment_id, event_id). Both are opaque tokens with no commas, so they
+// keep the comma-free prefix that `fieldAt` relies on.
+export const CSV_HEADER = 'event_id,game_id,segment_id,scorer_id,timestamp_ms,point_index,type,payload'
 
 export interface IncomingEvent {
   event_id:     number
   game_id:      number
+  /** One scorer's recording of the game. Event ids are unique only per segment. */
+  segment_id:   string
+  /** Stable per-device scorer identity that owns the segment. */
+  scorer_id:    string
   timestamp_ms: number
   point_index:  number
   type:         string
@@ -19,6 +27,8 @@ export function eventToCsvRow(e: IncomingEvent): string {
   return [
     e.event_id,
     e.game_id,
+    e.segment_id,
+    e.scorer_id,
     e.timestamp_ms,
     e.point_index,
     e.type,
@@ -49,6 +59,14 @@ export function validateIncoming(input: unknown): asserts input is IncomingEvent
   for (const field of ['event_id', 'game_id', 'timestamp_ms', 'point_index'] as const) {
     if (typeof e[field] !== 'number' || !Number.isInteger(e[field])) {
       throw new Error(`${field} must be an integer`)
+    }
+  }
+  for (const field of ['segment_id', 'scorer_id'] as const) {
+    if (typeof e[field] !== 'string' || !(e[field] as string).length) {
+      throw new Error(`${field} must be a non-empty string`)
+    }
+    if ((e[field] as string).includes(',')) {
+      throw new Error(`${field} must not contain commas`)
     }
   }
   if (typeof e.type !== 'string' || !e.type.length) {

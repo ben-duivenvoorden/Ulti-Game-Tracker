@@ -19,6 +19,8 @@
 select
   event_id,
   game_id,
+  segment_id,
+  scorer_id,
   timestamp_ms,
   epoch_ms(timestamp_ms)                                          as event_time,
   point_index,
