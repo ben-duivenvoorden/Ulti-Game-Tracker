@@ -135,3 +135,31 @@ models:
         tests: [not_null]
       - name: scorer_id
         tests: [not_null]
+
+  - name: segment_coverage
+    description: |
+      One row per (game_id, segment_id, point_index) a segment recorded. The
+      per-segment input to the coverage map. point_index is the global ordinal.
+    columns:
+      - name: game_id
+        tests: [not_null]
+      - name: segment_id
+        tests: [not_null]
+      - name: point_index
+        tests: [not_null]
+
+  - name: game_point_coverage
+    description: |
+      Coverage map. One row per (game_id, point_index) over the observed range;
+      n_segments = 0 marks an internal gap. coverage_status ∈ gap/single/redundant.
+    columns:
+      - name: game_id
+        tests: [not_null]
+      - name: point_index
+        tests: [not_null]
+      - name: coverage_status
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [gap, single, redundant]
