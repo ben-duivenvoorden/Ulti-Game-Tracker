@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useGameStore } from '../store'
 import { MOCK_GAMES } from '../data'
-import { computeVisLog } from '../engine'
+import { computeVisLog, deriveGameState } from '../engine'
 import { tryParse, serialize, buildEnvelope } from '../clipboard'
 import type { ClipboardEnvelope } from '../clipboard'
 
@@ -102,6 +102,18 @@ describe('segment identity', () => {
     const second = useGameStore.getState().session!.segment
     expect(second.segmentId).not.toBe(first.segmentId)
     expect(second.scorerId).toBe(first.scorerId)
+  })
+
+  it('startSegmentFromScore opens an anchored segment derived at the given score', () => {
+    useGameStore.getState().startSegmentFromScore(MOCK_GAMES[0].id, 8, 6, 'A')
+    const session = useGameStore.getState().session!
+    expect(session.segment.anchor).toEqual({ scoreA: 8, scoreB: 6, offence: 'A' })
+    expect(session.rawLog).toHaveLength(0)         // anchor lives on the segment, not the log
+    const state = deriveGameState(session)
+    expect(state.score).toEqual({ A: 8, B: 6 })
+    expect(state.possession).toBe('A')             // offence receives
+    expect(state.pointIndex).toBe(14)
+    expect(useGameStore.getState().screen).toBe('line-selection')
   })
 })
 

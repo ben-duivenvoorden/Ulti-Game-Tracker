@@ -12,6 +12,7 @@ import type {
   DerivedGameState,
   Notification,
   ScorerId,
+  SegmentAnchor,
 } from './types'
 import { otherTeam, DEFAULT_RECORDING_OPTIONS } from './types'
 import { newSegmentId, newScorerId } from './ids'
@@ -83,6 +84,11 @@ interface GameStore {
 
   // Game / session actions
   selectGame:        (gameId: number, pullingTeam: TeamId) => void
+  /** Start a fresh *anchored* segment for a game part-way through: record from
+   *  the given score with `offence` receiving. The anchor lives on the segment
+   *  (no event needed) and seeds the engine; the non-offence team pulls the
+   *  resumed point. Overwrites any current session, like `selectGame`. */
+  startSegmentFromScore: (gameId: number, scoreA: number, scoreB: number, offence: TeamId) => void
   resumeGame:        (gameId: number) => void
   confirmLine:       (lineA: Player[], lineB: Player[]) => void
   nextPoint:         () => void
@@ -190,6 +196,7 @@ function freshSession(
   scorerId: ScorerId,
   teamsLog: TeamEvent[],
   scheduledGamesLog: ScheduledGameEvent[],
+  anchor?: SegmentAnchor,
 ): GameSession | null {
   const gamesState = deriveScheduledGamesState(scheduledGamesLog)
   const game = gamesState.gamesById.get(gameId)
@@ -199,7 +206,7 @@ function freshSession(
   return {
     gameConfig:           config,
     gameStartPullingTeam: pullingTeam,
-    segment:              { segmentId: newSegmentId(), scorerId, createdAt: Date.now() },
+    segment:              { segmentId: newSegmentId(), scorerId, createdAt: Date.now(), ...(anchor ? { anchor } : {}) },
     rawLog:               [],
   }
 }
@@ -353,6 +360,30 @@ export const useGameStore = create<GameStore>()(
       selectGame(gameId, pullingTeam) {
         const { teamsLog, scheduledGamesLog, scorerId } = get()
         const session = freshSession(gameId, pullingTeam, scorerId, teamsLog, scheduledGamesLog)
+        if (!session) return
+        set({
+          session,
+          screen:         'line-selection',
+          isInjurySub:    false,
+          uiMode:         'idle',
+          selPuller:      null,
+          showEventMenu:  false,
+          truncateCursor: null,
+        })
+      },
+
+      // ── startSegmentFromScore ─────────────────────────────────────────────────
+      // Begin a new segment mid-game from a known score. The anchor is stored on
+      // the segment (engine seeds score/possession/pointIndex from it), so the
+      // log starts empty and the first point-start carries the correct global
+      // point index. The non-offence team pulls the resumed point — hence
+      // `gameStartPullingTeam = otherTeam(offence)`.
+      startSegmentFromScore(gameId, scoreA, scoreB, offence) {
+        const { teamsLog, scheduledGamesLog, scorerId } = get()
+        const session = freshSession(
+          gameId, otherTeam(offence), scorerId, teamsLog, scheduledGamesLog,
+          { scoreA, scoreB, offence },
+        )
         if (!session) return
         set({
           session,

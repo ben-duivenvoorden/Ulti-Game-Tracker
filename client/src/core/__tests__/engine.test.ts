@@ -566,3 +566,46 @@ describe('validateSpliceBlock', () => {
     expect((result as { reason: string }).reason).toMatch(/possession team mismatch|cannot continue/i)
   })
 })
+
+// ─── Anchored segments ────────────────────────────────────────────────────────
+// A segment started mid-game carries an anchor on its SegmentMeta; the engine
+// seeds score / possession / pointIndex from it with no event in the log.
+
+describe('anchored segment seeding', () => {
+  function anchored(scoreA: number, scoreB: number, offence: 'A' | 'B'): GameSession {
+    return {
+      ...makeSession('A'),
+      segment: { segmentId: 'seg_anchor', scorerId: 'scorer_test', createdAt: 0, anchor: { scoreA, scoreB, offence } },
+    }
+  }
+
+  it('empty anchored log derives the anchor score, offence in possession, and pointIndex', () => {
+    const s = deriveGameState(anchored(5, 4, 'B'))
+    expect(s.score).toEqual({ A: 5, B: 4 })
+    expect(s.possession).toBe('B')      // offence receives
+    expect(s.attackLeft).toBe('B')
+    expect(s.pointIndex).toBe(9)        // points already played
+    expect(s.gamePhase).toBe('pre-game')
+  })
+
+  it('the resumed point is pulled by the non-offence team and advances the global score', () => {
+    const session = anchored(5, 4, 'B')
+    // Start the resumed point at the anchored pointIndex, B receiving so A pulls.
+    const log: RawEvent[] = [
+      ev({ pointIndex: 9, type: 'point-start', lineA: LINE_A_IDS, lineB: LINE_B_IDS }),
+      ev({ pointIndex: 9, type: 'pull', playerId: LINE_A_IDS[0], teamId: 'A' }),
+      ev({ pointIndex: 9, type: 'possession', playerId: LINE_B_IDS[0], teamId: 'B' }),
+      ev({ pointIndex: 9, type: 'goal', playerId: LINE_B_IDS[0], teamId: 'B' }),
+    ]
+    const s = deriveGameState({ ...session, rawLog: log })
+    expect(s.score).toEqual({ A: 5, B: 5 })
+    expect(s.pointIndex).toBe(10)
+  })
+
+  it('a from-the-start segment (no anchor) still begins at 0–0', () => {
+    const s = deriveGameState(makeSession('A'))
+    expect(s.score).toEqual({ A: 0, B: 0 })
+    expect(s.pointIndex).toBe(0)
+    expect(s.possession).toBe('B')      // receiver = otherTeam(pulling 'A')
+  })
+})
