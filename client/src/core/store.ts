@@ -12,7 +12,7 @@ import type {
   DerivedGameState,
   Notification,
 } from './types'
-import { otherTeam, DEFAULT_RECORDING_OPTIONS } from './types'
+import { otherTeam, DEFAULT_RECORDING_OPTIONS, UNKNOWN_PLAYER_ID } from './types'
 import {
   deriveGameState,
   canRecord,
@@ -80,6 +80,12 @@ interface GameStore {
   resumeGame:        (gameId: number) => void
   confirmLine:       (lineA: Player[], lineB: Player[]) => void
   nextPoint:         () => void
+  dismissPointSummary: () => void
+  undoPointSummary:  () => void
+  resumeFromScore:   (scoreA: number, scoreB: number, offenceTeam: TeamId) => void
+  /** Replace the active line for one team mid-point (backfill a running-start
+   *  slot, or remove a player). Emits an injury-sub if the line changed. */
+  editActiveLine:    (teamId: TeamId, line: PlayerId[]) => void
   backToGameList:    () => void
 
   // Recording actions (all funnel through canRecord guards)
@@ -89,6 +95,8 @@ interface GameStore {
   recordThrowAway:      () => void
   triggerReceiverError: () => void
   recordGoal:           () => void
+  recordUnknownPlayer:  () => void
+  recordUnknownTurnover: () => void
   triggerDefBlock:      (type: 'block' | 'intercept') => void
   recordFoul:          () => void
   recordPick:          () => void
@@ -163,10 +171,10 @@ interface GameStore {
 
 // ─── Persistence ──────────────────────────────────────────────────────────────
 
-const STORAGE_VERSION = 14
+const STORAGE_VERSION = 15
 const STORAGE_KEY     = 'ugt-game'
 /** Tagged at build time so hydration logs identify which bundle is running. */
-const BUILD_MARKER    = 'ugt-build-2026-05-27-v14'
+const BUILD_MARKER    = 'ugt-build-2026-06-01-v15'
 
 // ─── Initial seeds ────────────────────────────────────────────────────────────
 // `seedTeamsAndGames()` produces deterministic id 1.. events; the same seed
@@ -241,10 +249,16 @@ function nextGameId(log: ScheduledGameEvent[]): number {
   return max + 1
 }
 
-/** Default seed for the line-selection screen on a *fresh* point: first 4 males + 3 females. */
-export function seedDefaultLine(roster: Player[]): Player[] {
-  const males   = roster.filter(p => p.gender === 'M').slice(0, 4)
-  const females = roster.filter(p => p.gender === 'F').slice(0, 3)
+/** Default seed for the line-selection screen on a *fresh* point. In mixed mode
+ *  seeds `lineRatio.M` males + `lineRatio.F` females; in open mode seeds the
+ *  first `lineSize` players regardless of matching division. Capped to what the
+ *  roster actually has. */
+export function seedDefaultLine(roster: Player[], opts: RecordingOptions): Player[] {
+  if (opts.gameMode === 'open') {
+    return roster.slice(0, opts.lineSize)
+  }
+  const males   = roster.filter(p => p.gender === 'M').slice(0, opts.lineRatio.M)
+  const females = roster.filter(p => p.gender === 'F').slice(0, opts.lineRatio.F)
   return [...males, ...females]
 }
 
@@ -535,17 +549,55 @@ export const useGameStore = create<GameStore>()(
       },
 
       // ── recordGoal ──────────────────────────────────────────────────────────
-      // Records the goal only. Half-time / end-game suggestions are surfaced
-      // via the `useSuggestedTransition` selector (see selectors.ts) and
-      // confirmed by the recorder on the LineSelection screen — the app no
-      // longer auto-emits these structural events from inside recordGoal.
+      // Records the goal, then routes to the dismissible point-summary screen
+      // (which keeps undo + log accessible and calls out data-quality holes
+      // before the recorder taps through to line selection). Half-time /
+      // end-game suggestions are surfaced on LineSelection via
+      // `useSuggestedTransition` — the app does not auto-emit them here.
+      //
+      // Only navigate to point-summary when previewing live (no truncate
+      // cursor) — a goal recorded while rewound is a correction, not a fresh
+      // point, so it stays put.
       recordGoal() {
+        const live = get().truncateCursor === null
         recordVia(get, set, state => {
           if (!canRecord(state, 'goal') || !state.discHolder) return null
           return [{
             pointIndex: state.pointIndex,
             type:     'goal',
             playerId: state.discHolder,
+            teamId:   state.possession,
+          }]
+        }, live ? { screen: 'point-summary' } : undefined)
+      },
+
+      // ── recordUnknownPlayer ───────────────────────────────────────────────────
+      // Marks the Unknown-Player sentinel (PlayerId 0) as the current disc
+      // holder — a placeholder when the recorder missed who has the disc but
+      // wants to keep the chain going. Recorded as a possession by player 0.
+      recordUnknownPlayer() {
+        recordVia(get, set, state => {
+          if (!canRecord(state, 'possession')) return null
+          if (state.discHolder === UNKNOWN_PLAYER_ID) return null
+          return [{
+            pointIndex: state.pointIndex,
+            type:     'possession',
+            playerId: UNKNOWN_PLAYER_ID,
+            teamId:   state.possession,
+          }]
+        })
+      },
+
+      // ── recordUnknownTurnover ─────────────────────────────────────────────────
+      // A turnover we couldn't fully attribute. Attributes to the current
+      // holder if there is one, else to the Unknown-Player sentinel.
+      recordUnknownTurnover() {
+        recordVia(get, set, state => {
+          if (!canRecord(state, 'turnover-unknown')) return null
+          return [{
+            pointIndex: state.pointIndex,
+            type:     'turnover-unknown',
+            playerId: state.discHolder ?? UNKNOWN_PLAYER_ID,
             teamId:   state.possession,
           }]
         })
@@ -620,6 +672,76 @@ export const useGameStore = create<GameStore>()(
           selPuller:      null,
           showEventMenu:  false,
           truncateCursor: null,
+        })
+      },
+
+      // ── dismissPointSummary ──────────────────────────────────────────────────
+      // Tap-to-continue from the point-completion screen. If the game is now
+      // over (end-game already logged), return to live-entry so the game-over
+      // banner shows; otherwise proceed to line selection for the next point.
+      dismissPointSummary() {
+        const { session } = get()
+        const over = !!session && deriveGameState(session).gamePhase === 'game-over'
+        set({
+          screen:         over ? 'live-entry' : 'line-selection',
+          isInjurySub:    false,
+          uiMode:         'idle',
+          selPuller:      null,
+          showEventMenu:  false,
+          truncateCursor: null,
+        })
+      },
+
+      // ── undoPointSummary ─────────────────────────────────────────────────────
+      // Undo the just-scored goal from the point-completion screen and drop back
+      // into live scoring to continue the point.
+      undoPointSummary() {
+        recordVia(
+          get, set,
+          state => [{ pointIndex: state.pointIndex, type: 'undo' }],
+          { uiMode: 'idle', selPuller: null, screen: 'live-entry' },
+        )
+      },
+
+      // ── resumeFromScore ──────────────────────────────────────────────────────
+      // Resync after missing one or more points: set the score and hand the
+      // disc to the offence team (the other team pulls the resumed point). If
+      // the resumed span crosses the configured half-time threshold and no
+      // half-time event exists yet, insert one first so ends-orientation + half
+      // logic stay correct. Lands on line selection.
+      resumeFromScore(scoreA, scoreB, offenceTeam) {
+        const { session } = get()
+        const target = activeSession({ session })
+        if (!target) return
+        const state = deriveGameState(target)
+        const { halfTimeAt } = target.gameConfig
+        const events: RawEventInput[] = []
+        const crossesHalf = scoreA >= halfTimeAt || scoreB >= halfTimeAt
+        const halfAlready = target.rawLog.some(e => e.type === 'half-time')
+        if (crossesHalf && !halfAlready) {
+          events.push({ pointIndex: state.pointIndex, type: 'half-time' })
+        }
+        events.push({ pointIndex: state.pointIndex, type: 'score-resume', scoreA, scoreB, offenceTeam })
+        set({
+          session:        appendEvents(target, events),
+          screen:         'line-selection',
+          isInjurySub:    false,
+          uiMode:         'idle',
+          selPuller:      null,
+          showEventMenu:  false,
+          truncateCursor: null,
+        })
+      },
+
+      // ── editActiveLine ───────────────────────────────────────────────────────
+      // Replace one team's on-field line mid-point (running-start backfill or a
+      // remove-from-line correction). Emits an injury-sub only when the line
+      // actually changed.
+      editActiveLine(teamId, line) {
+        recordVia(get, set, state => {
+          if (!canRecord(state, 'injury-sub')) return null
+          if (sameLine(line, state.activeLine[teamId].map(p => p.id))) return null
+          return [{ pointIndex: state.pointIndex, type: 'injury-sub', teamId, line }]
         })
       },
 
@@ -849,6 +971,16 @@ export const useGameStore = create<GameStore>()(
         const { passArrowsShown: _passArrowsShown, ...recOptsNoLegacy } = rawRecOpts
         void _passArrowsShown
 
+        // v14 → v15: `lineSize` moved onto RecordingOptions (the competition-
+        // config layer). Derive it from the existing lineRatio sum for any
+        // persisted blob that predates the field so the line target matches
+        // what the user previously configured. `scorerInfo` rides the default
+        // merge below (missing → '').
+        const mergedRecOpts = { ...DEFAULT_RECORDING_OPTIONS, ...recOptsNoLegacy } as RecordingOptions
+        if (fromVersion < 15 && typeof recOptsNoLegacy.lineSize !== 'number') {
+          mergedRecOpts.lineSize = mergedRecOpts.lineRatio.M + mergedRecOpts.lineRatio.F
+        }
+
         console.info('[ugt-game] migrate', {
           build: BUILD_MARKER,
           fromVersion,
@@ -857,6 +989,7 @@ export const useGameStore = create<GameStore>()(
           reseeded: needsSeed,
           strippedReorderLine: cleanedSession !== session,
           strippedPassArrowsShown: 'passArrowsShown' in rawRecOpts,
+          derivedLineSize: mergedRecOpts.lineSize,
         })
         return {
           ...obj,
@@ -864,7 +997,7 @@ export const useGameStore = create<GameStore>()(
           screen:            dropping ? 'game-setup'    : (obj.screen ?? 'game-setup'),
           teamsLog:          seed ? seed.teamEvents : obj.teamsLog!,
           scheduledGamesLog: seed ? seed.gameEvents : obj.scheduledGamesLog!,
-          recordingOptions:  { ...DEFAULT_RECORDING_OPTIONS, ...recOptsNoLegacy },
+          recordingOptions:  mergedRecOpts,
         }
       },
       partialize: (state) => ({

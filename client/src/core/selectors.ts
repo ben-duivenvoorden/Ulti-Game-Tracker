@@ -115,8 +115,10 @@ export function useRecordingOptions(): RecordingOptions {
   return {
     ...DEFAULT_RECORDING_OPTIONS,
     ...(stored ?? {}),
-    gameMode:  stored?.gameMode  ?? DEFAULT_RECORDING_OPTIONS.gameMode,
-    lineRatio: stored?.lineRatio ?? DEFAULT_RECORDING_OPTIONS.lineRatio,
+    gameMode:   stored?.gameMode   ?? DEFAULT_RECORDING_OPTIONS.gameMode,
+    lineRatio:  stored?.lineRatio  ?? DEFAULT_RECORDING_OPTIONS.lineRatio,
+    lineSize:   stored?.lineSize   ?? DEFAULT_RECORDING_OPTIONS.lineSize,
+    scorerInfo: stored?.scorerInfo ?? DEFAULT_RECORDING_OPTIONS.scorerInfo,
   }
 }
 
@@ -161,8 +163,9 @@ export function useSuggestedTransition(): SuggestedTransition | null {
     if (state.score.A >= scoreCapAt || state.score.B >= scoreCapAt) {
       if (!visLog.some(e => e.type === 'end-game')) return 'end-game'
     }
-    const total = state.score.A + state.score.B
-    if (total >= halfTimeAt) {
+    // Half-time is first-to-N per team (e.g. first to 8 in a game to 15), NOT
+    // a total-goals count — 5–3 (total 8) must not trip a game-to-15's half.
+    if (state.score.A >= halfTimeAt || state.score.B >= halfTimeAt) {
       if (!visLog.some(e => e.type === 'half-time')) return 'half-time'
     }
     return null

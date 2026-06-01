@@ -23,6 +23,14 @@ export function suggestShortName(name: string, max: number = SHORT_NAME_MAX): st
   return trimmed.slice(0, max).toUpperCase()
 }
 
+// ─── First-name sort key ────────────────────────────────────────────────────
+// Default player ordering across the app is alphabetical by FIRST name (the
+// token before the first space), so "Alex Smith" sorts before "Brody Jones".
+// Lower-cased for case-insensitive comparison via localeCompare.
+export function firstNameKey(name: string): string {
+  return name.trim().split(/\s+/)[0]?.toLowerCase() ?? ''
+}
+
 // ─── Long-vs-short display convention ───────────────────────────────────────
 // Convention: prefer the full team name. When either team's long name
 // doesn't fit the available space, fall back to *both* short names. We

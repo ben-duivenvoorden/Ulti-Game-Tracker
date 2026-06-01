@@ -1,11 +1,15 @@
 import type { VisLogEntry, Player, PlayerId } from './types'
+import { UNKNOWN_PLAYER_ID, UNKNOWN_PLAYER } from './types'
 
 // UI-layer formatting for visual log entries.
 // Engine produces structured data; this layer renders strings.
 // Kept separate so i18n / alternative renderings can plug in here.
 
 function nameLookup(players: Player[]) {
-  return (id: PlayerId) => players.find(p => p.id === id)?.name ?? String(id)
+  return (id: PlayerId) => {
+    if (id === UNKNOWN_PLAYER_ID) return UNKNOWN_PLAYER.name
+    return players.find(p => p.id === id)?.name ?? String(id)
+  }
 }
 
 export function formatVisLogEntry(entry: VisLogEntry, players: Player[]): string {
@@ -23,12 +27,14 @@ export function formatVisLogEntry(entry: VisLogEntry, players: Player[]): string
     case 'turnover-throw-away':      return `Throw Away — ${name(entry.playerId)}`
     case 'turnover-receiver-error':  return `Receiver Error — ${name(entry.playerId)}`
     case 'turnover-stall':           return `Stall — ${name(entry.playerId)}`
+    case 'turnover-unknown':         return `Unknown Turnover — ${name(entry.playerId)}`
     case 'block':                    return `Blocked by Defence — ${name(entry.playerId)}`
     case 'intercept':                return `Intercepted by Defence — ${name(entry.playerId)}`
     case 'goal':                     return `Goal — ${name(entry.playerId)}`
     case 'injury-sub':               return `Injury Sub — ${entry.teamId}: ${Array.isArray(entry.line) ? entry.line.map(name).join(', ') : '—'}`
     case 'half-time':                return '— Half Time —'
     case 'end-game':                 return '— Game Over —'
+    case 'score-resume':             return `— Resumed at ${entry.scoreA}–${entry.scoreB} —`
     case 'timeout':                  return 'Timeout'
     case 'foul':                     return 'Foul'
     case 'pick':                     return 'Pick'
@@ -48,6 +54,9 @@ export function getVisLogColor(type: VisLogEntry['type']): string {
       return 'var(--color-muted)'
     case 'turnover-throw-away':
       return 'var(--color-danger)'
+    case 'turnover-unknown':
+      // Eye-catching red — flags a data-quality hole alongside unknown-player.
+      return 'var(--color-danger)'
     case 'turnover-receiver-error':
       return 'var(--color-warn)'
     case 'turnover-stall':
@@ -66,6 +75,7 @@ export function getVisLogColor(type: VisLogEntry['type']): string {
     case 'point-start':
     case 'half-time':
     case 'end-game':
+    case 'score-resume':
     case 'system':
       return 'var(--color-dim)'
   }
@@ -73,6 +83,7 @@ export function getVisLogColor(type: VisLogEntry['type']): string {
 
 export function isMutedLogEntry(type: VisLogEntry['type']): boolean {
   return type === 'possession' || type === 'system' || type === 'point-start'
+      || type === 'score-resume'
 }
 
 // Events that put the game into a "dead disc / waiting for pickup" state

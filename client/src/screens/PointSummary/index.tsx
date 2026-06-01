@@ -1,0 +1,161 @@
+import { useMemo, useState } from 'react'
+import {
+  useSession, useDerivedState, useVisLog, useGameActions,
+  useRecordingOptions, useTruncateCursor,
+} from '@/core/selectors'
+import { UNKNOWN_PLAYER_ID, UNKNOWN_PLAYER, type TeamId, type VisLogEntry } from '@/core/types'
+import { inkOn } from '@/core/contrast'
+import { Btn } from '@/components/ui/Btn'
+import { BottomSheet } from '@/screens/LiveEntry/BottomSheet'
+
+// Full-screen point-completion splash shown after each goal, before line
+// selection. Dismissible (tap to continue) and keeps undo + log accessible.
+// Summarises the last point and flags data-quality holes (unknown player /
+// unknown turnover) — highlighted, not enforced.
+export default function PointSummary() {
+  const session          = useSession()
+  const state            = useDerivedState()
+  const visLog           = useVisLog()
+  const actions          = useGameActions()
+  const recordingOptions = useRecordingOptions()
+  const truncateCursor   = useTruncateCursor()
+  const [sheetOpen, setSheetOpen] = useState(false)
+
+  const players = useMemo(
+    () => session ? [...session.gameConfig.rosters.A, ...session.gameConfig.rosters.B] : [],
+    [session],
+  )
+
+  const summary = useMemo(() => summariseLastPoint(visLog), [visLog])
+
+  if (!session || !state || !summary) return null
+
+  const { teams } = session.gameConfig
+  const scoringTeam: TeamId = summary.goalTeam
+  const scorerName = summary.scorerId === UNKNOWN_PLAYER_ID
+    ? UNKNOWN_PLAYER.name
+    : (players.find(p => p.id === summary.scorerId)?.name ?? 'Unknown')
+
+  return (
+    <div className="h-full flex flex-col bg-bg text-content relative">
+      {/* Tap-anywhere-to-continue surface. The buttons below stop propagation. */}
+      <button
+        type="button"
+        onClick={actions.dismissPointSummary}
+        className="flex-1 w-full flex flex-col items-center justify-center gap-6 px-6 cursor-pointer select-none"
+        aria-label="Continue to next point"
+      >
+        <div className="text-xs tracking-[0.3em] font-mono" style={{ color: 'var(--color-muted)' }}>
+          POINT COMPLETE
+        </div>
+
+        <div
+          className="px-4 py-1 rounded-full text-sm font-bold"
+          style={{ background: teams[scoringTeam].color, color: inkOn(teams[scoringTeam].color) }}
+        >
+          {teams[scoringTeam].name}
+        </div>
+
+        <div className="text-7xl font-black tabular-nums leading-none">
+          {state.score.A} <span className="text-dim">–</span> {state.score.B}
+        </div>
+
+        <div className="text-base" style={{ color: 'var(--color-content)' }}>
+          Goal — <span className="font-bold">{scorerName}</span>
+        </div>
+
+        <div className="text-sm" style={{ color: 'var(--color-muted)' }}>
+          {summary.turnovers === 0
+            ? 'Clean hold — no turnovers'
+            : `${summary.turnovers} turnover${summary.turnovers === 1 ? '' : 's'} this point`}
+        </div>
+
+        {summary.hasUnknownData && (
+          <div
+            className="px-4 py-2 rounded-lg text-sm font-semibold text-center max-w-xs"
+            style={{ background: 'var(--color-warn-bg)', color: 'var(--color-danger)', border: '1px solid var(--color-danger)' }}
+          >
+            ⚠ Unknown data in this point — review the log to fill in who had the disc.
+          </div>
+        )}
+
+        <div className="text-[11px] tracking-widest font-mono mt-2" style={{ color: 'var(--color-dim)' }}>
+          TAP ANYWHERE TO CONTINUE
+        </div>
+      </button>
+
+      {/* Undo + log — kept reachable on this screen. */}
+      <div
+        className="flex-shrink-0 flex items-stretch gap-2 p-3"
+        style={{ borderTop: '1px solid var(--color-border)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <Btn variant="ghost" size="md" full onClick={actions.undoPointSummary}>↶ Undo goal</Btn>
+        <Btn variant="ghost" size="md" full onClick={() => setSheetOpen(true)}>View log</Btn>
+        <Btn variant="primary" size="md" full onClick={actions.dismissPointSummary}>Next point</Btn>
+      </div>
+
+      <BottomSheet
+        open={sheetOpen}
+        activeTab="log"
+        onTabChange={() => { /* log-only on this screen */ }}
+        onClose={() => setSheetOpen(false)}
+        visLog={visLog}
+        players={players}
+        truncateCursor={truncateCursor}
+        onSetCursor={actions.setTruncateCursor}
+        state={state}
+        recordingOptions={recordingOptions}
+        teams={teams}
+        onInjurySub={actions.triggerInjurySub}
+        onTimeout={actions.recordTimeout}
+        onFoul={actions.recordFoul}
+        onPick={actions.recordPick}
+        onHalfTime={actions.triggerHalfTime}
+        onEndGame={actions.triggerEndGame}
+        onResumeFromScore={actions.resumeFromScore}
+      />
+    </div>
+  )
+}
+
+interface PointSummaryInfo {
+  goalTeam:       TeamId
+  scorerId:       number
+  turnovers:      number
+  hasUnknownData: boolean
+}
+
+// Walk back from the most recent goal to the point boundary that opened it
+// (point-start / score-resume / half-time) and summarise what happened.
+function summariseLastPoint(visLog: VisLogEntry[]): PointSummaryInfo | null {
+  let goalIdx = -1
+  for (let i = visLog.length - 1; i >= 0; i--) {
+    if (visLog[i].type === 'goal') { goalIdx = i; break }
+  }
+  if (goalIdx < 0) return null
+  const goal = visLog[goalIdx]
+  if (goal.type !== 'goal') return null
+
+  let startIdx = 0
+  for (let i = goalIdx - 1; i >= 0; i--) {
+    const t = visLog[i].type
+    if (t === 'point-start' || t === 'score-resume' || t === 'half-time') { startIdx = i; break }
+  }
+
+  const pointEvents = visLog.slice(startIdx, goalIdx + 1)
+  const turnovers = pointEvents.filter(e =>
+    e.type === 'turnover-throw-away' || e.type === 'turnover-receiver-error'
+    || e.type === 'turnover-stall' || e.type === 'turnover-unknown'
+    || e.type === 'block' || e.type === 'intercept').length
+  const hasUnknownData = pointEvents.some(e =>
+    e.type === 'turnover-unknown'
+    || ('playerId' in e && e.playerId === UNKNOWN_PLAYER_ID))
+
+  return {
+    goalTeam:  goal.teamId,
+    scorerId:  goal.playerId,
+    turnovers,
+    hasUnknownData,
+  }
+}

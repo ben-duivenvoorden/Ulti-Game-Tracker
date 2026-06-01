@@ -207,6 +207,7 @@ function step(state: DerivedGameState, event: Resolved, session: GameSession): v
     case 'turnover-throw-away':
     case 'turnover-receiver-error':
     case 'turnover-stall':
+    case 'turnover-unknown':
       state.possession = otherTeam(state.possession)
       state.discHolder = null
       break
@@ -250,6 +251,19 @@ function step(state: DerivedGameState, event: Resolved, session: GameSession): v
 
     case 'end-game':
       state.gamePhase = 'game-over'
+      break
+
+    case 'score-resume':
+      // Resync after missed points. Set the score, derive pointIndex from the
+      // total, and hand the disc to the offence team (so they receive — the
+      // other team pulls the resumed point). Land in 'point-over' so the next
+      // step is line selection, exactly like the window after a goal.
+      state.score      = { A: event.scoreA, B: event.scoreB }
+      state.pointIndex = event.scoreA + event.scoreB
+      state.gamePhase  = 'point-over'
+      state.discHolder = null
+      state.possession = event.offenceTeam
+      state.attackLeft = event.offenceTeam
       break
 
     case 'foul':
@@ -308,6 +322,11 @@ export function canRecord(state: DerivedGameState, eventType: RawEventType): boo
     case 'goal':
       return state.gamePhase === 'in-play' && state.discHolder !== null
 
+    case 'turnover-unknown':
+      // No holder requirement — the whole point is to mark a turnover when we
+      // couldn't track who had the disc. Allowed any time the disc is live.
+      return state.gamePhase === 'in-play'
+
     case 'block':
     case 'intercept':
       return state.gamePhase === 'in-play'
@@ -330,6 +349,14 @@ export function canRecord(state: DerivedGameState, eventType: RawEventType): boo
           || state.gamePhase === 'awaiting-pull'
           || state.gamePhase === 'point-over'
           || state.gamePhase === 'half-time'
+
+    case 'score-resume':
+      // Resync is a between-points correction — allowed before the first pull
+      // and in the windows where a new point would otherwise be selected.
+      return state.gamePhase === 'pre-game'
+          || state.gamePhase === 'point-over'
+          || state.gamePhase === 'half-time'
+          || state.gamePhase === 'awaiting-pull'
 
     case 'foul':
     case 'pick':

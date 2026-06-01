@@ -24,6 +24,8 @@ interface EventColumnProps {
   onBlock:         () => void
   onIntercept:     () => void
   onStall:         () => void
+  onUnknownPlayer:   () => void
+  onUnknownTurnover: () => void
 
   // Awaiting-pull
   onPull:      () => void
@@ -108,6 +110,24 @@ export function EventColumn(props: EventColumnProps) {
       onTap: props.onStall,
     },
     {
+      // Data-quality hole: the disc is now held by someone we couldn't
+      // identify. Records a possession by the Unknown-Player sentinel so the
+      // chain keeps going. Eye-catching red.
+      label: 'Unknown player',
+      fg:    'var(--color-danger)',
+      ink:   '#fff',
+      enabled: armed && inPlay && canRecord(state, 'possession'),
+      onTap: props.onUnknownPlayer,
+    },
+    {
+      // A turnover we couldn't fully attribute. No holder required.
+      label: 'Unknown turnover',
+      fg:    'var(--color-danger)',
+      ink:   '#fff',
+      enabled: armed && inPlay && canRecord(state, 'turnover-unknown'),
+      onTap: props.onUnknownTurnover,
+    },
+    {
       label: 'Goal',
       fg:    'var(--color-success)',
       ink:   '#fff',
@@ -145,11 +165,11 @@ export function EventColumn(props: EventColumnProps) {
     },
   ]
 
-  // In-play: 4 (or 5 with Stall) turnover-family buttons followed by
-  // Goal stacked adjacent. Awaiting-pull: Pull / Bonus / Brick. Plus a
-  // gap + the More button at the bottom, separate from the action group.
+  // In-play: turnover-family buttons + the two unknown-data buttons,
+  // followed by Goal at the bottom. Awaiting-pull: Pull / Bonus / Brick.
+  // Plus a gap + the More button at the bottom, separate from the group.
   const actionButtons = inPlay
-    ? [...inPlayButtons.slice(0, 5).filter(b => !b.hidden), ...inPlayButtons.slice(5).filter(b => !b.hidden)]
+    ? inPlayButtons.filter(b => !b.hidden)
     : awaitingPullButtons.filter(b => !b.hidden)
   // Pad to match playerCount so each action tile renders at player-tile
   // height. The spacer between actions and More carries the remainder.

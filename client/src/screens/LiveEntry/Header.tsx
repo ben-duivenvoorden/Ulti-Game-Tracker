@@ -1,6 +1,7 @@
 import type { TeamId, Score, Team } from '@/core/types'
 import { pickDisplayNames } from '@/core/teams/shortName'
 import { inkOn } from '@/core/contrast'
+import { ScorerInfoButton } from '@/components/ScorerInfoButton'
 
 interface HeaderProps {
   teams: Record<TeamId, Team>
@@ -70,7 +71,7 @@ export function Header({ teams, score, endsSwapped, onToggleEnds, onBack }: Head
           </span>
         </span>
       </div>
-      <span className="w-4" />
+      <ScorerInfoButton compact />
     </div>
   )
 }

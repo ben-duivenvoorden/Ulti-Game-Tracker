@@ -5,6 +5,8 @@ import {
 } from '@/core/selectors'
 import { otherTeam, type Player, type PlayerId, type TeamId, type VisLogEntry } from '@/core/types'
 import { isPickMode, pickActiveTeam, resolveContextLabel } from '@/core/pickModes'
+import { firstNameKey } from '@/core/teams/shortName'
+import { inkOn } from '@/core/contrast'
 import { Header } from './Header'
 import { LogPeek } from './LogPeek'
 import { PlayerColumn } from './PlayerColumn'
@@ -73,6 +75,8 @@ export default function LiveEntry() {
   // IDs; we degrade gracefully when the line changes (sub on / off).
   const [lineOrderOverride, setLineOrderOverride] = useState<Record<TeamId, PlayerId[] | null>>({ A: null, B: null })
   const [moveSelectedId, setMoveSelectedId] = useState<PlayerId | null>(null)
+  // Running-start backfill picker — open when an empty `+` slot is tapped.
+  const [backfillOpen, setBackfillOpen] = useState(false)
 
   const phase   = state?.gamePhase
   const pickMode = isPickMode(ui.uiMode) ? ui.uiMode : null
@@ -89,7 +93,9 @@ export default function LiveEntry() {
     if (!state || !activeTeam) return []
     const engineLine = state.activeLine[activeTeam]
     const override = lineOrderOverride[activeTeam]
-    if (!override) return engineLine
+    // Default order is alphabetical by first name; a transient Move-mode
+    // override (when present) takes precedence over that default.
+    if (!override) return [...engineLine].sort((a, b) => firstNameKey(a.name).localeCompare(firstNameKey(b.name)))
     // Apply override: place players in override order, append any new
     // arrivals (engine line drifted since the override was captured).
     const byId = new Map(engineLine.map(p => [p.id, p]))
@@ -232,6 +238,11 @@ export default function LiveEntry() {
             const handleLongPress = (player: Player) => {
               setMoveSelectedId(player.id)
             }
+            const handleRemove = (player: Player) => {
+              actions.editActiveLine(activeTeam, activePlayers.filter(p => p.id !== player.id).map(p => p.id))
+              setMoveSelectedId(null)
+            }
+            const recording = phase === 'in-play' || phase === 'awaiting-pull'
             const playerColumn = (
               <div className="relative h-full">
                 <PlayerColumn
@@ -243,6 +254,9 @@ export default function LiveEntry() {
                   onTap={handleTap}
                   onLongPress={handleLongPress}
                   moveSelectedId={moveSelectedId}
+                  lineSize={recording ? recordingOptions.lineSize : undefined}
+                  onAddSlot={() => setBackfillOpen(true)}
+                  onRemove={handleRemove}
                 />
                 <PassNotation
                   visLog={effectiveVisLog}
@@ -262,7 +276,7 @@ export default function LiveEntry() {
                 firstPossession={firstPossession}
                 pullerSelected={ui.selPuller !== null}
                 teamColor={activeTeamColor}
-                playerCount={activePlayers.length}
+                playerCount={Math.max(activePlayers.length, recording ? recordingOptions.lineSize : 0)}
                 isPicking={pickMode !== null}
                 onGoal={actions.recordGoal}
                 onThrowaway={actions.recordThrowAway}
@@ -270,6 +284,8 @@ export default function LiveEntry() {
                 onBlock={() => actions.triggerDefBlock('block')}
                 onIntercept={() => actions.triggerDefBlock('intercept')}
                 onStall={actions.recordStall}
+                onUnknownPlayer={actions.recordUnknownPlayer}
+                onUnknownTurnover={actions.recordUnknownTurnover}
                 onPull={() => actions.recordPull(false)}
                 onPullBonus={() => actions.recordPull(true)}
                 onBrick={actions.recordBrick}
@@ -284,7 +300,8 @@ export default function LiveEntry() {
             // side bottom edge lands (just below the last action button,
             // above the spacer + More button).
             const actionCount = phase === 'in-play'
-              ? (4 + (recordingOptions.stall ? 1 : 0) + 1) // RE/Throw/Block/Intercept/[Stall]/Goal
+              // RE/Throw/Block/Intercept + [Stall] + Unknown player/turnover + Goal
+              ? (4 + (recordingOptions.stall ? 1 : 0) + 2 + 1)
               : phase === 'awaiting-pull'
                 ? (1 + (recordingOptions.pullBonus ? 1 : 0) + (recordingOptions.brick ? 1 : 0))
                 : 0
@@ -292,7 +309,7 @@ export default function LiveEntry() {
               <div className="relative h-full">
                 <SankeyBridge
                   activeIdx={activeIdx}
-                  playerCount={activePlayers.length}
+                  playerCount={Math.max(activePlayers.length, recording ? recordingOptions.lineSize : 0)}
                   actionCount={actionCount}
                   playerLeft={playerLeft}
                   teamColor={activeTeamColor}
@@ -321,13 +338,81 @@ export default function LiveEntry() {
           onSetCursor={actions.setTruncateCursor}
           state={state}
           recordingOptions={recordingOptions}
+          teams={teams}
           onInjurySub={actions.triggerInjurySub}
           onTimeout={actions.recordTimeout}
           onFoul={actions.recordFoul}
           onPick={actions.recordPick}
           onHalfTime={actions.triggerHalfTime}
           onEndGame={actions.triggerEndGame}
+          onResumeFromScore={actions.resumeFromScore}
         />
+
+        {backfillOpen && (
+          <BackfillPicker
+            bench={session.gameConfig.rosters[activeTeam].filter(
+              p => !activePlayers.some(a => a.id === p.id),
+            )}
+            teamColor={activeTeamColor}
+            onPick={(player) => {
+              actions.editActiveLine(activeTeam, [...activePlayers.map(p => p.id), player.id])
+              setBackfillOpen(false)
+            }}
+            onClose={() => setBackfillOpen(false)}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Running-start backfill: pick a bench player to drop into an empty line slot
+// mid-point. Sorted by first name to match the rest of the app.
+function BackfillPicker({
+  bench, teamColor, onPick, onClose,
+}: {
+  bench:     Player[]
+  teamColor: string
+  onPick:    (player: Player) => void
+  onClose:   () => void
+}) {
+  const sorted = [...bench].sort((a, b) => firstNameKey(a.name).localeCompare(firstNameKey(b.name)))
+  return (
+    <div
+      className="absolute inset-0 z-30 flex items-end"
+      style={{ background: 'rgba(0,0,0,0.55)' }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full flex flex-col"
+        style={{ background: 'var(--color-bg)', borderTop: `2px solid ${teamColor}`, maxHeight: '70%' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div
+          className="flex-shrink-0 flex items-center justify-between px-4 py-3"
+          style={{ borderBottom: '1px solid var(--color-border)' }}
+        >
+          <span className="text-xs font-mono tracking-widest" style={{ color: 'var(--color-muted)' }}>
+            ADD PLAYER TO LINE
+          </span>
+          <button onClick={onClose} className="cursor-pointer text-muted hover:text-content" title="Cancel">✕</button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3 grid grid-cols-2 gap-2">
+          {sorted.length === 0 ? (
+            <div className="col-span-2 text-center py-6 text-sm" style={{ color: 'var(--color-muted)' }}>
+              No bench players available.
+            </div>
+          ) : sorted.map(p => (
+            <button
+              key={p.id}
+              onClick={() => onPick(p)}
+              className="h-12 rounded-lg border cursor-pointer flex items-center justify-center px-2 text-center truncate"
+              style={{ background: teamColor, color: inkOn(teamColor), borderColor: teamColor, fontWeight: 600 }}
+            >
+              {p.name}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   )

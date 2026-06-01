@@ -43,27 +43,44 @@ export default function GameSettings() {
           {options.gameMode === 'open' ? (
             <CompactStepper
               label="Players per line"
-              value={options.lineRatio.M + options.lineRatio.F}
-              onChange={v => updateRecordingOption('lineRatio', { M: v, F: 0 })}
+              value={options.lineSize}
+              onChange={v => updateRecordingOption('lineSize', v)}
               min={1}
-              max={9}
+              max={15}
             />
           ) : (
             <div className="flex flex-col gap-2">
+              {/* In mixed, line size is derived from MMP + FMP so the ratio
+                  always sums to it. Spell the terms out here (first appearance). */}
               <CompactStepper
-                label="Male Matching"
+                label="MMP (Male Matching)"
                 value={options.lineRatio.M}
-                onChange={v => updateRecordingOption('lineRatio', { ...options.lineRatio, M: v })}
+                onChange={v => {
+                  const r = { ...options.lineRatio, M: v }
+                  updateRecordingOption('lineRatio', r)
+                  updateRecordingOption('lineSize', r.M + r.F)
+                }}
                 min={0}
-                max={9}
+                max={15}
               />
               <CompactStepper
-                label="Female Matching"
+                label="FMP (Female Matching)"
                 value={options.lineRatio.F}
-                onChange={v => updateRecordingOption('lineRatio', { ...options.lineRatio, F: v })}
+                onChange={v => {
+                  const r = { ...options.lineRatio, F: v }
+                  updateRecordingOption('lineRatio', r)
+                  updateRecordingOption('lineSize', r.M + r.F)
+                }}
                 min={0}
-                max={9}
+                max={15}
               />
+              <div
+                className="flex items-center justify-between px-3 h-9 rounded-md text-sm"
+                style={{ background: 'var(--color-surf)', color: 'var(--color-muted)' }}
+              >
+                <span className="font-mono tracking-wide text-[11px]">LINE SIZE</span>
+                <span className="font-bold tabular-nums text-content">{options.lineRatio.M + options.lineRatio.F}</span>
+              </div>
             </div>
           )}
         </Section>
@@ -107,6 +124,20 @@ export default function GameSettings() {
               onChange={v => updateRecordingOption('stall', v)}
             />
           </div>
+        </Section>
+
+        <Section title="SCORER INFO">
+          <div className="text-[10px] mb-1" style={{ color: 'var(--color-muted)' }}>
+            Shown behind the (i) bubble during scoring &amp; line selection.
+          </div>
+          <textarea
+            value={options.scorerInfo}
+            onChange={e => updateRecordingOption('scorerInfo', e.target.value)}
+            placeholder="Briefing for whoever's scoring — reminders, conventions, anything…"
+            rows={4}
+            className="w-full px-3 py-2 rounded-md border text-sm text-content resize-y"
+            style={{ background: 'var(--color-surf-2)', borderColor: 'var(--color-border-2)' }}
+          />
         </Section>
       </div>
 

@@ -18,6 +18,13 @@ interface PlayerColumnProps {
    *  selected to be moved. All other tiles render with a dashed outline
    *  to mark them as swap targets. */
   moveSelectedId?: PlayerId | null
+  /** Running-start: total slots the line should hold. When the active line
+   *  is shorter than this, empty `+` slots render after the players. */
+  lineSize?: number
+  /** Tap an empty `+` slot to open the backfill picker. */
+  onAddSlot?: () => void
+  /** Remove a player from the line (shown as a ✕ badge while in Move mode). */
+  onRemove?: (player: Player) => void
 }
 
 const LONG_PRESS_MS = 450
@@ -26,11 +33,13 @@ const LONG_PRESS_MS = 450
 // Tap to record a possession; long-press a player to enter Move mode,
 // then tap another player to swap their positions.
 export function PlayerColumn(props: PlayerColumnProps) {
-  const { players, teamColor, holderId, pullerId, ineligibleIds, onTap, onLongPress, moveSelectedId } = props
+  const { players, teamColor, holderId, pullerId, ineligibleIds, onTap, onLongPress, moveSelectedId,
+          lineSize, onAddSlot, onRemove } = props
   const timerRef    = useRef<number | null>(null)
   const triggeredRef = useRef(false)
   const downIdRef   = useRef<PlayerId | null>(null)
   const inMoveMode = moveSelectedId !== null && moveSelectedId !== undefined
+  const emptySlots = Math.max(0, (lineSize ?? 0) - players.length)
 
   const clearTimer = () => {
     if (timerRef.current !== null) {
@@ -78,7 +87,7 @@ export function PlayerColumn(props: PlayerColumnProps) {
               clearTimer()
               downIdRef.current = null
             }}
-            className="flex-1 min-h-0 rounded-xl border cursor-pointer transition-all select-none flex flex-col items-center justify-center px-2"
+            className="relative flex-1 min-h-0 rounded-xl border cursor-pointer transition-all select-none flex flex-col items-center justify-center px-2"
             style={{
               background:    ineligible       ? 'var(--color-surf-2)'
                             : isMoveSelected ? `${teamColor}66`
@@ -121,9 +130,38 @@ export function PlayerColumn(props: PlayerColumnProps) {
                 {rest}
               </span>
             )}
+            {/* Remove-from-line badge — only while in Move mode, so it can't
+                be hit by accident during normal scoring. */}
+            {inMoveMode && onRemove && (
+              <span
+                role="button"
+                aria-label={`Remove ${p.name} from line`}
+                title="Remove from line"
+                onPointerDown={e => { e.stopPropagation() }}
+                onPointerUp={e => { e.stopPropagation() }}
+                onClick={e => { e.stopPropagation(); onRemove(p) }}
+                className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold cursor-pointer"
+                style={{ background: 'var(--color-danger)', color: '#fff', boxShadow: '0 0 0 2px var(--color-bg)' }}
+              >
+                ✕
+              </span>
+            )}
           </button>
         )
       })}
+      {/* Running-start empty slots — tap to backfill a player mid-point. */}
+      {Array.from({ length: emptySlots }).map((_, i) => (
+        <button
+          key={`slot-${i}`}
+          type="button"
+          onClick={() => onAddSlot?.()}
+          className="flex-1 min-h-0 rounded-xl border-2 border-dashed cursor-pointer transition-all select-none flex items-center justify-center"
+          style={{ borderColor: `${teamColor}88`, background: `${teamColor}14`, color: teamColor }}
+          title="Add a player to the line"
+        >
+          <span style={{ fontSize: 'clamp(20px, 6vw, 30px)', fontWeight: 700, lineHeight: 1 }}>+</span>
+        </button>
+      ))}
     </div>
   )
 }

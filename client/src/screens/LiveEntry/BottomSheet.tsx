@@ -1,6 +1,7 @@
-import { useLayoutEffect, useRef } from 'react'
-import type { VisLogEntry, Player, EventId, DerivedGameState, RecordingOptions } from '@/core/types'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { VisLogEntry, Player, EventId, DerivedGameState, RecordingOptions, TeamId, Team } from '@/core/types'
 import { formatVisLogEntry, getVisLogColor, isMutedLogEntry } from '@/core/format'
+import { detectLogPatterns } from '@/core/patterns'
 import { canRecord } from '@/core/engine'
 import { Btn } from '@/components/ui/Btn'
 import { Label } from '@/components/ui/Label'
@@ -24,12 +25,14 @@ interface BottomSheetProps {
   // More tab
   state:            DerivedGameState
   recordingOptions: RecordingOptions
+  teams:            Record<TeamId, Team>
   onInjurySub:      () => void
   onTimeout:        () => void
   onFoul:           () => void
   onPick:           () => void
   onHalfTime:       () => void
   onEndGame:        () => void
+  onResumeFromScore: (scoreA: number, scoreB: number, offenceTeam: TeamId) => void
 }
 
 // Half-height overlay anchored to the bottom of the screen. Tap the
@@ -105,6 +108,9 @@ function TabBtn({ label, active, onClick }: { label: string; active: boolean; on
 function LogTab(props: BottomSheetProps) {
   const { visLog, players, truncateCursor, onSetCursor } = props
 
+  // Multi-event pattern annotations (Callahan, …) derived from the log.
+  const patterns = useMemo(() => detectLogPatterns(visLog), [visLog])
+
   const logRef = useRef<HTMLDivElement>(null)
 
   // Pin the scroll to the most-recent entry on open and whenever the log grows.
@@ -133,6 +139,7 @@ function LogTab(props: BottomSheetProps) {
             const muted    = isMutedLogEntry(e.type)
             const past     = truncateCursor !== null && e.id > truncateCursor
             const isCursor = truncateCursor !== null && e.id === truncateCursor
+            const pattern  = patterns.get(e.id)
             return (
               <button
                 key={e.id}
@@ -150,6 +157,14 @@ function LogTab(props: BottomSheetProps) {
               >
                 {isCursor && <span style={{ marginRight: 4 }}>▶</span>}
                 {formatVisLogEntry(e, players)}
+                {pattern && (
+                  <span
+                    className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold tracking-wide align-middle"
+                    style={{ background: pattern.color, color: 'var(--color-bg)' }}
+                  >
+                    {pattern.label}
+                  </span>
+                )}
               </button>
             )
           })
@@ -163,9 +178,10 @@ function LogTab(props: BottomSheetProps) {
 // Stoppages + manual half-time / end-game.
 
 function MoreTab(props: BottomSheetProps) {
-  const { state, recordingOptions,
-          onInjurySub, onTimeout, onFoul, onPick, onHalfTime, onEndGame } = props
+  const { state, recordingOptions, teams,
+          onInjurySub, onTimeout, onFoul, onPick, onHalfTime, onEndGame, onResumeFromScore } = props
   const can = (t: Parameters<typeof canRecord>[1]) => canRecord(state, t)
+  const [resumeOpen, setResumeOpen] = useState(false)
 
   return (
     <div className="h-full overflow-y-auto p-3 flex flex-col gap-3">
@@ -184,6 +200,116 @@ function MoreTab(props: BottomSheetProps) {
         <Btn variant="ghost" size="sm" full disabled={!can('half-time')} onClick={onHalfTime}>Half Time</Btn>
         <Btn variant="ghost" size="sm" full disabled={!can('end-game')}  onClick={onEndGame}>End Game</Btn>
       </Section>
+
+      <Section title="RESYNC">
+        <Btn variant="ghost" size="sm" full disabled={!can('score-resume')} onClick={() => setResumeOpen(true)}>
+          Resume from score
+        </Btn>
+      </Section>
+
+      {resumeOpen && (
+        <ResumeFromScoreDialog
+          teams={teams}
+          score={state.score}
+          onCancel={() => setResumeOpen(false)}
+          onConfirm={(a, b, offence) => { setResumeOpen(false); onResumeFromScore(a, b, offence) }}
+        />
+      )}
+    </div>
+  )
+}
+
+// Resync after missing points: enter the current score and say which team is on
+// Offence (they receive — the other team pulls the resumed point).
+function ResumeFromScoreDialog({
+  teams, score, onCancel, onConfirm,
+}: {
+  teams:     Record<TeamId, Team>
+  score:     { A: number; B: number }
+  onCancel:  () => void
+  onConfirm: (scoreA: number, scoreB: number, offenceTeam: TeamId) => void
+}) {
+  const [a, setA] = useState(score.A)
+  const [b, setB] = useState(score.B)
+  const [offence, setOffence] = useState<TeamId>('A')
+
+  return (
+    <div
+      className="absolute inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.7)' }}
+      onClick={onCancel}
+    >
+      <div
+        className="rounded-xl p-5 w-full max-w-sm flex flex-col gap-4"
+        style={{ background: 'var(--color-surf)', border: '1px solid var(--color-border-2)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="text-sm font-bold text-content">Resume from score</div>
+        <div className="text-[12px]" style={{ color: 'var(--color-muted)' }}>
+          Set the current score and which team is on offence. If the score is past half-time, half time is recorded automatically.
+        </div>
+
+        <div className="flex items-stretch gap-3">
+          <ScoreSpinner label={teams.A.short} color={teams.A.color} value={a} onChange={setA} />
+          <ScoreSpinner label={teams.B.short} color={teams.B.color} value={b} onChange={setB} />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label>ON OFFENCE (RECEIVES) — OTHER TEAM PULLS</Label>
+          <div className="flex gap-2">
+            {(['A', 'B'] as TeamId[]).map(t => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setOffence(t)}
+                className="flex-1 h-10 rounded-md border text-sm font-semibold cursor-pointer transition-colors"
+                style={{
+                  background:  offence === t ? `${teams[t].color}22` : 'transparent',
+                  borderColor: offence === t ? `${teams[t].color}88` : 'var(--color-border)',
+                  color:       offence === t ? teams[t].color : 'var(--color-muted)',
+                }}
+              >
+                {teams[t].short}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex gap-2 mt-1">
+          <Btn variant="ghost"   size="md" full onClick={onCancel}>Cancel</Btn>
+          <Btn variant="primary" size="md" full onClick={() => onConfirm(a, b, offence)}>Resume</Btn>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ScoreSpinner({
+  label, color, value, onChange,
+}: {
+  label:    string
+  color:    string
+  value:    number
+  onChange: (v: number) => void
+}) {
+  return (
+    <div className="flex-1 flex flex-col items-center gap-1.5">
+      <span className="text-xs font-bold truncate max-w-full" style={{ color }}>{label}</span>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onChange(Math.max(0, value - 1))}
+          className="w-8 h-8 rounded-md border text-lg font-bold cursor-pointer"
+          style={{ background: 'var(--color-surf-3)', borderColor: 'var(--color-border-2)', color: 'var(--color-content)' }}
+        >−</button>
+        <span className="w-8 text-center text-2xl font-black tabular-nums">{value}</span>
+        <button
+          type="button"
+          onClick={() => onChange(value + 1)}
+          className="w-8 h-8 rounded-md border text-lg font-bold cursor-pointer"
+          style={{ background: 'var(--color-surf-3)', borderColor: 'var(--color-border-2)', color: 'var(--color-content)' }}
+        >+</button>
+      </div>
     </div>
   )
 }

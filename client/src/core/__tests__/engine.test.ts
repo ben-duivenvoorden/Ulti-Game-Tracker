@@ -565,3 +565,55 @@ describe('validateSpliceBlock', () => {
     expect((result as { reason: string }).reason).toMatch(/possession team mismatch|cannot continue/i)
   })
 })
+
+// ─── Unknown turnover ──────────────────────────────────────────────────────────
+
+describe('turnover-unknown', () => {
+  it('flips possession and clears discHolder like any turnover', () => {
+    let session = makeSession('A')
+    session = appendEvents(session, [
+      startPoint(0),
+      { pointIndex: 0, type: 'pull', playerId: 1, teamId: 'A' },
+      { pointIndex: 0, type: 'possession', playerId: 14, teamId: 'B' },
+      { pointIndex: 0, type: 'turnover-unknown', playerId: 14, teamId: 'B' },
+    ])
+    const state = deriveGameState(session)
+    expect(state.possession).toBe('A')
+    expect(state.discHolder).toBeNull()
+  })
+
+  it('is recordable in-play even without a disc holder', () => {
+    let session = makeSession('A')
+    session = appendEvents(session, [
+      startPoint(0),
+      { pointIndex: 0, type: 'pull', playerId: 1, teamId: 'A' }, // dead disc, no holder
+    ])
+    const state = deriveGameState(session)
+    expect(state.discHolder).toBeNull()
+    expect(canRecord(state, 'turnover-unknown')).toBe(true)
+    // A regular throw-away still needs a holder.
+    expect(canRecord(state, 'turnover-throw-away')).toBe(false)
+  })
+})
+
+// ─── Resume from score ─────────────────────────────────────────────────────────
+
+describe('score-resume', () => {
+  it('sets score, pointIndex and hands the disc to the offence team', () => {
+    let session = makeSession('A')
+    session = appendEvents(session, [
+      { pointIndex: 0, type: 'score-resume', scoreA: 5, scoreB: 3, offenceTeam: 'B' },
+    ])
+    const state = deriveGameState(session)
+    expect(state.score).toEqual({ A: 5, B: 3 })
+    expect(state.pointIndex).toBe(8)
+    expect(state.possession).toBe('B')
+    expect(state.gamePhase).toBe('point-over')
+  })
+
+  it('is recordable before the first pull and between points', () => {
+    const fresh = deriveGameState(makeSession('A'))
+    expect(fresh.gamePhase).toBe('pre-game')
+    expect(canRecord(fresh, 'score-resume')).toBe(true)
+  })
+})

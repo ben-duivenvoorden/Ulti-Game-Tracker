@@ -83,3 +83,32 @@ describe('truncateCursor flow through recordVia', () => {
   })
 })
 
+describe('resumeFromScore', () => {
+  beforeEach(resetAndStartGame)
+
+  // MOCK_GAMES[0] (Empire vs Breeze) has halfTimeAt = 8.
+  it('records the resume and lands on line selection', () => {
+    useGameStore.getState().resumeFromScore(5, 3, 'A')
+    const vis = computeVisLog(useGameStore.getState().session!.rawLog)
+    const resume = vis.find(e => e.type === 'score-resume')
+    expect(resume).toBeTruthy()
+    expect(useGameStore.getState().screen).toBe('line-selection')
+  })
+
+  it('does NOT insert half-time at 5–3 (neither team has reached 8)', () => {
+    useGameStore.getState().resumeFromScore(5, 3, 'A')
+    const vis = computeVisLog(useGameStore.getState().session!.rawLog)
+    expect(vis.some(e => e.type === 'half-time')).toBe(false)
+  })
+
+  it('auto-inserts half-time when a team reaches the half-time threshold', () => {
+    useGameStore.getState().resumeFromScore(8, 2, 'B')
+    const vis = computeVisLog(useGameStore.getState().session!.rawLog)
+    const htIdx = vis.findIndex(e => e.type === 'half-time')
+    const resIdx = vis.findIndex(e => e.type === 'score-resume')
+    expect(htIdx).toBeGreaterThanOrEqual(0)
+    // Half-time must precede the score-resume so orientation stays correct.
+    expect(htIdx).toBeLessThan(resIdx)
+  })
+})
+

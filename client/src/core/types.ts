@@ -28,6 +28,23 @@ export interface Player {
   photoUrl?: string
 }
 
+// ─── Unknown-player sentinel ──────────────────────────────────────────────────
+// PlayerId 0 is reserved as a global "Unknown Player" — NOT a roster/line member.
+// It surfaces only on live scoring entry as a red attribution target (a
+// placeholder until substituted with real data) and never in line selection.
+// `nextGlobalPlayerId` starts at 1, so 0 is never assigned to a real player.
+export const UNKNOWN_PLAYER_ID: PlayerId = 0
+
+/** Synthetic Player record for the unknown-player sentinel. `teamId` is
+ *  irrelevant for display (id 0 never sits in a line slot, so it has no
+ *  lineRatio / line-slot interaction). */
+export const UNKNOWN_PLAYER: Player = {
+  id: UNKNOWN_PLAYER_ID,
+  name: 'Unknown Player',
+  teamId: 'A',
+  gender: 'M',
+}
+
 export interface Score {
   A: number
   B: number
@@ -45,6 +62,7 @@ export type RawEventType =
   | 'turnover-throw-away'
   | 'turnover-receiver-error'
   | 'turnover-stall'
+  | 'turnover-unknown'         // data-quality hole: a turnover we couldn't fully attribute
   | 'block'
   | 'intercept'
   | 'timeout'
@@ -52,6 +70,7 @@ export type RawEventType =
   | 'injury-sub'
   | 'half-time'
   | 'end-game'
+  | 'score-resume'             // resync after missing points: set score + offence, drop into line select
   | 'foul'
   | 'pick'
   | 'system'
@@ -73,12 +92,21 @@ export interface PointStartRawEvent extends BaseRawEvent { type: 'point-start'; 
 export interface PullRawEvent       extends BaseRawEvent { type: 'pull' | 'pull-bonus' | 'brick'; playerId: PlayerId; teamId: TeamId }
 export interface PossessionRawEvent extends BaseRawEvent { type: 'possession';          playerId: PlayerId; teamId: TeamId }
 export interface TurnoverRawEvent   extends BaseRawEvent { type: 'turnover-throw-away' | 'turnover-receiver-error' | 'turnover-stall'; playerId: PlayerId; teamId: TeamId }
+// Unknown turnover — attributable to any player; pressed standalone it
+// attributes to the Unknown-Player sentinel (PlayerId 0). Rendered red in the
+// log to flag it as a data-quality hole.
+export interface TurnoverUnknownRawEvent extends BaseRawEvent { type: 'turnover-unknown'; playerId: PlayerId; teamId: TeamId }
 export interface BlockRawEvent      extends BaseRawEvent { type: 'block' | 'intercept'; playerId: PlayerId; teamId: TeamId }
 export interface GoalRawEvent       extends BaseRawEvent { type: 'goal';                playerId: PlayerId; teamId: TeamId }
 // Injury sub replaces a single team's line with a new ordered list.
 export interface InjurySubRawEvent  extends BaseRawEvent { type: 'injury-sub'; teamId: TeamId; line: PlayerId[] }
 export interface HalfTimeRawEvent   extends BaseRawEvent { type: 'half-time' }
 export interface EndGameRawEvent    extends BaseRawEvent { type: 'end-game' }
+// Resync after missing one or more points. Sets the score directly, makes
+// `offenceTeam` the receiver (so the other team pulls the resumed point), and
+// drops into line selection. If the resumed span crosses half-time, the store
+// inserts a half-time event alongside this so ends-orientation stays correct.
+export interface ScoreResumeRawEvent extends BaseRawEvent { type: 'score-resume'; scoreA: number; scoreB: number; offenceTeam: TeamId }
 export interface TimeoutRawEvent    extends BaseRawEvent { type: 'timeout' }
 export interface FoulRawEvent       extends BaseRawEvent { type: 'foul' }
 export interface PickRawEvent       extends BaseRawEvent { type: 'pick' }
@@ -109,11 +137,13 @@ export type RawEvent =
   | PullRawEvent
   | PossessionRawEvent
   | TurnoverRawEvent
+  | TurnoverUnknownRawEvent
   | BlockRawEvent
   | GoalRawEvent
   | InjurySubRawEvent
   | HalfTimeRawEvent
   | EndGameRawEvent
+  | ScoreResumeRawEvent
   | TimeoutRawEvent
   | FoulRawEvent
   | PickRawEvent
@@ -159,7 +189,7 @@ export type UiMode =
   | 'block-pick'         // recorder tapped "Blocked by Defence", picking blocker
   | 'intercept-pick'     // recorder tapped "Intercepted by Defence", picking interceptor
 
-export type AppScreen = 'game-setup' | 'game-settings' | 'line-selection' | 'live-entry' | 'teams-manager'
+export type AppScreen = 'game-setup' | 'game-settings' | 'line-selection' | 'live-entry' | 'teams-manager' | 'point-summary'
 
 // ─── Transient banner notification ────────────────────────────────────────────
 // Shared by copy / paste / edit-commit flows. One banner at a time; tap to
@@ -206,17 +236,25 @@ export interface RecordingOptions {
   gameMode:  GameMode
   /** In mixed: M and F counts must match. In open: M+F is the total line size. */
   lineRatio: { M: number; F: number }
+  /** Players per line. In mixed mode this must equal `lineRatio.M + lineRatio.F`.
+   *  Drives the line-selection target and the running-start `+` slot count. */
+  lineSize:  number
+  /** Free-text scorer briefing shown behind the (i) bubble during scoring /
+   *  line selection. Lives on the competition-config layer; empty by default. */
+  scorerInfo: string
 }
 
 export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
-  pullBonus: true,
-  brick:     true,
-  foul:      false,
-  pick:      false,
-  stall:     false,
-  passes:    true,
-  gameMode:  'mixed',
-  lineRatio: { M: 4, F: 3 },
+  pullBonus:  true,
+  brick:      true,
+  foul:       false,
+  pick:       false,
+  stall:      false,
+  passes:     true,
+  gameMode:   'mixed',
+  lineRatio:  { M: 4, F: 3 },
+  lineSize:   7,
+  scorerInfo: '',
 }
 
 // ─── Game config & session ────────────────────────────────────────────────────
