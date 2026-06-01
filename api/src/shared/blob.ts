@@ -1,5 +1,6 @@
 import { AppendBlobClient, BlobClient } from '@azure/storage-blob'
 import { DefaultAzureCredential } from '@azure/identity'
+import { CSV_HEADER } from './csv.js'
 
 // Append-only blob holding the raw event log. The append-blob type is the
 // right Azure primitive for "events streaming in from a low-throughput API"
@@ -50,11 +51,19 @@ export function getReadClient(): BlobClient {
 // returns success for both racers.
 let ensured = false
 
-/** Idempotent — safe to call on every request, but typically called once. */
+/** Idempotent — safe to call on every request, but typically called once.
+ *  When it actually creates the blob (vs finding it already there), it writes
+ *  the CSV header as the first row so the file is self-describing and matches
+ *  what dbt's raw_events model expects (`header = true`). Without this, the
+ *  first data row would be silently consumed as the header on load. */
 export async function ensureBlobExists(client: AppendBlobClient): Promise<void> {
-  await client.createIfNotExists({
+  const res = await client.createIfNotExists({
     blobHTTPHeaders: { blobContentType: 'text/csv; charset=utf-8' },
   })
+  if (res.succeeded) {
+    const header = Buffer.from(CSV_HEADER + '\n', 'utf-8')
+    await client.appendBlock(header, header.length)
+  }
 }
 
 /** Appends one CSV row. Row must NOT include a trailing newline — added here. */
