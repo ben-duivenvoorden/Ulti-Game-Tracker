@@ -11,7 +11,11 @@ import { DefaultAzureCredential } from '@azure/identity'
 //
 // Each appended block is ONE CSV row terminated by \n.
 
-const ACCOUNT_URL = process.env.RAW_BLOB_ACCOUNT_URL
+// Trailing slash stripped — Azure's primaryEndpoints.blob (what the Bicep wires
+// into this setting) ends in `/`, which would otherwise produce a double slash
+// in BLOB_URL below and a malformed container/blob path. Mirrors the same
+// normalisation in client/src/core/sync.ts.
+const ACCOUNT_URL = process.env.RAW_BLOB_ACCOUNT_URL?.replace(/\/+$/, '')
 const CONTAINER   = process.env.RAW_BLOB_CONTAINER ?? 'raw'
 const BLOB_NAME   = process.env.RAW_BLOB_NAME ?? 'events.csv'
 
