@@ -53,6 +53,9 @@ select
     when g.n_segments = 1              then 'single'
     else 'redundant'
   end                                                           as coverage_status,
-  coalesce(g.distinct_scoring_teams, 0) > 1                     as has_conflict
+  coalesce(g.distinct_scoring_teams, 0) > 1                     as has_conflict,
+  pc.canonical_segment_id
 from axis a
-left join agg g on (g.game_id, g.point_index) = (a.game_id, a.point_index)
+left join agg g            on (g.game_id, g.point_index)  = (a.game_id, a.point_index)
+left join {{ ref('point_canonical') }} pc
+                           on (pc.game_id, pc.point_index) = (a.game_id, a.point_index)

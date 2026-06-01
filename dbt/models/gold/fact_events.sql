@@ -2,6 +2,8 @@
 
 -- One row per non-structural gameplay event, flattened for analytics.
 -- This is the primary gold-layer fact and the main artefact Power BI reads.
+-- Reads the canonical stitched stream (one segment per point), so overlapping
+-- segments never double-count.
 
 select
   event_id,
@@ -24,4 +26,4 @@ select
   end                                                             as event_category,
   team_id,
   player_id
-from {{ ref('stg_events') }}
+from {{ ref('canonical_events') }}

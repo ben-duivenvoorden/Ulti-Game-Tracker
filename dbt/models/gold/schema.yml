@@ -152,6 +152,7 @@ models:
     description: |
       Coverage map. One row per (game_id, point_index) over the observed range;
       n_segments = 0 marks an internal gap. coverage_status ∈ gap/single/redundant.
+      canonical_segment_id = the segment chosen to represent this point.
     columns:
       - name: game_id
         tests: [not_null]
@@ -163,3 +164,26 @@ models:
           - accepted_values:
               arguments:
                 values: [gap, single, redundant]
+
+  - name: point_canonical
+    description: |
+      One canonical segment per recorded point (deterministic default rule).
+      The basis for canonical_events. Key = (game_id, point_index).
+    columns:
+      - name: game_id
+        tests: [not_null]
+      - name: point_index
+        tests: [not_null]
+      - name: canonical_segment_id
+        tests: [not_null]
+
+  - name: canonical_events
+    description: |
+      The stitched single authoritative event stream — for each point, only the
+      events from its canonical segment. Input to the game facts so overlapping
+      segments never double-count. Identical to stg_events when one segment.
+    columns:
+      - name: event_id
+        tests: [not_null]
+      - name: game_id
+        tests: [not_null]
