@@ -33,6 +33,10 @@ param repositoryUrl string = ''
 @description('Default branch the SWA deploys from.')
 param branch string = 'main'
 
+@description('Region for the Static Web App. SWA is only available in a limited set of regions (centralus, eastus2, westus2, westeurope, eastasia) — NOT australiaeast, and NOT southeastasia/Singapore. The region only hosts the management resource; content is served from a global CDN, so AU users are unaffected. westus2 chosen as the closest non-China supported region (eastasia = Hong Kong, deliberately avoided).')
+@allowed([ 'centralus', 'eastus2', 'westus2', 'westeurope' ])
+param staticWebAppLocation string = 'westus2'
+
 // ─── Naming ───────────────────────────────────────────────────────────────────
 // Follows CAF convention: <type>-<workload>-<env>-<region>. Instance suffix
 // (`-001`) deliberately omitted — single-instance hobby project. Global-unique
@@ -163,7 +167,7 @@ resource blobRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01'
 
 resource staticWebApp 'Microsoft.Web/staticSites@2024-04-01' = {
   name:     staticWebAppName
-  location: location
+  location: staticWebAppLocation
   tags:     commonTags
   sku: { name: 'Free', tier: 'Free' }
   properties: {

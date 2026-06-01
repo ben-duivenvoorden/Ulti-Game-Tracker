@@ -25,6 +25,9 @@ jobs:
       RAW_EVENTS_URL:   ${{ secrets.RAW_EVENTS_URL || format('{0}/scripts/sample-events.csv', github.workspace) }}
       DUCKDB_PATH:      /tmp/ulti-game-tracker.duckdb
       GOLD_EXPORT_DIR:  /tmp/gold
+      # Salt for hashed player IDs in gold.dim_players (anonymisation policy).
+      # If unset, dbt falls back to the dev default baked into dbt_project.yml.
+      PLAYER_HASH_SALT: ${{ secrets.PLAYER_HASH_SALT }}
 
     steps:
       - uses: actions/checkout@v4

@@ -18,6 +18,10 @@ clean-targets:
 vars:
   raw_events_url: "{{ env_var('RAW_EVENTS_URL', '../scripts/sample-events.csv') }}"
   gold_export_dir: "{{ env_var('GOLD_EXPORT_DIR', 'target/gold') }}"
+  # Anonymisation salt for hashed player IDs (policy decided 2026-06-01). Set
+  # PLAYER_HASH_SALT as a repo secret/env so the hash isn't guessable from a
+  # known default. Changing it re-keys every player_hash on the next build.
+  player_hash_salt: "{{ env_var('PLAYER_HASH_SALT', 'ugt-dev-salt-change-in-prod') }}"
 
 models:
   ulti_game_tracker:
