@@ -9,7 +9,9 @@
 -- any).
 
 with events as (
-  select * from {{ ref('stg_events') }}
+  -- Canonical stitched stream (one segment per point) so redundant segments
+  -- don't double-count a point's goals / turnovers / possessions.
+  select * from {{ ref('canonical_events') }}
 ),
 
 bounds as (

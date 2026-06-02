@@ -155,19 +155,30 @@ function resolveLine(ids: PlayerId[] | undefined, roster: Player[]): Player[] {
   return out
 }
 
-export function deriveGameState(session: GameSession): DerivedGameState {
-  const events = resolveLogForDerivation(session.rawLog)
-  const receivingTeam = otherTeam(session.gameStartPullingTeam)
-
-  const state: DerivedGameState = {
-    gamePhase:  events.length === 0 ? 'pre-game' : 'awaiting-pull',
-    score:      { A: 0, B: 0 },
-    possession: receivingTeam,
-    attackLeft: receivingTeam,
+/** Seed the fold's starting state. An *anchored* segment (one started mid-game
+ *  from a known score) begins at its anchor: the recorded score, the offence
+ *  team in possession to receive, and a `pointIndex` equal to the points already
+ *  played. A from-the-start segment begins at 0–0 with the receiving team on
+ *  offence. `hasEvents` only governs the transient initial phase, which the
+ *  first stepped event overwrites. Shared by `deriveGameState` and
+ *  `validateSpliceBlock` so both fold from the same origin. */
+function initialState(session: GameSession, hasEvents: boolean): DerivedGameState {
+  const anchor  = session.segment.anchor
+  const offence = anchor ? anchor.offence : otherTeam(session.gameStartPullingTeam)
+  return {
+    gamePhase:  hasEvents ? 'awaiting-pull' : 'pre-game',
+    score:      anchor ? { A: anchor.scoreA, B: anchor.scoreB } : { A: 0, B: 0 },
+    possession: offence,
+    attackLeft: offence,
     discHolder: null,
-    pointIndex: 0,
+    pointIndex: anchor ? anchor.scoreA + anchor.scoreB : 0,
     activeLine: { A: [], B: [] },
   }
+}
+
+export function deriveGameState(session: GameSession): DerivedGameState {
+  const events = resolveLogForDerivation(session.rawLog)
+  const state = initialState(session, events.length > 0)
 
   for (const event of events) step(state, event, session)
 
@@ -402,16 +413,7 @@ export function validateSpliceBlock(session: GameSession, splice: SpliceBlockRaw
   }
 
   // 1. Prefix state — fold everything up through and including afterEventId.
-  const receivingTeam = otherTeam(session.gameStartPullingTeam)
-  const state: DerivedGameState = {
-    gamePhase:  resolved.length === 0 ? 'pre-game' : 'awaiting-pull',
-    score:      { A: 0, B: 0 },
-    possession: receivingTeam,
-    attackLeft: receivingTeam,
-    discHolder: null,
-    pointIndex: 0,
-    activeLine: { A: [], B: [] },
-  }
+  const state = initialState(session, resolved.length > 0)
   for (let i = 0; i <= idx; i++) step(state, resolved[i], session)
 
   // 2. Inner walk — each event must be a legal continuation.

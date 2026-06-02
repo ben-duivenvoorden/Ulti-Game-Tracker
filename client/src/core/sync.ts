@@ -3,8 +3,11 @@
 //
 // Design:
 //   - Store is the source of truth. We watch session.rawLog for new entries
-//     (events with id > lastSentId for that game) and POST each to /api/events.
-//   - One cursor per game_id, persisted to localStorage. Survives reloads.
+//     (events with id > lastSentId for that segment) and POST each to /api/events.
+//   - One cursor per segment_id, persisted to localStorage. Survives reloads.
+//     (Event ids restart at 1 in every segment, so the cursor must key on the
+//     segment, not the game — otherwise a new segment's events would look
+//     already-sent against a higher game-level cursor.)
 //   - On network failure we stop, leave the cursor unchanged, retry on the
 //     next store change or the periodic tick. No backoff math — failures here
 //     are rare and the user has to keep tapping for new events anyway.
@@ -19,7 +22,7 @@ const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.repl
 const CURSOR_KEY = 'ugt-sync-cursor'
 const RETRY_INTERVAL_MS = 30_000
 
-interface SyncCursor { [gameId: number]: number }
+interface SyncCursor { [segmentId: string]: number }
 
 function loadCursor(): SyncCursor {
   try {
@@ -43,10 +46,12 @@ function eventToPayload(e: RawEvent): Record<string, unknown> {
   return rest
 }
 
-async function postEvent(e: RawEvent, gameId: number): Promise<void> {
+async function postEvent(e: RawEvent, gameId: number, session: GameSession): Promise<void> {
   const body = {
     event_id:     e.id,
     game_id:      gameId,
+    segment_id:   session.segment.segmentId,
+    scorer_id:    session.segment.scorerId,
     timestamp_ms: e.timestamp,
     point_index:  e.pointIndex,
     type:         e.type,
@@ -67,17 +72,18 @@ async function syncSession(session: GameSession): Promise<void> {
   try {
     const cursor = loadCursor()
     const gameId = session.gameConfig.id
-    const lastSent = cursor[gameId] ?? 0
+    const { segmentId } = session.segment
+    const lastSent = cursor[segmentId] ?? 0
     const pending = session.rawLog.filter(e => e.id > lastSent)
     if (pending.length === 0) return
     for (const e of pending) {
       try {
-        await postEvent(e, gameId)
+        await postEvent(e, gameId, session)
       } catch (err) {
-        console.warn('[sync] post failed, will retry', { eventId: e.id, gameId, err })
+        console.warn('[sync] post failed, will retry', { eventId: e.id, gameId, segmentId, err })
         return
       }
-      cursor[gameId] = e.id
+      cursor[segmentId] = e.id
       saveCursor(cursor)
     }
   } finally {

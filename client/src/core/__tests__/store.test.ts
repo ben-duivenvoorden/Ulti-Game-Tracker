@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useGameStore } from '../store'
 import { MOCK_GAMES } from '../data'
-import { computeVisLog } from '../engine'
+import { computeVisLog, deriveGameState } from '../engine'
 import { tryParse, serialize, buildEnvelope } from '../clipboard'
 import type { ClipboardEnvelope } from '../clipboard'
 
@@ -109,6 +109,60 @@ describe('resumeFromScore', () => {
     expect(htIdx).toBeGreaterThanOrEqual(0)
     // Half-time must precede the score-resume so orientation stays correct.
     expect(htIdx).toBeLessThan(resIdx)
+  })
+})
+
+describe('segment identity', () => {
+  it('selectGame stamps a fresh segment carrying the device scorerId', () => {
+    const { scorerId } = useGameStore.getState()
+    useGameStore.getState().selectGame(MOCK_GAMES[0].id, 'A')
+    const seg = useGameStore.getState().session!.segment
+    expect(seg.segmentId).toMatch(/^seg_/)
+    expect(seg.scorerId).toBe(scorerId)
+    expect(seg.createdAt).toBeGreaterThan(0)
+    // A from-the-start recording has no anchor.
+    expect(seg.anchor).toBeUndefined()
+  })
+
+  it('each game selection gets a distinct segmentId, same scorerId', () => {
+    useGameStore.getState().selectGame(MOCK_GAMES[0].id, 'A')
+    const first = useGameStore.getState().session!.segment
+    useGameStore.getState().selectGame(MOCK_GAMES[0].id, 'A')
+    const second = useGameStore.getState().session!.segment
+    expect(second.segmentId).not.toBe(first.segmentId)
+    expect(second.scorerId).toBe(first.scorerId)
+  })
+
+  it('startSegmentFromScore opens an anchored segment derived at the given score', () => {
+    useGameStore.getState().startSegmentFromScore(MOCK_GAMES[0].id, 8, 6, 'A')
+    const session = useGameStore.getState().session!
+    expect(session.segment.anchor).toEqual({ scoreA: 8, scoreB: 6, offence: 'A' })
+    expect(session.rawLog).toHaveLength(0)         // anchor lives on the segment, not the log
+    const state = deriveGameState(session)
+    expect(state.score).toEqual({ A: 8, B: 6 })
+    expect(state.possession).toBe('A')             // offence receives
+    expect(state.pointIndex).toBe(14)
+    expect(useGameStore.getState().screen).toBe('line-selection')
+  })
+
+  it('forkSegment copies the prefix into a new segment pointing at its parent', () => {
+    resetAndStartGame()                            // a session with a point-start logged
+    const parent = useGameStore.getState().session!
+    const parentId = parent.segment.segmentId
+    const parentLogLen = parent.rawLog.length
+    expect(parentLogLen).toBeGreaterThan(0)
+
+    useGameStore.getState().forkSegment()
+    const fork = useGameStore.getState().session!
+    expect(fork.segment.segmentId).not.toBe(parentId)
+    expect(fork.segment.parentSegmentId).toBe(parentId)
+    expect(fork.segment.scorerId).toBe(parent.segment.scorerId)
+    // Prefix copied verbatim, but it's a fresh array (not the same reference).
+    expect(fork.rawLog).toHaveLength(parentLogLen)
+    expect(fork.rawLog).not.toBe(parent.rawLog)
+    expect(fork.rawLog.map(e => e.id)).toEqual(parent.rawLog.map(e => e.id))
+    // The fork derives the same state as the parent did.
+    expect(deriveGameState(fork)).toEqual(deriveGameState(parent))
   })
 })
 

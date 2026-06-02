@@ -31,11 +31,13 @@ bounds as (
 ),
 
 flags as (
+  -- Read flags from the canonical stitched stream so the game's "ended" /
+  -- "half-time" state reflects the one authoritative log, not any segment.
   select
     game_id,
     bool_or(type = 'end-game')                                  as has_ended,
     bool_or(type = 'half-time')                                 as has_half_time
-  from {{ ref('stg_events') }}
+  from {{ ref('canonical_events') }}
   group by 1
 )
 

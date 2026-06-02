@@ -10,6 +10,8 @@
 select
   event_id,
   game_id,
+  segment_id,
+  scorer_id,
   timestamp_ms,
   point_index,
   type,
@@ -20,6 +22,8 @@ from read_csv_auto(
   columns = {
     'event_id':     'BIGINT',
     'game_id':      'BIGINT',
+    'segment_id':   'VARCHAR',
+    'scorer_id':    'VARCHAR',
     'timestamp_ms': 'BIGINT',
     'point_index':  'INTEGER',
     'type':         'VARCHAR',
