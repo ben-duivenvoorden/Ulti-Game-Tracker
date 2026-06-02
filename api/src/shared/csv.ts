@@ -1,5 +1,6 @@
 // Header for the raw events CSV. Must stay in lock-step with
-// dbt/models/raw/raw_events.sql.
+// dbt/models/raw/raw_events.sql in the Parity-League-2026 repo
+// (the data pipeline that consumes this CSV).
 
 // `segment_id` / `scorer_id` sit right after `game_id`: event_id is only unique
 // *within* a segment (every segment's log restarts at 1), so the real row key is

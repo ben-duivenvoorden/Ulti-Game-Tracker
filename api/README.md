@@ -8,9 +8,10 @@ Append-only event-log API for the Ulti Game Tracker SPA. Two endpoints:
   preserved), used by the SPA on resume.
 
 The blob this writes to (`raw/events.csv` on Azure Blob, append-blob type) is
-the same one `dbt/models/raw/raw_events.sql` reads from. Both ends of the
-contract live in `src/shared/csv.ts` (`CSV_HEADER` + `eventToCsvRow`) — keep
-them in lock-step with the dbt `raw_events` model.
+the same one the dbt pipeline reads from (`dbt/models/raw/raw_events.sql` in the
+**Parity-League-2026** repo). This end of the contract lives in
+`src/shared/csv.ts` (`CSV_HEADER` + `eventToCsvRow`) — keep it in lock-step with
+that `raw_events` model.
 
 ## Local development
 

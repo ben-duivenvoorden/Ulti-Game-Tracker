@@ -7,20 +7,3 @@ node_modules
 
 # Local-only working docs (plans, design notes, feedback). Kept on disk, not tracked.
 docs/
-
-# dbt artefacts — built output never committed (see feedback memory + plan)
-dbt/target/
-dbt/dbt_packages/
-dbt/logs/
-dbt/.user.yml
-*.duckdb
-*.duckdb.wal
-
-# Python venv for local dbt runs
-.venv/
-
-# Power BI — commit the .pbip project source (definition.pbir, model.bim,
-# report.json, themes), but never the built .pbix or the machine-specific
-# .pbi/ cache + local/editor settings.
-*.pbix
-powerbi/**/.pbi/

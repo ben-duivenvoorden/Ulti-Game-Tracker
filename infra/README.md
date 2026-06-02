@@ -37,7 +37,8 @@ azd up
 
 When it finishes it prints two URLs — the SWA's `defaultHostname` (your app)
 and the public `raw/events.csv` URL (set this as the `RAW_EVENTS_URL` GitHub
-secret so the build-data workflow points at real data instead of the sample).
+secret in the **Parity-League-2026** repo so its build-data workflow points at
+real data instead of the sample).
 
 ## Deploy without azd
 
