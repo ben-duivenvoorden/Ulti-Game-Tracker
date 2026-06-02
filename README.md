@@ -1,6 +1,8 @@
 # Ulti Game Tracker
 
-Sideline stat recording for Ultimate Frisbee — fast, validated, and usable by anyone. Lives at [ultigametracker.com](https://ultigametracker.com). Built for **Parity League**: per-player stats recorded live so General Managers can trade players under a salary cap between games.
+Sideline stat recording for Ultimate Frisbee — fast, validated, and usable by anyone. Built for **Parity League**: per-player stats recorded live so General Managers can trade players under a salary cap between games.
+
+The core pipeline is **live** (SPA + API + Blob + dbt → Release). The custom domain [ultigametracker.com](https://ultigametracker.com) and the Power BI layer are the remaining wiring — see [Live deployment](#live-deployment).
 
 ## What's in here
 
@@ -16,6 +18,23 @@ Sideline stat recording for Ultimate Frisbee — fast, validated, and usable by 
 ## Architecture in one paragraph
 
 Browser SPA writes events to Azure Blob via the Functions API (append-blob). A scheduled GitHub Action downloads the blob, runs dbt-duckdb to materialise the star schema in `/tmp`, exports `gold/*.csv.gz`, and uploads everything to the `latest` GitHub Release. Power BI scheduled refresh reads the gold CSVs from the Release URL and the publish-to-web embed updates automatically. Power users can pull the same `ulti-game-tracker.duckdb` file from the Release and query it directly.
+
+## Live deployment
+
+Provisioned on Azure (Pay-As-You-Go, Koloni tenant) under resource group `rg-ugt-prod-aue`. The pipeline went live 2026-06-01.
+
+| Service | URL | Status |
+|---|---|---|
+| **App (SPA)** | [yellow-tree-03154b01e.7.azurestaticapps.net](https://yellow-tree-03154b01e.7.azurestaticapps.net) · `stapp-ugt-prod-aue` (Free, westus2) | ✅ Live |
+| **API** | [func-ugt-prod-aue.azurewebsites.net](https://func-ugt-prod-aue.azurewebsites.net) · `func-ugt-prod-aue` (Y1 Consumption, australiaeast) | ✅ Live |
+| **Raw event log** | [stugtprodaue.blob.core.windows.net/raw/events.csv](https://stugtprodaue.blob.core.windows.net/raw/events.csv) · `stugtprodaue` (Standard_LRS, public read) | ✅ Live |
+| **Data product** | [`latest` GitHub Release](https://github.com/ben-duivenvoorden/Ulti-Game-Tracker/releases/latest) — `ulti-game-tracker.duckdb` + 6× gold `*.csv.gz` | ✅ Live |
+| **Repo / CI** | [github.com/ben-duivenvoorden/Ulti-Game-Tracker](https://github.com/ben-duivenvoorden/Ulti-Game-Tracker) | ✅ Live |
+| **Azure RG** | [`rg-ugt-prod-aue` (Australia East)](https://portal.azure.com/#@363002a4-7ede-4334-93e2-9db568793845/resource/subscriptions/72c91b50-a9c2-4619-9682-da3378760105/resourceGroups/rg-ugt-prod-aue/overview) | ✅ Live |
+| **Custom domain** | [ultigametracker.com](https://ultigametracker.com) (Namecheap, → Azure DNS) | ⏳ Pending (Phase 7) |
+| **Power BI** | publish-to-web embed | ⏳ Pending (needs Pro licence + service principal) |
+
+> SWA sits in `westus2` because Static Web Apps isn't offered in `australiaeast`. Anonymisation is in place: `dim_players` carries a salted `player_hash` (no raw names reach gold), gated by the `PLAYER_HASH_SALT` secret and a dbt test that fails the build if a real name ever leaks.
 
 ## Getting started
 
