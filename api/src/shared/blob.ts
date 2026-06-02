@@ -1,5 +1,6 @@
 import { AppendBlobClient, BlobClient } from '@azure/storage-blob'
 import { DefaultAzureCredential } from '@azure/identity'
+import { CSV_HEADER } from './csv.js'
 
 // Append-only blob holding the raw event log. The append-blob type is the
 // right Azure primitive for "events streaming in from a low-throughput API"
@@ -11,7 +12,11 @@ import { DefaultAzureCredential } from '@azure/identity'
 //
 // Each appended block is ONE CSV row terminated by \n.
 
-const ACCOUNT_URL = process.env.RAW_BLOB_ACCOUNT_URL
+// Trailing slash stripped — Azure's primaryEndpoints.blob (what the Bicep wires
+// into this setting) ends in `/`, which would otherwise produce a double slash
+// in BLOB_URL below and a malformed container/blob path. Mirrors the same
+// normalisation in client/src/core/sync.ts.
+const ACCOUNT_URL = process.env.RAW_BLOB_ACCOUNT_URL?.replace(/\/+$/, '')
 const CONTAINER   = process.env.RAW_BLOB_CONTAINER ?? 'raw'
 const BLOB_NAME   = process.env.RAW_BLOB_NAME ?? 'events.csv'
 
@@ -46,11 +51,19 @@ export function getReadClient(): BlobClient {
 // returns success for both racers.
 let ensured = false
 
-/** Idempotent — safe to call on every request, but typically called once. */
+/** Idempotent — safe to call on every request, but typically called once.
+ *  When it actually creates the blob (vs finding it already there), it writes
+ *  the CSV header as the first row so the file is self-describing and matches
+ *  what dbt's raw_events model expects (`header = true`). Without this, the
+ *  first data row would be silently consumed as the header on load. */
 export async function ensureBlobExists(client: AppendBlobClient): Promise<void> {
-  await client.createIfNotExists({
+  const res = await client.createIfNotExists({
     blobHTTPHeaders: { blobContentType: 'text/csv; charset=utf-8' },
   })
+  if (res.succeeded) {
+    const header = Buffer.from(CSV_HEADER + '\n', 'utf-8')
+    await client.appendBlock(header, header.length)
+  }
 }
 
 /** Appends one CSV row. Row must NOT include a trailing newline — added here. */
