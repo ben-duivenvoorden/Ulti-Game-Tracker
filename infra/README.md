@@ -8,6 +8,14 @@ This folder provisions everything the data pipeline needs on Azure:
 - Role assignment so the Function App can read/write the blob via its
   managed identity (no keys in code)
 
+> **Prod was deployed (2026-06-01) via `az deployment group create`**, not
+> `azd` (azd wasn't installed on the deploy box). Both paths use the same
+> `main.bicep`. One caveat surfaced: **Static Web Apps isn't available in
+> `australiaeast`**, so the SWA is pinned to `westus2` while storage + functions
+> stay in Australia East. The custom domain (`ultigametracker.com`) will be
+> wired via an **Azure DNS zone** in this RG (~$0.50/zone/mo) — see the Domain
+> Go-Live note in the personal Obsidian vault.
+
 ## Deploy with azd (recommended)
 
 ```pwsh
@@ -29,7 +37,8 @@ azd up
 
 When it finishes it prints two URLs — the SWA's `defaultHostname` (your app)
 and the public `raw/events.csv` URL (set this as the `RAW_EVENTS_URL` GitHub
-secret so the build-data workflow points at real data instead of the sample).
+secret in the **Parity-League-2026** repo so its build-data workflow points at
+real data instead of the sample).
 
 ## Deploy without azd
 

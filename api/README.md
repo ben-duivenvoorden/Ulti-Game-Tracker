@@ -8,9 +8,10 @@ Append-only event-log API for the Ulti Game Tracker SPA. Two endpoints:
   preserved), used by the SPA on resume.
 
 The blob this writes to (`raw/events.csv` on Azure Blob, append-blob type) is
-the same one `dbt/models/raw/raw_events.sql` reads from. Both ends of the
-contract live in `src/shared/csv.ts` (`CSV_HEADER` + `eventToCsvRow`) — keep
-them in lock-step with the dbt `raw_events` model.
+the same one the dbt pipeline reads from (`dbt/models/raw/raw_events.sql` in the
+**Parity-League-2026** repo). This end of the contract lives in
+`src/shared/csv.ts` (`CSV_HEADER` + `eventToCsvRow`) — keep it in lock-step with
+that `raw_events` model.
 
 ## Local development
 
@@ -41,19 +42,23 @@ curl http://localhost:7071/api/game/1
 
 ## Deployment
 
-Not wired up yet — needs an Azure Functions resource + GitHub Actions
-workflow. See `docs/design/architecture-data-pipeline.md` for the intended
-deployment shape. Open todos:
+**Live** at `func-ugt-prod-aue.azurewebsites.net` (Y1 Consumption, Australia
+East) since 2026-06-01. The resource group, storage account, function app,
+managed-identity role assignment and CORS allow-list are all provisioned by
+`infra/main.bicep` (see `infra/README.md`). App settings
+(`RAW_BLOB_ACCOUNT_URL`, `RAW_BLOB_CONTAINER`, `RAW_BLOB_NAME`) are set by the
+Bicep template; `DefaultAzureCredential` uses the function's system-assigned
+identity (Storage Blob Data Contributor on the account) — no keys in code.
 
-- [ ] Create Azure resource group, storage account, function app
-- [ ] Grant the function app's managed identity Storage Blob Data Contributor
-      on the `raw` container (so `DefaultAzureCredential` succeeds without
-      connection strings)
-- [ ] Configure app settings (`RAW_BLOB_ACCOUNT_URL`, etc.) via Azure CLI or
-      Bicep template
-- [ ] Add `.github/workflows/deploy-api.yml` (`azure/functions-action@v1`) on
-      push to `main` paths `api/**`
-- [ ] Add CORS for the SPA's Static Web Apps origin
+Redeploys are currently manual via `func azure functionapp publish
+func-ugt-prod-aue --typescript`. The `.github/workflows/deploy-api.yml`
+workflow exists but no-ops until the OIDC federated identity is wired
+(`AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_SUBSCRIPTION_ID` secrets +
+`AZURE_FUNCTIONAPP_NAME` variable).
+
+Open todos:
+
+- [ ] Wire OIDC so `deploy-api` runs on push to `api/**` instead of manual `func`
 - [ ] Decide auth model — currently `authLevel: 'anonymous'`. Likely move to
       per-game share-token signed by a backend secret, validated in each
       handler. See `postEvents` / `getGame` TODOs.
