@@ -1,23 +1,28 @@
 name: deploy-pbi
 
-# Deploys the Power BI report whenever the .pbip source under `reports/`
+# Deploys the Power BI report whenever the .pbip source under `powerbi/`
 # changes. The .pbip is text-diffable and committed; the .pbix it produces is
 # a built artefact and is NOT committed (see feedback_no_committed_binaries).
 #
 # Build pipeline:
 #   1. Windows runner (pbi-tools is .NET / Windows-only)
-#   2. pbi-tools compiles reports/<name>.pbip -> <name>.pbix
+#   2. pbi-tools compiles powerbi/<name>.pbip -> <name>.pbix
 #   3. Workflow uploads the .pbix to the configured Power BI workspace via REST
 #
 # Skipped end-to-end if any PBI_* secret is missing — workflow won't fail,
 # just no-ops the deploy step. Lets you commit a .pbip and iterate before
 # wiring up the tenant/service-principal.
+#
+# NOTE: the committed project uses the legacy PBIP layout (model.bim +
+# report.json) — the TMDL and enhanced-report (PBIR) preview formats are OFF —
+# which is what pbi-tools compile-pbix expects. Keep those two preview options
+# off when saving so the compile step stays compatible.
 
 on:
   push:
     branches: [main]
     paths:
-      - 'reports/**'
+      - 'powerbi/**'
       - '.github/workflows/deploy-pbi.yml'
   workflow_dispatch:
 
@@ -30,9 +35,11 @@ jobs:
       PBI_CLIENT_ID:     ${{ secrets.PBI_CLIENT_ID }}
       PBI_CLIENT_SECRET: ${{ secrets.PBI_CLIENT_SECRET }}
       PBI_WORKSPACE_ID:  ${{ secrets.PBI_WORKSPACE_ID }}
-      # Name of the report file under reports/ (without extension).
-      # e.g. PBI_REPORT_NAME=ulti-game-tracker -> reports/ulti-game-tracker.pbip
-      PBI_REPORT_NAME:   ${{ vars.PBI_REPORT_NAME || 'ulti-game-tracker' }}
+      # Folder holding the .pbip project, and the report name (without extension).
+      # e.g. dir=powerbi + name='Brisbane Parity League 2026'
+      #   -> powerbi/Brisbane Parity League 2026.pbip
+      PBI_REPORT_DIR:    ${{ vars.PBI_REPORT_DIR || 'powerbi' }}
+      PBI_REPORT_NAME:   ${{ vars.PBI_REPORT_NAME || 'Brisbane Parity League 2026' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -63,10 +70,10 @@ jobs:
         if: steps.gate.outputs.configured == 'true'
         shell: pwsh
         run: |
-          $src = "reports/$env:PBI_REPORT_NAME.pbip"
-          $out = "reports/$env:PBI_REPORT_NAME.pbix"
+          $src = "$env:PBI_REPORT_DIR/$env:PBI_REPORT_NAME.pbip"
+          $out = "$env:PBI_REPORT_DIR/$env:PBI_REPORT_NAME.pbix"
           pbi-tools compile-pbix --pbixProj $src --outPath $out --overwrite
-          Test-Path $out  # fails the step if compile didn't produce output
+          if (-not (Test-Path $out)) { throw "compile produced no output at $out" }
 
       - name: Upload .pbix to workspace
         if: steps.gate.outputs.configured == 'true'
@@ -83,8 +90,9 @@ jobs:
             -Body $body
           $headers = @{ Authorization = "Bearer $($tokenResp.access_token)" }
 
-          $pbix = "reports/$env:PBI_REPORT_NAME.pbix"
-          $importUrl = "https://api.powerbi.com/v1.0/myorg/groups/$env:PBI_WORKSPACE_ID/imports?datasetDisplayName=$env:PBI_REPORT_NAME&nameConflict=CreateOrOverwrite"
+          $pbix = "$env:PBI_REPORT_DIR/$env:PBI_REPORT_NAME.pbix"
+          $displayName = [uri]::EscapeDataString($env:PBI_REPORT_NAME)  # handles spaces
+          $importUrl = "https://api.powerbi.com/v1.0/myorg/groups/$env:PBI_WORKSPACE_ID/imports?datasetDisplayName=$displayName&nameConflict=CreateOrOverwrite"
 
           $form = @{ file = Get-Item $pbix }
           Invoke-RestMethod -Method Post -Uri $importUrl -Headers $headers -Form $form

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "SemanticModel",
+    "displayName": "Brisbane Parity League 2026"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "b61892d4-970e-4527-ae09-6a5a04dab603"
+  }
+}

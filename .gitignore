@@ -18,3 +18,9 @@ dbt/.user.yml
 
 # Python venv for local dbt runs
 .venv/
+
+# Power BI — commit the .pbip project source (definition.pbir, model.bim,
+# report.json, themes), but never the built .pbix or the machine-specific
+# .pbi/ cache + local/editor settings.
+*.pbix
+powerbi/**/.pbi/
