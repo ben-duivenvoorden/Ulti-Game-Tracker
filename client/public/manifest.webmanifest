@@ -2,12 +2,12 @@
   "name": "Ulti Game Tracker",
   "short_name": "UGT",
   "description": "Live stat tracker for ultimate frisbee games.",
-  "start_url": "/",
+  "start_url": ".",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#111111",
   "theme_color": "#111111",
   "icons": [
-    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+    { "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
   ]
 }

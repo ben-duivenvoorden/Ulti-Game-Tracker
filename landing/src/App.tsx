@@ -5,19 +5,22 @@ import Features from './components/Features'
 import ParityLeague from './components/ParityLeague'
 import Platforms from './components/Platforms'
 import Footer from './components/Footer'
+import { PreviewProvider } from './preview'
 
 export default function App() {
   return (
-    <div className="min-h-screen bg-bg text-content selection:bg-accent/30">
-      <Nav />
-      <main>
-        <Hero />
-        <Mission />
-        <Features />
-        <ParityLeague />
-        <Platforms />
-      </main>
-      <Footer />
-    </div>
+    <PreviewProvider>
+      <div className="min-h-screen bg-bg text-content selection:bg-accent/30">
+        <Nav />
+        <main>
+          <Hero />
+          <Mission />
+          <Features />
+          <ParityLeague />
+          <Platforms />
+        </main>
+        <Footer />
+      </div>
+    </PreviewProvider>
   )
 }

@@ -1,7 +1,9 @@
-import { APP_URL, GITHUB_URL } from '../constants'
+import { GITHUB_URL } from '../constants'
 import { ArrowRightIcon, GitHubIcon } from './icons'
+import { usePreview } from '../preview'
 
 export default function Hero() {
+  const { previewLinkProps } = usePreview()
   return (
     <section id="top" className="relative overflow-hidden pb-20 pt-32 sm:pt-36">
       {/* Layered atmosphere: two-stop indigo→cyan glow + faint dot grid. */}
@@ -51,9 +53,7 @@ export default function Hero() {
           style={{ animationDelay: '180ms' }}
         >
           <a
-            href={APP_URL}
-            target="_blank"
-            rel="noopener noreferrer"
+            {...previewLinkProps}
             className="group inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-6 py-3 text-base font-semibold text-content shadow-lg shadow-accent/25 transition-colors hover:bg-accent/90"
           >
             Preview the web app

@@ -1,4 +1,4 @@
-import { APP_URL, GITHUB_URL } from '../constants'
+import { GITHUB_URL } from '../constants'
 import Wordmark from './Wordmark'
 import { GitHubIcon } from './icons'
 
@@ -9,12 +9,7 @@ export default function Footer() {
         <Wordmark className="text-sm" />
 
         <div className="flex items-center gap-6 text-sm text-muted">
-          <a
-            href={APP_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="transition-colors hover:text-content"
-          >
+          <a href="/" className="transition-colors hover:text-content">
             ultigametracker.com
           </a>
           <a
