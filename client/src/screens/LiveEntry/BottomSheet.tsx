@@ -5,6 +5,7 @@ import { detectLogPatterns } from '@/core/patterns'
 import { canRecord } from '@/core/engine'
 import { Btn } from '@/components/ui/Btn'
 import { Label } from '@/components/ui/Label'
+import { CloseIcon, CursorIcon } from '@/components/ui/Icons'
 
 export type SheetTab = 'log' | 'more'
 
@@ -65,11 +66,11 @@ export function BottomSheet(props: BottomSheetProps) {
           <TabBtn label="MORE" active={props.activeTab === 'more'} onClick={() => props.onTabChange('more')} />
           <button
             onClick={props.onClose}
-            className="px-4 cursor-pointer"
+            className="px-4 cursor-pointer flex items-center justify-center hover:text-content transition-colors"
             style={{ color: 'var(--color-muted)', borderLeft: '1px solid var(--color-border)' }}
             title="Close"
           >
-            ✕
+            <CloseIcon size={18} />
           </button>
         </div>
         <div className="flex-1 overflow-hidden">
@@ -155,7 +156,7 @@ function LogTab(props: BottomSheetProps) {
                 }}
                 title={isCursor ? 'Tap to cancel preview' : 'Tap to rewind to here'}
               >
-                {isCursor && <span style={{ marginRight: 4 }}>▶</span>}
+                {isCursor && <CursorIcon size={10} />}{isCursor && ' '}
                 {formatVisLogEntry(e, players)}
                 {pattern && (
                   <span
@@ -302,7 +303,7 @@ function ScoreSpinner({
           className="w-8 h-8 rounded-md border text-lg font-bold cursor-pointer"
           style={{ background: 'var(--color-surf-3)', borderColor: 'var(--color-border-2)', color: 'var(--color-content)' }}
         >−</button>
-        <span className="w-8 text-center text-2xl font-black tabular-nums">{value}</span>
+        <span className="w-8 text-center text-2xl font-display font-bold tabular-nums">{value}</span>
         <button
           type="button"
           onClick={() => onChange(value + 1)}

@@ -13,7 +13,10 @@ import { PlayerColumn } from './PlayerColumn'
 import { EventColumn } from './EventColumn'
 import { PassNotation } from './PassNotation'
 import { BottomSheet, type SheetTab } from './BottomSheet'
+import { useTween } from './useTween'
 import { Btn } from '@/components/ui/Btn'
+import { MomentBackdrop } from '@/components/MomentBackdrop'
+import { CloseIcon } from '@/components/ui/Icons'
 
 // True until the active team's possession run has at least 2 recorded
 // disc-in-hand events — i.e. the current holder hasn't received a pass
@@ -409,7 +412,7 @@ function BackfillPicker({
           <span className="text-xs font-mono tracking-widest" style={{ color: 'var(--color-muted)' }}>
             ADD PLAYER TO LINE
           </span>
-          <button onClick={onClose} className="cursor-pointer text-muted hover:text-content" title="Cancel">✕</button>
+          <button onClick={onClose} className="cursor-pointer text-muted hover:text-content flex items-center" title="Cancel"><CloseIcon size={18} /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-3 grid grid-cols-2 gap-2">
           {sorted.length === 0 ? (
@@ -482,6 +485,15 @@ function SankeyBridge({
     return () => ro.disconnect()
   }, [])
 
+  // Animate the ribbon to the active row. When there's no holder (activeIdx < 0,
+  // e.g. just after a turnover before the pickup) freeze at the last valid row
+  // and fade the whole ribbon out — so a possession change glides to the new
+  // player instead of hard-cutting.
+  const lastValidRef = useRef(activeIdx >= 0 ? activeIdx : 0)
+  useEffect(() => { if (activeIdx >= 0) lastValidRef.current = activeIdx }, [activeIdx])
+  const animIdx = useTween(activeIdx >= 0 ? activeIdx : lastValidRef.current, { ms: 240 })
+  const visible = activeIdx >= 0
+
   const LANE_W  = 16   // matches the centre spacer (w-4)
   const COL_PAD = 12   // matches PlayerColumn/EventColumn p-3
   const GAP     = 16   // matches PlayerColumn/EventColumn gap-4
@@ -502,7 +514,7 @@ function SankeyBridge({
   // perceived transition where the bridge meets the straight tile edges.
   const BRIDGE_EASE = 1
 
-  if (activeIdx < 0 || size.w === 0 || size.h === 0 || playerCount <= 0 || actionCount <= 0) {
+  if (size.w === 0 || size.h === 0 || playerCount <= 0 || actionCount <= 0) {
     return <div ref={ref} className="absolute inset-0 pointer-events-none" aria-hidden />
   }
 
@@ -518,7 +530,7 @@ function SankeyBridge({
   // Active-tile vertical extent (in player column). Padded out by
   // PLAYER_PAD so the encompass surrounds the tile rather than tracing
   // its edges directly.
-  const tileTopRaw    = COL_PAD + activeIdx * (tileH + GAP)
+  const tileTopRaw    = COL_PAD + animIdx * (tileH + GAP)
   const tileBottomRaw = tileTopRaw + tileH
   const activeTop     = tileTopRaw - PLAYER_PAD
   const activeBottom  = tileBottomRaw + PLAYER_PAD
@@ -602,6 +614,7 @@ function SankeyBridge({
       ref={ref}
       className="absolute inset-0 pointer-events-none"
       aria-hidden
+      style={{ opacity: visible ? 1 : 0, transition: 'opacity 200ms ease-out' }}
     >
       <svg width={W} height={H} style={{ display: 'block' }}>
         <path
@@ -625,14 +638,20 @@ function GameOverBanner({
 }) {
   const winner: TeamId = score.A >= score.B ? 'A' : 'B'
   return (
-    <div className="absolute inset-0 flex items-center justify-center">
-      <div className="flex flex-col items-center gap-4 px-6">
-        <div className="text-xs tracking-widest font-mono text-muted">GAME OVER</div>
-        <div className="text-5xl font-black tabular-nums" style={{ color: teams[winner].color }}>
-          {score.A} – {score.B}
+    <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+      <MomentBackdrop tint={teams[winner].color} />
+      <div className="relative z-10 flex flex-col items-center gap-4 px-6">
+        <div className="text-xs tracking-[0.3em] font-mono text-muted" style={{ animation: 'fadeUp 460ms ease-out both' }}>GAME OVER</div>
+        <div
+          className="text-7xl font-display font-bold tabular-nums leading-none"
+          style={{ color: teams[winner].color, animation: 'fadeUp 460ms ease-out both', animationDelay: '80ms' }}
+        >
+          {score.A} <span className="font-sans font-black" style={{ color: 'var(--color-dim)' }}>–</span> {score.B}
         </div>
-        <div className="text-sm text-muted">{teams[winner].name} wins</div>
-        <Btn variant="ghost" size="md" onClick={onBack}>Back to games</Btn>
+        <div className="text-sm text-muted" style={{ animation: 'fadeUp 460ms ease-out both', animationDelay: '160ms' }}>{teams[winner].name} wins</div>
+        <div style={{ animation: 'fadeUp 460ms ease-out both', animationDelay: '240ms' }}>
+          <Btn variant="ghost" size="md" onClick={onBack}>Back to games</Btn>
+        </div>
       </div>
     </div>
   )

@@ -84,3 +84,68 @@ export function TeamsIcon({ size = 24 }: { size?: number }) {
     </svg>
   )
 }
+
+// ── Stroked line icons — replace the scattered emoji glyphs (← ✕ ↶ ⚠ ✓)
+//    with a consistent SVG set. All share the SettingsIcon stroke language
+//    (currentColor, 1.8 weight, round caps) so they tint via `color` and sit
+//    inline in buttons. `strokeWidth` scales with size to stay crisp when small.
+function Glyph({ size, sw = 2, children }: { size: number; sw?: number; children: ReactNode }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={sw}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      style={{ display: 'inline-block', verticalAlign: 'middle', flexShrink: 0 }}
+    >
+      {children}
+    </svg>
+  )
+}
+
+export function BackIcon({ size = 20 }: { size?: number }) {
+  return <Glyph size={size}><path d="M19 12H5" /><path d="m12 19-7-7 7-7" /></Glyph>
+}
+
+export function CloseIcon({ size = 18 }: { size?: number }) {
+  return <Glyph size={size}><path d="M18 6 6 18" /><path d="m6 6 12 12" /></Glyph>
+}
+
+export function UndoIcon({ size = 16 }: { size?: number }) {
+  return <Glyph size={size}><path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 0 10h-3" /></Glyph>
+}
+
+export function WarnIcon({ size = 18 }: { size?: number }) {
+  return (
+    <Glyph size={size} sw={1.9}>
+      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </Glyph>
+  )
+}
+
+export function CheckIcon({ size = 14 }: { size?: number }) {
+  return <Glyph size={size} sw={3}><path d="M20 6 9 17l-5-5" /></Glyph>
+}
+
+// Small filled play-triangle — the truncate-cursor marker (▶) in the log.
+export function CursorIcon({ size = 11 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden
+      style={{ display: 'inline-block', verticalAlign: 'middle', flexShrink: 0 }}
+    >
+      <path d="M8 5v14l11-7z" />
+    </svg>
+  )
+}

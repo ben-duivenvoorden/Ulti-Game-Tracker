@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Btn } from '@/components/ui/Btn'
 import { Chip } from '@/components/ui/Chip'
 import { Label } from '@/components/ui/Label'
+import { BackIcon, CloseIcon, WarnIcon } from '@/components/ui/Icons'
+import { ConfirmSheet } from '@/components/ConfirmSheet'
 import { useGameStore } from '@/core/store'
 import { useTeamsState } from '@/core/selectors'
 import type { GlobalTeam, GlobalPlayer, GlobalTeamId } from '@/core/teams/types'
@@ -26,6 +28,7 @@ export default function TeamsManager() {
   const resetAllData      = useGameStore(s => s.resetAllData)
 
   const [view, setView] = useState<View>({ kind: 'list' })
+  const [resetConfirm, setResetConfirm] = useState(false)
 
   // ─── New team push view ───────────────────────────────────────────────────
   if (view.kind === 'new-team') {
@@ -50,12 +53,7 @@ export default function TeamsManager() {
         roster={teamsState.rosterByTeam.get(team.id) ?? []}
         onBack={() => setView({ kind: 'list' })}
         onEditTeam={(patch) => editTeam(team.id, patch)}
-        onArchive={() => {
-          if (window.confirm(`Archive ${team.name}? Historical games will still resolve their rosters.`)) {
-            archiveTeam(team.id)
-            setView({ kind: 'list' })
-          }
-        }}
+        onArchive={() => { archiveTeam(team.id); setView({ kind: 'list' }) }}
         onAddPlayer={(p) => addPlayer(team.id, p.name, p.gender, p.extras)}
         onEditPlayer={editPlayer}
         onRemovePlayer={removePlayer}
@@ -65,7 +63,7 @@ export default function TeamsManager() {
 
   // ─── List view (default) ──────────────────────────────────────────────────
   return (
-    <div className="h-full flex flex-col bg-bg text-content">
+    <div className="h-full flex flex-col bg-bg text-content relative">
       <div className="flex-shrink-0 h-16 border-b border-border flex items-center justify-between px-4">
         <div>
           <Label block className="mb-0.5">TEAMS MANAGER</Label>
@@ -111,17 +109,23 @@ export default function TeamsManager() {
           common path. */}
       <div className="flex-shrink-0 px-4 py-2 border-t border-border">
         <button
-          onClick={() => {
-            if (window.confirm('Reset all teams, players and scheduled games to the demo seed? Any in-progress session will be lost.')) {
-              resetAllData()
-            }
-          }}
-          className="text-[10px] font-mono tracking-widest uppercase cursor-pointer transition-colors hover:text-danger"
+          onClick={() => setResetConfirm(true)}
+          className="text-[10px] font-mono tracking-widest uppercase cursor-pointer transition-colors hover:text-danger flex items-center gap-1.5"
           style={{ color: 'var(--color-muted)' }}
         >
-          ⚠ Reset all data
+          <WarnIcon size={13} /> Reset all data
         </button>
       </div>
+
+      <ConfirmSheet
+        open={resetConfirm}
+        title="Reset all data?"
+        message="Reset all teams, players and scheduled games to the demo seed? Any in-progress session will be lost."
+        confirmLabel="Reset"
+        danger
+        onConfirm={() => { resetAllData(); setResetConfirm(false) }}
+        onCancel={() => setResetConfirm(false)}
+      />
     </div>
   )
 }
@@ -154,9 +158,9 @@ function NewTeamView({ onCreate, onCancel }: {
       <div className="flex-shrink-0 flex items-center justify-between px-3 h-16 border-b border-border">
         <button
           onClick={onCancel}
-          className="text-muted hover:text-content transition-colors cursor-pointer text-lg leading-none"
+          className="text-muted hover:text-content transition-colors cursor-pointer flex items-center leading-none"
         >
-          ←
+          <BackIcon size={20} />
         </button>
         <Label>NEW TEAM</Label>
         <Btn variant="primary" size="md" disabled={!canSave}
@@ -185,20 +189,34 @@ function TeamDetailView({ team, roster, onBack, onEditTeam, onArchive, onAddPlay
   onEditPlayer:   (id: number, patch: { name?: string; gender?: 'M' | 'F'; jerseyNumber?: number | null }) => void
   onRemovePlayer: (id: number) => void
 }) {
+  const [confirm, setConfirm] = useState<
+    { title: string; message?: string; danger?: boolean; confirmLabel?: string; onConfirm: () => void } | null
+  >(null)
   return (
-    <div className="h-full flex flex-col bg-bg text-content">
+    <div className="h-full flex flex-col bg-bg text-content relative">
       <div className="flex-shrink-0 flex items-center justify-between px-3 h-16 border-b border-border">
         <button
           onClick={onBack}
-          className="text-muted hover:text-content transition-colors cursor-pointer text-lg leading-none"
+          className="text-muted hover:text-content transition-colors cursor-pointer flex items-center leading-none"
         >
-          ←
+          <BackIcon size={20} />
         </button>
         <div className="flex-1 flex items-center justify-center gap-2 min-w-0 px-2">
           <Chip color={team.color} variant="solid">{team.short}</Chip>
           <span className="text-sm font-bold truncate">{team.name}</span>
         </div>
-        <Btn variant="ghost" size="md" onClick={onArchive}>Archive</Btn>
+        <Btn
+          variant="ghost"
+          size="md"
+          onClick={() => setConfirm({
+            title: `Archive ${team.name}?`,
+            message: 'Historical games will still resolve their rosters.',
+            confirmLabel: 'Archive',
+            onConfirm: onArchive,
+          })}
+        >
+          Archive
+        </Btn>
       </div>
 
       {/* Team identity editor */}
@@ -225,11 +243,13 @@ function TeamDetailView({ team, roster, onBack, onEditTeam, onArchive, onAddPlay
               key={p.id}
               player={p}
               onEdit={patch => onEditPlayer(p.id, patch)}
-              onRemove={() => {
-                if (window.confirm(`Remove ${p.name}? Existing games still resolve their roster by id.`)) {
-                  onRemovePlayer(p.id)
-                }
-              }}
+              onRemove={() => setConfirm({
+                title: `Remove ${p.name}?`,
+                message: 'Existing games still resolve their roster by id.',
+                danger: true,
+                confirmLabel: 'Remove',
+                onConfirm: () => onRemovePlayer(p.id),
+              })}
             />
           ))}
         </div>
@@ -237,6 +257,16 @@ function TeamDetailView({ team, roster, onBack, onEditTeam, onArchive, onAddPlay
           <AddPlayerInline onAdd={onAddPlayer} />
         </div>
       </div>
+
+      <ConfirmSheet
+        open={!!confirm}
+        title={confirm?.title ?? ''}
+        message={confirm?.message}
+        danger={confirm?.danger}
+        confirmLabel={confirm?.confirmLabel}
+        onConfirm={() => { confirm?.onConfirm(); setConfirm(null) }}
+        onCancel={() => setConfirm(null)}
+      />
     </div>
   )
 }
@@ -279,11 +309,11 @@ function PlayerRow({ player, onEdit, onRemove }: {
       />
       <button
         onClick={onRemove}
-        className="flex-shrink-0 w-8 h-9 cursor-pointer rounded-md hover:bg-surf-2"
+        className="flex-shrink-0 w-8 h-9 cursor-pointer rounded-md hover:bg-surf-2 flex items-center justify-center"
         style={{ color: 'var(--color-muted)' }}
         title="Remove player"
       >
-        ✕
+        <CloseIcon size={16} />
       </button>
     </div>
   )

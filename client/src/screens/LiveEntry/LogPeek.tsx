@@ -1,5 +1,6 @@
 import type { VisLogEntry, Player } from '@/core/types'
 import { formatVisLogEntry, getVisLogColor, isMutedLogEntry } from '@/core/format'
+import { UndoIcon } from '@/components/ui/Icons'
 
 interface LogPeekProps {
   visLog: VisLogEntry[]
@@ -49,7 +50,7 @@ export function LogPeek({ visLog, players, onOpen, onUndo }: LogPeekProps) {
         type="button"
         onClick={onUndo}
         disabled={!canUndo}
-        className="flex-shrink-0 px-4 h-full cursor-pointer text-sm font-semibold tracking-wider disabled:opacity-25 disabled:cursor-default"
+        className="flex-shrink-0 px-4 h-full cursor-pointer text-sm font-semibold tracking-wider disabled:opacity-25 disabled:cursor-default flex items-center justify-center gap-1.5"
         style={{
           background: 'var(--color-warn-bg)',
           color:      'var(--color-warn)',
@@ -57,7 +58,7 @@ export function LogPeek({ visLog, players, onOpen, onUndo }: LogPeekProps) {
         }}
         title="Undo last event"
       >
-        ↶ UNDO
+        <UndoIcon size={14} />UNDO
       </button>
     </div>
   )

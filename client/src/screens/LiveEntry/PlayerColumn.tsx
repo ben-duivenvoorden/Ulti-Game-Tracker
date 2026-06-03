@@ -1,6 +1,7 @@
 import { useRef, type CSSProperties } from 'react'
 import { UNKNOWN_PLAYER_ID, type Player, type PlayerId } from '@/core/types'
 import { inkOn } from '@/core/contrast'
+import { CloseIcon } from '@/components/ui/Icons'
 
 // Shared "dull" tile look for the non-player affordances in the column — the
 // `+` add slot and the Unknown-Player tile — matching the event column's
@@ -177,10 +178,10 @@ export function PlayerColumn(props: PlayerColumnProps) {
                 onPointerDown={e => { e.stopPropagation() }}
                 onPointerUp={e => { e.stopPropagation() }}
                 onClick={e => { e.stopPropagation(); onRemove(p) }}
-                className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold cursor-pointer"
+                className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full flex items-center justify-center cursor-pointer"
                 style={{ background: 'var(--color-danger)', color: '#fff', boxShadow: '0 0 0 2px var(--color-bg)' }}
               >
-                ✕
+                <CloseIcon size={13} />
               </span>
             )}
           </button>

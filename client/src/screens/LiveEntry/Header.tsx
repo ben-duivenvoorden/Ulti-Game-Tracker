@@ -2,6 +2,7 @@ import type { TeamId, Score, Team } from '@/core/types'
 import { pickDisplayNames } from '@/core/teams/shortName'
 import { inkOn } from '@/core/contrast'
 import { ScorerInfoButton } from '@/components/ScorerInfoButton'
+import { BackIcon } from '@/components/ui/Icons'
 
 interface HeaderProps {
   teams: Record<TeamId, Team>
@@ -35,10 +36,10 @@ export function Header({ teams, score, endsSwapped, onToggleEnds, onBack }: Head
     >
       <button
         onClick={onBack}
-        className="text-muted hover:text-content transition-colors cursor-pointer text-lg leading-none"
+        className="text-muted hover:text-content transition-colors cursor-pointer flex items-center leading-none"
         title="Back to games"
       >
-        ←
+        <BackIcon size={20} />
       </button>
       <div className="flex-1 flex items-center justify-center gap-2 min-w-0 px-2">
         <span className="flex-1 flex justify-end min-w-0">
@@ -50,7 +51,7 @@ export function Header({ teams, score, endsSwapped, onToggleEnds, onBack }: Head
             {names[left]}
           </span>
         </span>
-        <strong className="text-3xl font-black tabular-nums leading-none text-content flex-shrink-0 ml-2">{score[left]}</strong>
+        <strong key={`L${score[left]}`} className="text-[34px] font-display font-bold tabular-nums leading-none text-content flex-shrink-0 ml-2 inline-block" style={{ animation: 'scorePulse 420ms ease-out' }}>{score[left]}</strong>
         <button
           onClick={onToggleEnds}
           aria-label="Swap ends"
@@ -60,7 +61,7 @@ export function Header({ teams, score, endsSwapped, onToggleEnds, onBack }: Head
         >
           <SwapEndsIcon size={14} />
         </button>
-        <strong className="text-3xl font-black tabular-nums leading-none text-content flex-shrink-0 mr-2">{score[right]}</strong>
+        <strong key={`R${score[right]}`} className="text-[34px] font-display font-bold tabular-nums leading-none text-content flex-shrink-0 mr-2 inline-block" style={{ animation: 'scorePulse 420ms ease-out' }}>{score[right]}</strong>
         <span className="flex-1 flex justify-start min-w-0">
           <span
             className="text-sm font-bold truncate px-2 py-0.5 rounded"
