@@ -28,7 +28,26 @@ npm start
 
 The handlers expect `RAW_BLOB_ACCOUNT_URL` etc. in env. For full local dev
 without a real Azure storage account, run [Azurite](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite) and point at
-`http://127.0.0.1:10000/devstoreaccount1`.
+`http://127.0.0.1:10000/devstoreaccount1`. Set `RAW_BLOB_CONNECTION_STRING`
+(Azurite's shared-key string — see `local.settings.json.example`) instead of
+`RAW_BLOB_ACCOUNT_URL`; `blob.ts` uses the connection string when present, since
+Azurite can't authenticate `DefaultAzureCredential` (AAD).
+
+### If `func start` won't run (Node version mismatch)
+
+Azure Functions Core Tools only supports Node ≤ 20; on a newer Node the worker
+exits immediately. Use the dev-only HTTP shim instead — it reuses the **real**
+`csv`/`blob` modules, so the schema/append/read paths are identical to the
+Functions:
+
+```bash
+npm run build
+# start Azurite with --skipApiVersionCheck (newer SDK than the emulator):
+azurite --silent --skipApiVersionCheck --location ./.azurite --blobPort 10000
+# create the container once (Bicep does this in prod; the code only makes the blob):
+node -e "const{BlobServiceClient}=require('@azure/storage-blob');BlobServiceClient.fromConnectionString(process.env.RAW_BLOB_CONNECTION_STRING).getContainerClient('raw').createIfNotExists()"
+node scripts/local-server.cjs          # POST /api/events + GET /api/game/{id} on :7071
+```
 
 Test it works:
 
