@@ -32,12 +32,12 @@ export default function ParityLeague() {
             </div>
 
             {(() => {
-              const cols = ['Goals', 'Assists', 'Turnovers', 'Possessions']
+              const cols = ['Goals', 'Assists', 'Blocks', 'Turnovers', 'Possessions']
               const players: { name: string; stats: number[] }[] = [
-                { name: 'A. Okafor', stats: [4, 3, 1, 18] },
-                { name: 'M. Petrov', stats: [2, 5, 2, 22] },
-                { name: 'J. Tanaka', stats: [3, 1, 0, 14] },
-                { name: 'L. Brennan', stats: [1, 4, 3, 19] },
+                { name: 'A. Okafor', stats: [4, 3, 2, 1, 18] },
+                { name: 'M. Petrov', stats: [2, 5, 0, 2, 22] },
+                { name: 'J. Tanaka', stats: [3, 1, 1, 0, 14] },
+                { name: 'L. Brennan', stats: [1, 4, 3, 3, 19] },
               ]
               return (
                 <table className="mt-5 w-full border-collapse text-sm">
