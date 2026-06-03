@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Btn } from '@/components/ui/Btn'
 import { Chip } from '@/components/ui/Chip'
 import { Label } from '@/components/ui/Label'
@@ -7,6 +7,7 @@ import { useGameStore } from '@/core/store'
 import { useScheduledGames, useSession, useTeamsState } from '@/core/selectors'
 import { deriveGameState, deriveGameStatus } from '@/core/engine'
 import { resolveGameConfig } from '@/core/games/engine'
+import { fetchGameSummary, decideResume, type GameSummary } from '@/core/serverLog'
 import type { TeamId } from '@/core/types'
 import NewGameForm from '@/screens/NewGame'
 
@@ -14,8 +15,10 @@ import NewGameForm from '@/screens/NewGame'
 const NEW_GAME_SENTINEL = -1
 
 export default function GameSetup() {
-  const selectGame       = useGameStore(s => s.selectGame)
-  const resumeGame       = useGameStore(s => s.resumeGame)
+  const selectGame            = useGameStore(s => s.selectGame)
+  const resumeGame            = useGameStore(s => s.resumeGame)
+  const startSegmentFromScore = useGameStore(s => s.startSegmentFromScore)
+  const deviceId              = useGameStore(s => s.deviceId)
   const openGameSettings = useGameStore(s => s.openGameSettings)
   const openTeamsManager = useGameStore(s => s.openTeamsManager)
   const session          = useSession()
@@ -26,7 +29,47 @@ export default function GameSetup() {
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [pullingTeam, setPullingTeam] = useState<TeamId | null>(null)
 
+  // Server-side high-water summaries, keyed by game id. Each is the `max`
+  // point-position any scorer/device reached for that game (null = no server
+  // data / API disabled / offline → fall back to the local session score).
+  const [summaries, setSummaries] = useState<Record<number, GameSummary | null>>({})
+
   const sessionGameId = session?.gameConfig.id ?? null
+
+  // Fetch high-water summaries for the listed games when the menu shows. Small
+  // N (a handful of games); per-game fetch is fine. Re-runs when the set of
+  // games changes; offline/disabled fetches resolve to null and no-op.
+  const gameIdsKey = games.map(g => g.id).join(',')
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const entries = await Promise.all(
+        games.map(async g => [g.id, await fetchGameSummary(g.id, resolveGameConfig(g, teamsState))] as const),
+      )
+      if (!cancelled) setSummaries(Object.fromEntries(entries))
+    })()
+    return () => { cancelled = true }
+    // teamsState is intentionally omitted — re-fetch only when the game set
+    // changes, not on every roster-derive identity churn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameIdsKey])
+
+  // Open a game for recording, applying the continue-vs-fork rule against the
+  // server high-water: keep appending to my own segment if I'm still at/ahead
+  // of it, otherwise seed a fresh segment from where the furthest scorer left
+  // off. Falls back to plain local resume when there's no server summary.
+  function openGame(gameId: number) {
+    const summary = summaries[gameId]
+    const local = (session && sessionGameId === gameId) ? session : null
+    if (summary) {
+      const decision = decideResume(local, summary, deviceId)
+      if (decision.kind === 'fork') {
+        startSegmentFromScore(gameId, decision.scoreA, decision.scoreB, decision.offence)
+        return
+      }
+    }
+    if (local) resumeGame(gameId)
+  }
 
   // Full-screen NewGame form pushes over the list.
   if (expandedId === NEW_GAME_SENTINEL) {
@@ -71,7 +114,14 @@ export default function GameSetup() {
           const resolved = resolveGameConfig(g, teamsState)
           const liveSession = (session && sessionGameId === g.id) ? session : null
           const status = deriveGameStatus(liveSession)
-          const liveScore = liveSession ? deriveGameState(liveSession).score : null
+          // Badge score = high-water: the server summary unioned with the local
+          // session (local may be ahead of the last sync). Furthest point wins.
+          const localState = liveSession ? deriveGameState(liveSession) : null
+          const summary    = summaries[g.id] ?? null
+          const localPI    = localState ? localState.pointIndex : -1
+          const useServer  = !!summary && summary.pointIndex > localPI
+          const liveScore  = useServer ? summary!.score : (localState?.score ?? summary?.score ?? null)
+          const multiSegment = !!summary && summary.segmentCount > 1
           const isLive    = status === 'in-progress'
           const isDone    = status === 'complete'
           const chipColor = isLive ? 'var(--color-success)' : isDone ? 'var(--color-dim)' : 'var(--color-muted)'
@@ -88,9 +138,10 @@ export default function GameSetup() {
                 onClick={() => {
                   // LIVE games have a single follow-up action (Continue
                   // Recording) and no other inputs — skip the expansion
-                  // and jump straight into Live Entry.
+                  // and jump straight into Live Entry (continuing my own
+                  // segment, or forking from the high-water if a peer passed me).
                   if (isLive) {
-                    resumeGame(g.id)
+                    openGame(g.id)
                     return
                   }
                   if (expanded) {
@@ -114,7 +165,13 @@ export default function GameSetup() {
                   <span style={{ color: 'var(--color-muted)' }}>vs</span>
                   <Chip color={resolved.teams.B.color} variant="solid">{resolved.teams.B.short}</Chip>
                   {liveScore && (
-                    <span className="ml-auto font-mono font-bold text-base text-content">
+                    <span className="ml-auto flex items-center gap-1.5 font-mono font-bold text-base text-content">
+                      {multiSegment && (
+                        <span
+                          title={`${summary!.segmentCount} scorers recording`}
+                          style={{ width: 6, height: 6, borderRadius: 9999, background: 'var(--color-success)' }}
+                        />
+                      )}
                       {liveScore.A} – {liveScore.B}
                     </span>
                   )}
@@ -130,6 +187,30 @@ export default function GameSetup() {
                     </div>
                   ) : (
                     <>
+                      {summary && summary.segmentCount > 0 && (
+                        <div className="rounded-lg border border-border p-3 flex flex-col gap-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <Label>
+                              In progress · {summary.segmentCount} scorer{summary.segmentCount > 1 ? 's' : ''}
+                            </Label>
+                            <span className="font-mono font-bold text-base text-content">
+                              {summary.score.A} – {summary.score.B}
+                            </span>
+                          </div>
+                          {summary.segments.map(s => (
+                            <div key={s.segmentId} className="flex items-center justify-between text-xs" style={{ color: 'var(--color-muted)' }}>
+                              <span className="truncate">{s.anchored ? '↪ ' : ''}{s.deviceId.slice(0, 10)}</span>
+                              <span className="font-mono">{s.score.A}–{s.score.B}</span>
+                            </div>
+                          ))}
+                          <Btn variant="primary" size="md" full onClick={(e) => { e.stopPropagation(); openGame(g.id) }}>
+                            Continue from {summary.score.A}–{summary.score.B}
+                          </Btn>
+                          <div className="text-[10px] italic text-center" style={{ color: 'var(--color-muted)' }}>
+                            or start fresh below
+                          </div>
+                        </div>
+                      )}
                       <div className="text-xs text-content text-center mb-0.5">Who will pull first?</div>
                       <div className="text-[10px] italic text-center" style={{ color: 'var(--color-muted)' }}>
                         (Who is on Defence?)

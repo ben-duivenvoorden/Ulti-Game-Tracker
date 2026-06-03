@@ -12,9 +12,9 @@
 // session. Because rawLog is append-only and event ids are monotonic, sync is
 // just "send me everything since N".
 
-import type { GameId, GameConfig, Player, RawEvent, EventId, TeamId, GameSession, ScorerId } from './types'
+import type { GameId, GameConfig, Player, RawEvent, EventId, TeamId, GameSession, ScorerId, DeviceId } from './types'
 import { appendEvents, type RawEventInput } from './engine'
-import { newSegmentId, newScorerId } from './ids'
+import { newSegmentId, newScorerId, newDeviceId } from './ids'
 
 // ─── Messages ─────────────────────────────────────────────────────────────────
 
@@ -82,14 +82,18 @@ export function serializeEvents(
 
 /** Reconstruct a starting session from a manifest message. The session has an
  *  empty rawLog; pair this with `applyEventStream` to fast-forward. A peer
- *  applying a manifest opens its *own* segment — pass the local `scorerId`
- *  so the recording is attributed to this device (a fresh one is minted if
- *  the caller has none yet). */
-export function sessionFromManifest(msg: RosterManifestMessage, scorerId: ScorerId = newScorerId()): GameSession {
+ *  applying a manifest opens its *own* segment — pass the local `scorerId` /
+ *  `deviceId` so the recording is attributed to this device (fresh ones are
+ *  minted if the caller has none yet). */
+export function sessionFromManifest(
+  msg: RosterManifestMessage,
+  scorerId: ScorerId = newScorerId(),
+  deviceId: DeviceId = newDeviceId(),
+): GameSession {
   return {
     gameConfig: msg.manifest.gameConfig,
     gameStartPullingTeam: msg.manifest.gameStartPullingTeam,
-    segment: { segmentId: newSegmentId(), scorerId, createdAt: Date.now() },
+    segment: { segmentId: newSegmentId(), scorerId, deviceId, createdAt: Date.now() },
     rawLog: [],
   }
 }

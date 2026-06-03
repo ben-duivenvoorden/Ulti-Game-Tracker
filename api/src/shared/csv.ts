@@ -2,19 +2,22 @@
 // dbt/models/raw/raw_events.sql in the Parity-League-2026 repo
 // (the data pipeline that consumes this CSV).
 
-// `segment_id` / `scorer_id` sit right after `game_id`: event_id is only unique
-// *within* a segment (every segment's log restarts at 1), so the real row key is
-// (game_id, segment_id, event_id). Both are opaque tokens with no commas, so they
-// keep the comma-free prefix that `fieldAt` relies on.
-export const CSV_HEADER = 'event_id,game_id,segment_id,scorer_id,timestamp_ms,point_index,type,payload'
+// `segment_id` / `scorer_id` / `device_id` sit right after `game_id`: event_id is
+// only unique *within* a segment (every segment's log restarts at 1), so the real
+// row key is (game_id, segment_id, event_id). The writer key is (scorer_id,
+// device_id) — one login on two devices is two independent segments. All three are
+// opaque comma-free tokens, so they keep the comma-free prefix `fieldAt` relies on.
+export const CSV_HEADER = 'event_id,game_id,segment_id,scorer_id,device_id,timestamp_ms,point_index,type,payload'
 
 export interface IncomingEvent {
   event_id:     number
   game_id:      number
   /** One scorer's recording of the game. Event ids are unique only per segment. */
   segment_id:   string
-  /** Stable per-device scorer identity that owns the segment. */
+  /** Scorer (human / login) identity that owns the segment. */
   scorer_id:    string
+  /** Device that produced the segment. Part of the writer key alongside scorer_id. */
+  device_id:    string
   timestamp_ms: number
   point_index:  number
   type:         string
@@ -30,6 +33,7 @@ export function eventToCsvRow(e: IncomingEvent): string {
     e.game_id,
     e.segment_id,
     e.scorer_id,
+    e.device_id,
     e.timestamp_ms,
     e.point_index,
     e.type,
@@ -62,7 +66,7 @@ export function validateIncoming(input: unknown): asserts input is IncomingEvent
       throw new Error(`${field} must be an integer`)
     }
   }
-  for (const field of ['segment_id', 'scorer_id'] as const) {
+  for (const field of ['segment_id', 'scorer_id', 'device_id'] as const) {
     if (typeof e[field] !== 'string' || !(e[field] as string).length) {
       throw new Error(`${field} must be a non-empty string`)
     }

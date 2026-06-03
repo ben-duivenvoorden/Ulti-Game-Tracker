@@ -113,12 +113,13 @@ describe('resumeFromScore', () => {
 })
 
 describe('segment identity', () => {
-  it('selectGame stamps a fresh segment carrying the device scorerId', () => {
-    const { scorerId } = useGameStore.getState()
+  it('selectGame stamps a fresh segment carrying the device scorerId + deviceId', () => {
+    const { scorerId, deviceId } = useGameStore.getState()
     useGameStore.getState().selectGame(MOCK_GAMES[0].id, 'A')
     const seg = useGameStore.getState().session!.segment
     expect(seg.segmentId).toMatch(/^seg_/)
     expect(seg.scorerId).toBe(scorerId)
+    expect(seg.deviceId).toBe(deviceId)
     expect(seg.createdAt).toBeGreaterThan(0)
     // A from-the-start recording has no anchor.
     expect(seg.anchor).toBeUndefined()
@@ -157,6 +158,7 @@ describe('segment identity', () => {
     expect(fork.segment.segmentId).not.toBe(parentId)
     expect(fork.segment.parentSegmentId).toBe(parentId)
     expect(fork.segment.scorerId).toBe(parent.segment.scorerId)
+    expect(fork.segment.deviceId).toBe(parent.segment.deviceId)
     // Prefix copied verbatim, but it's a fresh array (not the same reference).
     expect(fork.rawLog).toHaveLength(parentLogLen)
     expect(fork.rawLog).not.toBe(parent.rawLog)
