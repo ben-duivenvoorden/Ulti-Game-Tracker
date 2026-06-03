@@ -3,7 +3,13 @@
   "Values": {
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "FUNCTIONS_WORKER_RUNTIME": "node",
+
+    "_comment_local": "Local dev against Azurite — uses the well-known devstoreaccount1 connection string. Start Azurite first (npm i -g azurite; azurite --silent). The blob is created with the current 9-column header automatically, so no migration is needed locally.",
+    "RAW_BLOB_CONNECTION_STRING": "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;",
+
+    "_comment_prod": "For a real storage account instead of Azurite, omit RAW_BLOB_CONNECTION_STRING and set RAW_BLOB_ACCOUNT_URL (DefaultAzureCredential uses your az login / managed identity).",
     "RAW_BLOB_ACCOUNT_URL": "https://<account>.blob.core.windows.net",
+
     "RAW_BLOB_CONTAINER": "raw",
     "RAW_BLOB_NAME": "events.csv"
   },
