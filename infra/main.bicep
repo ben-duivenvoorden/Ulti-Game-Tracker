@@ -42,6 +42,9 @@ param staticWebAppLocation string = 'westus2'
 @description('Custom apex domain (Phase 7). Empty = no DNS zone / custom-domain wiring. When set, an Azure DNS zone is provisioned (its name servers are output for delegation at the registrar, Namecheap) and three host names are bound: the apex + www serve the marketing landing SWA, and app.<domain> serves the app SPA. SWA managed TLS certs are auto-provisioned on validation.')
 param customDomain string = 'ultigametracker.com'
 
+@description('Apex TXT validation token for the landing SWA apex custom-domain (dns-txt-token method). Only needed on a *first* apex bring-up: deploy once to create the apex customDomain (it enters "Validating" and exposes a validationToken via the portal / `az staticwebapp hostname show`), pass that token here, then re-deploy to publish the TXT record and complete validation. Leave EMPTY once the apex is validated — the token disappears after validation, so the binding no longer needs the TXT, and referencing the (now-absent) token property would fail the whole deployment.')
+param apexValidationToken string = ''
+
 // ─── Naming ───────────────────────────────────────────────────────────────────
 // Follows CAF convention: <type>-<workload>-<env>-<region>. Instance suffix
 // (`-001`) deliberately omitted — single-instance hobby project. Global-unique
@@ -231,10 +234,21 @@ resource landingStaticWebApp 'Microsoft.Web/staticSites@2024-04-01' = {
 //   - apex `@`  TXT      → SWA-issued validation token for the apex binding
 // SWA provisions/renews managed TLS certs on validation. The apex uses
 // dns-txt-token validation (A/ALIAS can't be CNAME-delegated); www + app use
-// cname-delegation. NOTE: on a *first* apex bring-up the customDomains binding
-// and its TXT record are mutually dependent — if a clean deploy stalls on the
-// apex, add the TXT manually first, then re-run. Against the already-validated
-// production zone this reconciles idempotently (verify with `what-if`).
+// cname-delegation.
+//
+// TWO ordering gotchas, both expected on a *first* bring-up or after a SWA
+// hostname change (e.g. recreating the app SWA):
+//   1. Apex TXT: the apex customDomain (dns-txt-token) and its TXT record are
+//      mutually dependent. Supply `apexValidationToken` to publish the TXT (see
+//      param docs). Leave it empty once validated — the token disappears and a
+//      reference to it would fail the deployment.
+//   2. CNAME-delegated bindings (www, app): SWA validates by resolving the
+//      CNAME over *public* DNS, which lags the zone write by the record TTL.
+//      A clean deploy can fail validation with "CNAME Record is invalid" until
+//      the new CNAME propagates. This is a timing limitation of ARM (it can't
+//      wait on public DNS) — re-run the deploy, or run `az staticwebapp
+//      hostname set ... --validation-method cname-delegation` once the CNAME
+//      resolves. Idempotent against an already-validated binding.
 
 resource dnsZone 'Microsoft.Network/dnszones@2023-07-01-preview' = if (!empty(customDomain)) {
   name:     customDomain
@@ -304,13 +318,17 @@ resource apexCustomDomain 'Microsoft.Web/staticSites/customDomains@2024-04-01' =
   dependsOn: [ apexAlias ]
 }
 
-resource apexTxt 'Microsoft.Network/dnszones/TXT@2023-07-01-preview' = if (!empty(customDomain)) {
+// Apex validation TXT — only managed during a first bring-up, when an explicit
+// apexValidationToken is supplied (see param docs). Once the apex is validated
+// the token is gone and the TXT is no longer required, so this resource is
+// skipped and the existing record (if any) is left untouched.
+resource apexTxt 'Microsoft.Network/dnszones/TXT@2023-07-01-preview' = if (!empty(customDomain) && !empty(apexValidationToken)) {
   parent: dnsZone
   name:   '@'
   properties: {
     TTL: 3600
     TXTRecords: [
-      { value: [ apexCustomDomain.properties.validationToken ] }
+      { value: [ apexValidationToken ] }
     ]
   }
 }
