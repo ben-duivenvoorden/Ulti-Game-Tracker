@@ -33,7 +33,7 @@ export default function Nav() {
             href={APP_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="rounded-lg bg-accent px-3.5 py-2 text-sm font-semibold text-white shadow-lg shadow-accent/25 transition-colors hover:bg-accent/90"
+            className="rounded-lg bg-accent px-3.5 py-2 text-sm font-semibold text-content shadow-lg shadow-accent/25 transition-colors hover:bg-accent/90"
           >
             Try the web app
           </a>

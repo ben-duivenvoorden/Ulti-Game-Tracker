@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import { APP_URL } from '../constants'
 import { AndroidIcon, AppleIcon, GlobeIcon } from './icons'
+import Reveal from './Reveal'
 
 type Platform = {
   icon: (p: { className?: string }) => JSX.Element
@@ -23,7 +24,7 @@ export default function Platforms() {
         <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Where it runs</h2>
 
         <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-3">
-          {PLATFORMS.map(({ icon: Icon, name, status, href }) => {
+          {PLATFORMS.map(({ icon: Icon, name, status, href }, i) => {
             const inner = (
               <>
                 <Icon className={`h-8 w-8 ${href ? 'text-content' : 'text-dim'}`} />
@@ -33,21 +34,22 @@ export default function Platforms() {
                 </div>
               </>
             )
-            const base = 'rounded-2xl border p-6 transition-colors'
-            return href ? (
-              <a
-                key={name}
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`${base} border-accent/40 bg-surf/50 hover:border-accent hover:bg-surf-2/60`}
-              >
-                {inner}
-              </a>
-            ) : (
-              <div key={name} className={`${base} border-border bg-surf/30`}>
-                {inner}
-              </div>
+            const base = 'block h-full rounded-2xl border p-6 transition-colors'
+            return (
+              <Reveal key={name} delay={i * 90}>
+                {href ? (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`${base} border-accent/40 bg-surf/50 hover:border-accent hover:bg-surf-2/60`}
+                  >
+                    {inner}
+                  </a>
+                ) : (
+                  <div className={`${base} border-border bg-surf/30`}>{inner}</div>
+                )}
+              </Reveal>
             )
           })}
         </div>
