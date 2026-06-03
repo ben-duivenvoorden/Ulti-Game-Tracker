@@ -3,7 +3,9 @@
 // Resources:
 //   - Storage account with a public-read `raw` container (live event log)
 //   - Linux Consumption Function App (the api/) with system-assigned identity
-//   - Static Web App (the SPA host)
+//   - Static Web App (the app SPA host) — served at app.<customDomain>
+//   - Static Web App (the marketing landing page) — served at the apex + www
+//   - Azure DNS zone + records + SWA custom-domain bindings (Phase 7)
 //   - Role assignment: function identity -> Storage Blob Data Contributor
 //
 // Deploy with either `azd up` (preferred — see azure.yaml at repo root) or
@@ -37,7 +39,7 @@ param branch string = 'main'
 @allowed([ 'centralus', 'eastus2', 'westus2', 'westeurope' ])
 param staticWebAppLocation string = 'westus2'
 
-@description('Custom apex domain to serve the SPA from (Phase 7). Empty = no DNS zone / custom-domain wiring. When set, an Azure DNS zone is provisioned and its name servers are output for delegation at the registrar (Namecheap). The apex TXT + ALIAS records and managed TLS cert are auto-created by SWA when the domain is added "on Azure DNS"; the staticSites/customDomains binding is codified later (once validated).')
+@description('Custom apex domain (Phase 7). Empty = no DNS zone / custom-domain wiring. When set, an Azure DNS zone is provisioned (its name servers are output for delegation at the registrar, Namecheap) and three host names are bound: the apex + www serve the marketing landing SWA, and app.<domain> serves the app SPA. SWA managed TLS certs are auto-provisioned on validation.')
 param customDomain string = 'ultigametracker.com'
 
 // ─── Naming ───────────────────────────────────────────────────────────────────
@@ -65,13 +67,19 @@ var storageAccountName = toLower('st${namePrefix}${environment}${regionCode}')  
 var planName           = 'asp-${namePrefix}-${environment}-${regionCode}'         // e.g. asp-ugt-prod-aue
 var functionAppName    = 'func-${namePrefix}-${environment}-${regionCode}'        // e.g. func-ugt-prod-aue
 var staticWebAppName   = 'stapp-${namePrefix}-${environment}-${regionCode}'       // e.g. stapp-ugt-prod-aue
+var landingStaticWebAppName = 'stapp-${namePrefix}-landing-${environment}-${regionCode}' // e.g. stapp-ugt-landing-prod-aue
 var rawContainerName   = 'raw'
 
-// CORS origins the Function App accepts. Always the SWA default hostname; when a
-// custom domain is configured, also the apex + www (both https-only).
+// CORS origins the Function App accepts. Always the app SWA default hostname;
+// when a custom domain is configured, also the apex + www (landing) and the
+// app.<domain> subdomain (the app SPA that actually calls the API) — https-only.
 var corsAllowedOrigins = concat(
   [ 'https://${staticWebApp.properties.defaultHostname}' ],
-  empty(customDomain) ? [] : [ 'https://${customDomain}', 'https://www.${customDomain}' ]
+  empty(customDomain) ? [] : [
+    'https://${customDomain}'
+    'https://www.${customDomain}'
+    'https://app.${customDomain}'
+  ]
 )
 
 // Common tags applied to every resource. The Bicep file declares this once;
@@ -194,13 +202,39 @@ resource staticWebApp 'Microsoft.Web/staticSites@2024-04-01' = {
   }
 }
 
-// ─── Custom domain DNS (Phase 7) ───────────────────────────────────────────────
+// ─── Landing-page Static Web App ──────────────────────────────────────────────
+// Separate Free SWA serving the marketing landing page at the apex
+// (customDomain) + www. The app SPA above is served from app.<customDomain>.
+// Content is published by the deploy-landing.yml workflow (deploys landing/),
+// not an azd service, so there's no repository binding here.
+
+resource landingStaticWebApp 'Microsoft.Web/staticSites@2024-04-01' = {
+  name:     landingStaticWebAppName
+  location: staticWebAppLocation
+  tags:     commonTags
+  sku: { name: 'Free', tier: 'Free' }
+  properties: {
+    buildProperties: {
+      appLocation:      'landing'
+      apiLocation:      ''
+      outputLocation:   'dist'
+    }
+  }
+}
+
+// ─── Custom domain DNS + bindings (Phase 7) ────────────────────────────────────
 // Azure-hosted DNS zone for the apex domain. Delegate the registrar's name
-// servers (Namecheap → Custom DNS) to the `dnsZoneNameServers` output, then add
-// the domain to the SWA "on Azure DNS" — SWA auto-creates the apex TXT + ALIAS
-// records and provisions a managed TLS cert. The `www` CNAME is codified here so
-// it's reproducible; the apex/www staticSites/customDomains bindings are added
-// once the apex validates (see plan step 6).
+// servers (Namecheap → Custom DNS) to the `dnsZoneNameServers` output. Records:
+//   - apex `@`  A/ALIAS  → landing SWA   (serves https://<domain>)
+//   - `www`     CNAME    → landing SWA   (serves https://www.<domain>)
+//   - `app`     CNAME    → app SPA SWA   (serves https://app.<domain>)
+//   - apex `@`  TXT      → SWA-issued validation token for the apex binding
+// SWA provisions/renews managed TLS certs on validation. The apex uses
+// dns-txt-token validation (A/ALIAS can't be CNAME-delegated); www + app use
+// cname-delegation. NOTE: on a *first* apex bring-up the customDomains binding
+// and its TXT record are mutually dependent — if a clean deploy stalls on the
+// apex, add the TXT manually first, then re-run. Against the already-validated
+// production zone this reconciles idempotently (verify with `what-if`).
 
 resource dnsZone 'Microsoft.Network/dnszones@2023-07-01-preview' = if (!empty(customDomain)) {
   name:     customDomain
@@ -211,14 +245,73 @@ resource dnsZone 'Microsoft.Network/dnszones@2023-07-01-preview' = if (!empty(cu
   }
 }
 
+resource apexAlias 'Microsoft.Network/dnszones/A@2023-07-01-preview' = if (!empty(customDomain)) {
+  parent: dnsZone
+  name:   '@'
+  properties: {
+    TTL: 3600
+    targetResource: { id: landingStaticWebApp.id }
+  }
+}
+
 resource wwwCname 'Microsoft.Network/dnszones/CNAME@2023-07-01-preview' = if (!empty(customDomain)) {
   parent: dnsZone
   name:   'www'
   properties: {
     TTL: 3600
     CNAMERecord: {
+      cname: landingStaticWebApp.properties.defaultHostname
+    }
+  }
+}
+
+resource appCname 'Microsoft.Network/dnszones/CNAME@2023-07-01-preview' = if (!empty(customDomain)) {
+  parent: dnsZone
+  name:   'app'
+  properties: {
+    TTL: 3600
+    CNAMERecord: {
       cname: staticWebApp.properties.defaultHostname
     }
+  }
+}
+
+// SWA custom-domain bindings (managed TLS issued on validation).
+resource appCustomDomain 'Microsoft.Web/staticSites/customDomains@2024-04-01' = if (!empty(customDomain)) {
+  parent: staticWebApp
+  name:   'app.${customDomain}'
+  properties: {
+    validationMethod: 'cname-delegation'
+  }
+  dependsOn: [ appCname ]
+}
+
+resource wwwCustomDomain 'Microsoft.Web/staticSites/customDomains@2024-04-01' = if (!empty(customDomain)) {
+  parent: landingStaticWebApp
+  name:   'www.${customDomain}'
+  properties: {
+    validationMethod: 'cname-delegation'
+  }
+  dependsOn: [ wwwCname ]
+}
+
+resource apexCustomDomain 'Microsoft.Web/staticSites/customDomains@2024-04-01' = if (!empty(customDomain)) {
+  parent: landingStaticWebApp
+  name:   customDomain
+  properties: {
+    validationMethod: 'dns-txt-token'
+  }
+  dependsOn: [ apexAlias ]
+}
+
+resource apexTxt 'Microsoft.Network/dnszones/TXT@2023-07-01-preview' = if (!empty(customDomain)) {
+  parent: dnsZone
+  name:   '@'
+  properties: {
+    TTL: 3600
+    TXTRecords: [
+      { value: [ apexCustomDomain.properties.validationToken ] }
+    ]
   }
 }
 
@@ -230,6 +323,10 @@ output functionAppName    string = functionApp.name
 output functionAppUrl     string = 'https://${functionApp.properties.defaultHostName}'
 output staticWebAppName   string = staticWebApp.name
 output staticWebAppUrl    string = 'https://${staticWebApp.properties.defaultHostname}'
+output landingStaticWebAppName string = landingStaticWebApp.name
+output landingStaticWebAppUrl  string = 'https://${landingStaticWebApp.properties.defaultHostname}'
+// Public URLs once DNS + certs are live: apex/www = landing, app = the SPA.
 output customDomainUrl    string = empty(customDomain) ? '' : 'https://${customDomain}'
+output appCustomDomainUrl string = empty(customDomain) ? '' : 'https://app.${customDomain}'
 // The 4 Azure name servers to enter at the registrar (Namecheap → Custom DNS).
 output dnsZoneNameServers array = dnsZone.?properties.nameServers ?? []
