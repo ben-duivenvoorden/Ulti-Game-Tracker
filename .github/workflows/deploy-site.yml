@@ -63,9 +63,13 @@ jobs:
 
       - name: Install deps (landing + client)
         if: steps.gate.outputs.configured == 'true'
+        # `npm install`, not `npm ci`: the lockfiles drift on optional
+        # platform deps (e.g. @emnapi/* from Tailwind v4's oxide), which `npm
+        # ci` rejects. This mirrors what the SWA action's Oryx builder did for
+        # the old deploy-spa/deploy-landing workflows.
         run: |
-          npm ci --prefix landing
-          npm ci --prefix client
+          npm install --prefix landing --no-audit --no-fund
+          npm install --prefix client --no-audit --no-fund
 
       - name: Build combined site → dist-site/
         if: steps.gate.outputs.configured == 'true'
