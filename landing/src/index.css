@@ -1,0 +1,59 @@
+@import '@fontsource/roboto/400.css';
+@import '@fontsource/roboto/500.css';
+@import '@fontsource/roboto/700.css';
+@import '@fontsource/roboto/900.css';
+@import '@fontsource/roboto-mono/400.css';
+@import '@fontsource/roboto-mono/500.css';
+@import "tailwindcss";
+
+@theme {
+  /* Surface hierarchy — shared with the app for brand consistency */
+  --color-bg:       #111111;
+  --color-surf:     #181818;
+  --color-surf-2:   #202020;
+  --color-surf-3:   #282828;
+
+  /* Borders */
+  --color-border:   #2c2c2c;
+  --color-border-2: #383838;
+
+  /* Text */
+  --color-content:  #e8e8e8;
+  --color-muted:    #8a8a8a;
+  --color-dim:      #555555;
+
+  /* Accent — fresh modern palette (not the app's team colors), tuned to the
+   * existing violet+cyan brand mark in favicon.svg. */
+  --color-accent:    #6d5efc;   /* electric indigo-violet — primary */
+  --color-accent-2:  #22d3ee;   /* cyan — gradient / hover partner  */
+
+  /* Typography */
+  --font-sans: 'Roboto', sans-serif;
+  --font-mono: 'Roboto Mono', monospace;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* Marketing page: normal document flow + smooth anchor scrolling. Deliberately
+ * NOT the app's full-viewport overflow:hidden shell (client/src/index.css). */
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-content);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Account for the sticky nav when jumping to anchors */
+  scroll-padding-top: 5rem;
+}
+
+/* Respect users who prefer no motion */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
