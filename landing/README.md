@@ -17,10 +17,22 @@ npm run build      # tsc -b && vite build  -> dist/
 Default `https://ultigametracker.com`; production build uses `.env.production`
 (`https://app.ultigametracker.com`). Override locally in `.env.local`.
 
-## Deploy (routine — this is all you do for content/code changes)
+## Deploy (automatic on push to `main`)
 
-DNS is **not** touched on a normal deploy. Just build and push content to the
-landing Static Web App:
+Pushing changes under `landing/**` to `main` triggers the
+`.github/workflows/deploy-landing.yml` workflow, which builds and deploys to the
+landing Static Web App. **A deploy is just `git push`.** DNS is never touched.
+
+The workflow authenticates with the repo secret
+`AZURE_STATIC_WEB_APPS_API_TOKEN_LANDING` (the SWA deployment token). To rotate
+it:
+
+```sh
+az staticwebapp secrets list -n stapp-ugt-landing-prod-aue \
+  -g rg-ugt-prod-aue --query properties.apiKey -o tsv | gh secret set AZURE_STATIC_WEB_APPS_API_TOKEN_LANDING
+```
+
+### Manual deploy (fallback)
 
 ```sh
 npm run build
@@ -30,10 +42,6 @@ npx -y @azure/static-web-apps-cli deploy ./dist --deployment-token "$TOKEN" --en
 ```
 
 (PowerShell: `$TOKEN = az staticwebapp secrets list ...` then pass `--deployment-token $TOKEN`.)
-
-> Smoother option for frequent changes: a GitHub Actions workflow that runs the
-> build + `swa deploy` on every push to `main` (store the deployment token as a
-> repo secret). Then a deploy is just `git push`. Ask to have this wired up.
 
 ## One-time topology (already set up — for reference only)
 
