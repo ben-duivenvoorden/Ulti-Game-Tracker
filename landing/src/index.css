@@ -1,7 +1,6 @@
+@import '@fontsource-variable/hanken-grotesk';
 @import '@fontsource/roboto/400.css';
 @import '@fontsource/roboto/500.css';
-@import '@fontsource/roboto/700.css';
-@import '@fontsource/roboto/900.css';
 @import '@fontsource/roboto-mono/400.css';
 @import '@fontsource/roboto-mono/500.css';
 @import "tailwindcss";
@@ -28,12 +27,45 @@
   --color-accent-2:  #22d3ee;   /* cyan — gradient / hover partner  */
 
   /* Typography */
+  --font-display: 'Hanken Grotesk Variable', 'Roboto', sans-serif;
   --font-sans: 'Roboto', sans-serif;
   --font-mono: 'Roboto Mono', monospace;
 }
 
 *, *::before, *::after {
   box-sizing: border-box;
+}
+
+/* Headings use the distinctive display grotesk; body stays on Roboto. */
+h1, h2, h3 {
+  font-family: var(--font-display);
+}
+
+/* ── Entrance + scroll-reveal motion ──────────────────────────────────────
+ * One orchestrated page-load on the hero (staggered fade-up) plus a single
+ * fade-up when sections scroll into view. Both are GPU-cheap (opacity +
+ * transform) and fully disabled under prefers-reduced-motion below. */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Hero load: elements start hidden and animate in on mount. */
+.animate-enter {
+  opacity: 0;
+  animation: fade-up 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Scroll reveal: hidden until JS adds .is-visible (IntersectionObserver). */
+.reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+              transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
 }
 
 /* Marketing page: normal document flow + smooth anchor scrolling. Deliberately
@@ -53,7 +85,14 @@ body {
   scroll-padding-top: 5rem;
 }
 
-/* Respect users who prefer no motion */
+/* Respect users who prefer no motion: show everything, animate nothing. */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
+  .animate-enter,
+  .reveal {
+    opacity: 1;
+    transform: none;
+    animation: none;
+    transition: none;
+  }
 }
