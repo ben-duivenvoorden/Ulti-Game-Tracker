@@ -4,7 +4,7 @@
 // Kept tiny and dependency-free; `crypto.randomUUID` where available, with a
 // best-effort fallback for older runtimes / test environments.
 
-import type { SegmentId, ScorerId } from './types'
+import type { SegmentId, ScorerId, DeviceId } from './types'
 
 function randomToken(): string {
   const c = (globalThis as { crypto?: Crypto }).crypto
@@ -18,4 +18,8 @@ export function newSegmentId(): SegmentId {
 
 export function newScorerId(): ScorerId {
   return `scorer_${randomToken()}`
+}
+
+export function newDeviceId(): DeviceId {
+  return `dev_${randomToken()}`
 }

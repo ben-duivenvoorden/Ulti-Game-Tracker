@@ -10,7 +10,7 @@ function makeSession(pullingTeam: 'A' | 'B' = 'A'): GameSession {
   return {
     gameConfig:           config,
     gameStartPullingTeam: pullingTeam,
-    segment:              { segmentId: 'seg_test', scorerId: 'scorer_test', createdAt: 0 },
+    segment:              { segmentId: 'seg_test', scorerId: 'scorer_test', deviceId: 'dev_test', createdAt: 0 },
     rawLog:               [],
   }
 }
@@ -627,7 +627,7 @@ describe('anchored segment seeding', () => {
   function anchored(scoreA: number, scoreB: number, offence: 'A' | 'B'): GameSession {
     return {
       ...makeSession('A'),
-      segment: { segmentId: 'seg_anchor', scorerId: 'scorer_test', createdAt: 0, anchor: { scoreA, scoreB, offence } },
+      segment: { segmentId: 'seg_anchor', scorerId: 'scorer_test', deviceId: 'dev_test', createdAt: 0, anchor: { scoreA, scoreB, offence } },
     }
   }
 

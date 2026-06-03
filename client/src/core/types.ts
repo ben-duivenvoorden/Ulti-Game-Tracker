@@ -291,8 +291,13 @@ export interface ActiveLine {
 
 /** Opaque, globally-unique id for one scorer's recording of a game. */
 export type SegmentId = string
-/** Lightweight, stable scorer identity (a generated id today; no auth). */
+/** Lightweight scorer (human / login) identity (a generated id today; no auth).
+ *  Distinct from `DeviceId`: one scorer may record from several devices. */
 export type ScorerId = string
+/** Per-device writer handle. The real writer key is `(scorer, device)` — one
+ *  login used on two devices is two independent single-writer segments. Until
+ *  auth lands, `scorerId` and `deviceId` co-vary (both per-boot tokens). */
+export type DeviceId = string
 
 /** The game-state checkpoint a segment was started from. Absent when the
  *  segment recorded from the opening pull; present when it was started
@@ -309,6 +314,9 @@ export interface SegmentAnchor {
 export interface SegmentMeta {
   segmentId: SegmentId
   scorerId:  ScorerId
+  /** The device that owns this segment. Part of the writer key — two devices on
+   *  one `scorerId` are two independent single-writer segments. */
+  deviceId:  DeviceId
   /** Wall-clock creation time of the segment (ms since epoch). */
   createdAt: number
   /** Set when the segment was started from a score checkpoint. */

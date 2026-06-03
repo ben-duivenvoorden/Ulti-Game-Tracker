@@ -46,23 +46,47 @@ function eventToPayload(e: RawEvent): Record<string, unknown> {
   return rest
 }
 
-async function postEvent(e: RawEvent, gameId: number, session: GameSession): Promise<void> {
-  const body = {
-    event_id:     e.id,
-    game_id:      gameId,
-    segment_id:   session.segment.segmentId,
-    scorer_id:    session.segment.scorerId,
-    timestamp_ms: e.timestamp,
-    point_index:  e.pointIndex,
-    type:         e.type,
-    payload:      eventToPayload(e),
-  }
+async function postBody(body: Record<string, unknown>): Promise<void> {
   const resp = await fetch(`${API_BASE}/api/events`, {
     method:  'POST',
     headers: { 'content-type': 'application/json' },
     body:    JSON.stringify(body),
   })
   if (!resp.ok) throw new Error(`POST /events -> ${resp.status}`)
+}
+
+async function postEvent(e: RawEvent, gameId: number, session: GameSession): Promise<void> {
+  await postBody({
+    event_id:     e.id,
+    game_id:      gameId,
+    segment_id:   session.segment.segmentId,
+    scorer_id:    session.segment.scorerId,
+    device_id:    session.segment.deviceId,
+    timestamp_ms: e.timestamp,
+    point_index:  e.pointIndex,
+    type:         e.type,
+    payload:      eventToPayload(e),
+  })
+}
+
+// An anchored segment's A–B start score lives in SegmentMeta.anchor, NOT in the
+// rawLog — so peers can't reconstruct it from events alone. Transmit it once as a
+// synthetic wire-only row (event_id 0, type 'segment-anchor', sorting before real
+// ids which start at 1). See core/serverLog.ts (the read side) + wire-protocol.md.
+async function postAnchor(gameId: number, session: GameSession): Promise<void> {
+  const a = session.segment.anchor
+  if (!a) return
+  await postBody({
+    event_id:     0,
+    game_id:      gameId,
+    segment_id:   session.segment.segmentId,
+    scorer_id:    session.segment.scorerId,
+    device_id:    session.segment.deviceId,
+    timestamp_ms: session.segment.createdAt,
+    point_index:  a.scoreA + a.scoreB,
+    type:         'segment-anchor',
+    payload:      { scoreA: a.scoreA, scoreB: a.scoreB, offence: a.offence },
+  })
 }
 
 let syncing = false
@@ -72,7 +96,23 @@ async function syncSession(session: GameSession): Promise<void> {
   try {
     const cursor = loadCursor()
     const gameId = session.gameConfig.id
-    const { segmentId } = session.segment
+    const { segmentId, anchor } = session.segment
+
+    // Send the anchor once, before any events, so the menu shows the seeded
+    // score immediately even before the first point is recorded. The `:anchor`
+    // cursor marker keeps it idempotent across reconnects.
+    const anchorKey = `${segmentId}:anchor`
+    if (anchor && !cursor[anchorKey]) {
+      try {
+        await postAnchor(gameId, session)
+      } catch (err) {
+        console.warn('[sync] anchor post failed, will retry', { gameId, segmentId, err })
+        return
+      }
+      cursor[anchorKey] = 1
+      saveCursor(cursor)
+    }
+
     const lastSent = cursor[segmentId] ?? 0
     const pending = session.rawLog.filter(e => e.id > lastSent)
     if (pending.length === 0) return

@@ -16,17 +16,24 @@ import { CSV_HEADER } from './csv.js'
 // into this setting) ends in `/`, which would otherwise produce a double slash
 // in BLOB_URL below and a malformed container/blob path. Mirrors the same
 // normalisation in client/src/core/sync.ts.
+const CONNECTION_STRING = process.env.RAW_BLOB_CONNECTION_STRING
 const ACCOUNT_URL = process.env.RAW_BLOB_ACCOUNT_URL?.replace(/\/+$/, '')
 const CONTAINER   = process.env.RAW_BLOB_CONTAINER ?? 'raw'
 const BLOB_NAME   = process.env.RAW_BLOB_NAME ?? 'events.csv'
 
-if (!ACCOUNT_URL) {
-  // Fail at import so misconfigured deploys crash on cold-start, not on first
-  // request. Local dev sets this from local.settings.json.
-  throw new Error('RAW_BLOB_ACCOUNT_URL is not configured')
+// Two auth paths:
+//   - Prod / real account: RAW_BLOB_ACCOUNT_URL + DefaultAzureCredential (managed
+//     identity in Azure, az-login locally). No keys in source.
+//   - Local emulator (Azurite): RAW_BLOB_CONNECTION_STRING — a shared-key string
+//     that DefaultAzureCredential (AAD) can't satisfy. Fully offline dev.
+// The connection string wins when both are set.
+if (!CONNECTION_STRING && !ACCOUNT_URL) {
+  // Fail at import so a misconfigured deploy crashes on cold-start, not on first
+  // request. Local dev sets one of these from local.settings.json.
+  throw new Error('Set RAW_BLOB_CONNECTION_STRING (local emulator) or RAW_BLOB_ACCOUNT_URL (real account)')
 }
 
-const BLOB_URL = `${ACCOUNT_URL}/${CONTAINER}/${BLOB_NAME}`
+const BLOB_URL = ACCOUNT_URL ? `${ACCOUNT_URL}/${CONTAINER}/${BLOB_NAME}` : ''
 const credential = new DefaultAzureCredential()
 
 let cachedAppendClient: AppendBlobClient | null = null
@@ -34,14 +41,18 @@ let cachedReadClient: BlobClient | null = null
 
 export function getAppendClient(): AppendBlobClient {
   if (!cachedAppendClient) {
-    cachedAppendClient = new AppendBlobClient(BLOB_URL, credential)
+    cachedAppendClient = CONNECTION_STRING
+      ? new AppendBlobClient(CONNECTION_STRING, CONTAINER, BLOB_NAME)
+      : new AppendBlobClient(BLOB_URL, credential)
   }
   return cachedAppendClient
 }
 
 export function getReadClient(): BlobClient {
   if (!cachedReadClient) {
-    cachedReadClient = new BlobClient(BLOB_URL, credential)
+    cachedReadClient = CONNECTION_STRING
+      ? new BlobClient(CONNECTION_STRING, CONTAINER, BLOB_NAME)
+      : new BlobClient(BLOB_URL, credential)
   }
   return cachedReadClient
 }
