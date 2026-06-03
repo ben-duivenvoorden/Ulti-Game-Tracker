@@ -4,11 +4,15 @@
 #   1. Install azd: https://aka.ms/azd-install
 #   2. `az login` (CLI sign-in)
 #   3. `azd init` once (creates an .azure/<env>/ folder locally)
-#   4. `azd up` — provisions infra and deploys api + client in one go
+#   4. `azd up` — provisions infra and deploys the api
 #
 # `azd up` runs:
 #   provision -> deploys infra/main.bicep
 #   deploy    -> publishes each `services` entry below
+#
+# The site (landing + the app at /app) is NOT an azd service — it's built by
+# scripts/build-site.mjs and published to the single landing SWA by the
+# deploy-site.yml GitHub Actions workflow.
 #
 # Tear down with `azd down`.
 
@@ -21,12 +25,6 @@ services:
     project: ./api
     language: ts
     host: function
-
-  web:
-    project: ./client
-    language: ts
-    host: staticwebapp
-    dist: dist
 
 hooks:
   preprovision:

@@ -1,0 +1,91 @@
+name: deploy-site
+
+# Deploys the combined site — marketing landing at `/` and the React app at
+# `/app/` — to the ONE landing Static Web App (stapp-ugt-landing-prod-aue,
+# serving ultigametracker.com + www). This supersedes the old two-SWA pipeline
+# (deploy-spa.yml + deploy-landing.yml, both removed): there is now a single SWA
+# and `app.ultigametracker.com` is retired.
+#
+# The combined tree is built here by scripts/build-site.mjs (landing root-relative
+# + app under --base=/app/, assembled into dist-site/) and uploaded pre-built —
+# the SWA action does NOT rebuild (skip_app_build), it just publishes dist-site/.
+# staticwebapp.config.json (from landing/public/) lands at the deploy root and
+# routes /app/*.
+#
+# One-time setup:
+#   az staticwebapp secrets list \
+#     --name stapp-ugt-landing-prod-aue -g rg-ugt-prod-aue \
+#     --query properties.apiKey -o tsv
+#   Save as repo secret AZURE_STATIC_WEB_APPS_API_TOKEN_LANDING.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'client/**'
+      - 'landing/**'
+      - 'scripts/build-site.mjs'
+      - '.github/workflows/deploy-site.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Skip if SWA not configured
+        id: gate
+        run: |
+          if [ -z "${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_LANDING }}" ]; then
+            echo "Landing SWA token not set — skipping deploy."
+            echo "configured=false" >> $GITHUB_OUTPUT
+          else
+            echo "configured=true" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: actions/checkout@v5
+        if: steps.gate.outputs.configured == 'true'
+        with:
+          submodules: false
+          lfs: false
+
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.configured == 'true'
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+          cache-dependency-path: |
+            landing/package-lock.json
+            client/package-lock.json
+
+      - name: Install deps (landing + client)
+        if: steps.gate.outputs.configured == 'true'
+        run: |
+          npm ci --prefix landing
+          npm ci --prefix client
+
+      - name: Build combined site → dist-site/
+        if: steps.gate.outputs.configured == 'true'
+        run: node scripts/build-site.mjs
+        env:
+          # Vite reads VITE_* at build time; the app's only public config is the
+          # API base URL (build-site.mjs forwards the environment to the app
+          # build). Unset → app falls back to localStorage-only. See client/src/core/sync.ts.
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+
+      - uses: Azure/static-web-apps-deploy@v1
+        if: steps.gate.outputs.configured == 'true'
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_LANDING }}
+          repo_token:                      ${{ secrets.GITHUB_TOKEN }}
+          action:                          upload
+          # Pre-built tree — no Oryx build. dist-site/ already contains the
+          # landing at its root and the app under /app/, plus staticwebapp.config.json.
+          app_location:                    dist-site
+          api_location:                    ''
+          output_location:                 ''
+          skip_app_build:                  true
+          skip_api_build:                  true

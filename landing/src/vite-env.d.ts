@@ -1,10 +1,4 @@
 /// <reference types="vite/client" />
 
-interface ImportMetaEnv {
-  /** URL of the live web app (the React SPA) the landing page links to. */
-  readonly VITE_APP_URL?: string
-}
-
-interface ImportMeta {
-  readonly env: ImportMetaEnv
-}
+// No custom VITE_* env vars: the landing links to the app via the same-origin
+// `/app/` path (see src/constants.ts), so the standard Vite client types suffice.

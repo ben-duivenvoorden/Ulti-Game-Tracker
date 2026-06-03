@@ -5,7 +5,6 @@
     "namePrefix":   { "value": "ugt" },
     "environment":  { "value": "prod" },
     "location":     { "value": "${AZURE_LOCATION}" },
-    "repositoryUrl":{ "value": "${REPOSITORY_URL}" },
-    "branch":       { "value": "main" }
+    "repositoryUrl":{ "value": "${REPOSITORY_URL}" }
   }
 }
