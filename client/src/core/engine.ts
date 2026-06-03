@@ -171,6 +171,8 @@ function initialState(session: GameSession, hasEvents: boolean): DerivedGameStat
     possession: offence,
     attackLeft: offence,
     discHolder: null,
+    pullPending: false,
+    holderFromPull: false,
     pointIndex: anchor ? anchor.scoreA + anchor.scoreB : 0,
     activeLine: { A: [], B: [] },
   }
@@ -193,6 +195,8 @@ function step(state: DerivedGameState, event: Resolved, session: GameSession): v
     case 'point-start':
       state.gamePhase = 'awaiting-pull'
       state.discHolder = null
+      state.pullPending = false
+      state.holderFromPull = false
       state.activeLine = {
         A: resolveLine(event.lineA, session.gameConfig.rosters.A),
         B: resolveLine(event.lineB, session.gameConfig.rosters.B),
@@ -204,6 +208,11 @@ function step(state: DerivedGameState, event: Resolved, session: GameSession): v
     case 'brick':
       state.gamePhase = 'in-play'
       state.discHolder = null
+      // The disc is dead and the receiving team's first touch will be a
+      // pull-catch — flag it so the next `possession` is marked
+      // `holderFromPull` (no goal / block / intercept off the pull).
+      state.pullPending = true
+      state.holderFromPull = false
       // possession is already the receiving team — none of these change it.
       // (A brick goes out of bounds; the receiving team takes possession at
       // the brick mark, so the receiving-team assignment from point-start
@@ -213,6 +222,10 @@ function step(state: DerivedGameState, event: Resolved, session: GameSession): v
     case 'possession':
       state.discHolder = event.playerId
       state.possession = event.teamId
+      // A possession that consumes a pending pull is the pull-catch; any
+      // later possession is a completed pass (clears the flag).
+      state.holderFromPull = state.pullPending
+      state.pullPending = false
       break
 
     case 'turnover-throw-away':
@@ -221,6 +234,8 @@ function step(state: DerivedGameState, event: Resolved, session: GameSession): v
     case 'turnover-unknown':
       state.possession = otherTeam(state.possession)
       state.discHolder = null
+      state.pullPending = false
+      state.holderFromPull = false
       break
 
     case 'block':
@@ -229,13 +244,18 @@ function step(state: DerivedGameState, event: Resolved, session: GameSession): v
       // `possession` recording whoever picks up the dead disc.
       state.possession = event.teamId
       state.discHolder = null
+      state.pullPending = false
+      state.holderFromPull = false
       break
 
     case 'intercept':
       // Defender catches the disc cleanly — they're the new holder
-      // immediately, no follow-up possession event needed.
+      // immediately, no follow-up possession event needed. An intercept is
+      // open play (a Callahan off an intercept is allowed), not a pull-catch.
       state.possession = event.teamId
       state.discHolder = event.playerId
+      state.pullPending = false
+      state.holderFromPull = false
       break
 
     case 'goal':
@@ -243,6 +263,8 @@ function step(state: DerivedGameState, event: Resolved, session: GameSession): v
       state.pointIndex++
       state.gamePhase = 'point-over'
       state.discHolder = null
+      state.pullPending = false
+      state.holderFromPull = false
       state.possession = otherTeam(event.teamId)
       state.attackLeft = otherTeam(event.teamId)
       break
@@ -256,6 +278,9 @@ function step(state: DerivedGameState, event: Resolved, session: GameSession): v
 
     case 'half-time':
       state.gamePhase = 'half-time'
+      state.discHolder = null
+      state.pullPending = false
+      state.holderFromPull = false
       state.possession = session.gameStartPullingTeam
       state.attackLeft = session.gameStartPullingTeam
       break
@@ -273,6 +298,8 @@ function step(state: DerivedGameState, event: Resolved, session: GameSession): v
       state.pointIndex = event.scoreA + event.scoreB
       state.gamePhase  = 'point-over'
       state.discHolder = null
+      state.pullPending = false
+      state.holderFromPull = false
       state.possession = event.offenceTeam
       state.attackLeft = event.offenceTeam
       break
@@ -330,8 +357,15 @@ export function canRecord(state: DerivedGameState, eventType: RawEventType): boo
     case 'turnover-throw-away':
     case 'turnover-receiver-error':
     case 'turnover-stall':
-    case 'goal':
       return state.gamePhase === 'in-play' && state.discHolder !== null
+
+    case 'goal':
+      // No goal off the pull-catch — the receiving team must complete ≥1 pass
+      // before scoring (you can't score by catching the pull; a Callahan off a
+      // pull is impossible). `holderFromPull` is true only on the pull receiver.
+      return state.gamePhase === 'in-play'
+          && state.discHolder !== null
+          && !state.holderFromPull
 
     case 'turnover-unknown':
       // No holder requirement — the whole point is to mark a turnover when we
@@ -340,7 +374,10 @@ export function canRecord(state: DerivedGameState, eventType: RawEventType): boo
 
     case 'block':
     case 'intercept':
-      return state.gamePhase === 'in-play'
+      // Require a disc holder — there's no thrown disc to block / intercept
+      // until the offence has picked it up. This also forbids a block /
+      // intercept immediately following a pull (dead disc, no holder).
+      return state.gamePhase === 'in-play' && state.discHolder !== null
 
     case 'injury-sub':
       return state.gamePhase === 'in-play' || state.gamePhase === 'awaiting-pull'

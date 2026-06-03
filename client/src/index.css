@@ -21,6 +21,10 @@
   --color-content:  #e8e8e8;
   --color-muted:    #666666;
   --color-dim:      #444444;
+  /* Dull grey for de-emphasised "data-quality hole" affordances (Unknown
+   * Turnover, Unknown Player) — readable, but deliberately not as enticing
+   * to press as the category colours. */
+  --color-dull:     #8a8a8a;
 
   /* Teams */
   --color-team-a:   #1f4788;

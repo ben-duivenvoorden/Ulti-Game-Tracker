@@ -3,7 +3,7 @@ import {
   useSession, useDerivedState, useVisLog, useGameActions, useUiState, useRecordingOptions,
   useTruncateCursor, useNotification, useDisplayEndsSwapped,
 } from '@/core/selectors'
-import { otherTeam, type Player, type PlayerId, type TeamId, type VisLogEntry } from '@/core/types'
+import { otherTeam, UNKNOWN_PLAYER, type Player, type PlayerId, type TeamId, type VisLogEntry } from '@/core/types'
 import { isPickMode, pickActiveTeam, resolveContextLabel } from '@/core/pickModes'
 import { firstNameKey } from '@/core/teams/shortName'
 import { inkOn } from '@/core/contrast'
@@ -243,6 +243,12 @@ export default function LiveEntry() {
               setMoveSelectedId(null)
             }
             const recording = phase === 'in-play' || phase === 'awaiting-pull'
+            // Shared tile count: players (or the running-start lineSize) plus
+            // the always-present Unknown-Player tile. Drives the event-column
+            // padding AND the Sankey geometry so all three columns stay
+            // row-aligned.
+            const playerSlotCount =
+              Math.max(activePlayers.length, recording ? recordingOptions.lineSize : 0) + 1
             const playerColumn = (
               <div className="relative h-full">
                 <PlayerColumn
@@ -257,10 +263,12 @@ export default function LiveEntry() {
                   lineSize={recording ? recordingOptions.lineSize : undefined}
                   onAddSlot={() => setBackfillOpen(true)}
                   onRemove={handleRemove}
+                  onUnknownPlayer={() => handleTap(UNKNOWN_PLAYER)}
                 />
                 <PassNotation
                   visLog={effectiveVisLog}
                   players={activePlayers}
+                  slotCount={playerSlotCount}
                   activeTeam={activeTeam}
                   teamColor={activeTeamColor}
                   passesEnabled={recordingOptions.passes}
@@ -276,7 +284,7 @@ export default function LiveEntry() {
                 firstPossession={firstPossession}
                 pullerSelected={ui.selPuller !== null}
                 teamColor={activeTeamColor}
-                playerCount={Math.max(activePlayers.length, recording ? recordingOptions.lineSize : 0)}
+                playerCount={playerSlotCount}
                 isPicking={pickMode !== null}
                 onGoal={actions.recordGoal}
                 onThrowaway={actions.recordThrowAway}
@@ -284,7 +292,6 @@ export default function LiveEntry() {
                 onBlock={() => actions.triggerDefBlock('block')}
                 onIntercept={() => actions.triggerDefBlock('intercept')}
                 onStall={actions.recordStall}
-                onUnknownPlayer={actions.recordUnknownPlayer}
                 onUnknownTurnover={actions.recordUnknownTurnover}
                 onPull={() => actions.recordPull(false)}
                 onPullBonus={() => actions.recordPull(true)}
@@ -293,15 +300,22 @@ export default function LiveEntry() {
               />
             )
             const activePlayerId = state.discHolder ?? ui.selPuller
-            const activeIdx = activePlayerId !== null
-              ? activePlayers.findIndex(p => p.id === activePlayerId)
-              : -1
+            // The Unknown-Player tile renders in the row directly after the
+            // roster (it isn't a member of activePlayers), so its active index
+            // is activePlayers.length — feed that to the Sankey so the wrap
+            // appears around it just like any active player.
+            const activeIdx = activePlayerId === null
+              ? -1
+              : activePlayerId === UNKNOWN_PLAYER.id
+                ? activePlayers.length
+                : activePlayers.findIndex(p => p.id === activePlayerId)
             // Visible action count drives where the Sankey wrap's event-
             // side bottom edge lands (just below the last action button,
             // above the spacer + More button).
             const actionCount = phase === 'in-play'
-              // RE/Throw/Block/Intercept + [Stall] + Unknown player/turnover + Goal
-              ? (4 + (recordingOptions.stall ? 1 : 0) + 2 + 1)
+              // RE/Throw/Block/Intercept + [Stall] + Unknown turnover + Goal
+              // (Unknown player moved to the player column).
+              ? (4 + (recordingOptions.stall ? 1 : 0) + 1 + 1)
               : phase === 'awaiting-pull'
                 ? (1 + (recordingOptions.pullBonus ? 1 : 0) + (recordingOptions.brick ? 1 : 0))
                 : 0
@@ -309,7 +323,7 @@ export default function LiveEntry() {
               <div className="relative h-full">
                 <SankeyBridge
                   activeIdx={activeIdx}
-                  playerCount={Math.max(activePlayers.length, recording ? recordingOptions.lineSize : 0)}
+                  playerCount={playerSlotCount}
                   actionCount={actionCount}
                   playerLeft={playerLeft}
                   teamColor={activeTeamColor}

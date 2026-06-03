@@ -249,7 +249,21 @@ describe('canRecord', () => {
     expect(canRecord(state, 'goal')).toBe(false)
   })
 
-  it('allows goal when disc holder is set in-play', () => {
+  it('allows goal once the receiving team completes a pass', () => {
+    let session = makeSession('A')
+    session = appendEvents(session, [
+      startPoint(0),
+      { pointIndex: 0, type: 'pull', playerId: 1, teamId: 'A' },
+      { pointIndex: 0, type: 'possession', playerId: 14, teamId: 'B' },  // pull-catch
+      { pointIndex: 0, type: 'possession', playerId: 15, teamId: 'B' },  // completed pass
+    ])
+    const state = deriveGameState(session)
+    expect(canRecord(state, 'goal')).toBe(true)
+  })
+
+  // ─── No goal / Callahan off the pull ──────────────────────────────────────
+
+  it('marks the pull receiver as holderFromPull and blocks a goal off the pull-catch', () => {
     let session = makeSession('A')
     session = appendEvents(session, [
       startPoint(0),
@@ -257,6 +271,69 @@ describe('canRecord', () => {
       { pointIndex: 0, type: 'possession', playerId: 14, teamId: 'B' },
     ])
     const state = deriveGameState(session)
+    expect(state.holderFromPull).toBe(true)
+    expect(canRecord(state, 'goal')).toBe(false)
+  })
+
+  it('clears holderFromPull after a completed pass', () => {
+    let session = makeSession('A')
+    session = appendEvents(session, [
+      startPoint(0),
+      { pointIndex: 0, type: 'pull', playerId: 1, teamId: 'A' },
+      { pointIndex: 0, type: 'possession', playerId: 14, teamId: 'B' },
+      { pointIndex: 0, type: 'possession', playerId: 15, teamId: 'B' },
+    ])
+    const state = deriveGameState(session)
+    expect(state.holderFromPull).toBe(false)
+  })
+
+  it('blocks block / intercept immediately following a pull (no holder)', () => {
+    let session = makeSession('A')
+    session = appendEvents(session, [
+      startPoint(0),
+      { pointIndex: 0, type: 'pull', playerId: 1, teamId: 'A' },
+    ])
+    const state = deriveGameState(session)
+    expect(canRecord(state, 'block')).toBe(false)
+    expect(canRecord(state, 'intercept')).toBe(false)
+  })
+
+  it('allows block once the receiving team has the disc', () => {
+    let session = makeSession('A')
+    session = appendEvents(session, [
+      startPoint(0),
+      { pointIndex: 0, type: 'pull', playerId: 1, teamId: 'A' },
+      { pointIndex: 0, type: 'possession', playerId: 14, teamId: 'B' },
+    ])
+    const state = deriveGameState(session)
+    expect(canRecord(state, 'block')).toBe(true)
+    expect(canRecord(state, 'intercept')).toBe(true)
+  })
+
+  it('still allows an open-play pickup → goal (not a pull-catch)', () => {
+    let session = makeSession('A')
+    session = appendEvents(session, [
+      startPoint(0),
+      { pointIndex: 0, type: 'pull', playerId: 1, teamId: 'A' },
+      { pointIndex: 0, type: 'possession', playerId: 14, teamId: 'B' },
+      { pointIndex: 0, type: 'turnover-throw-away', playerId: 14, teamId: 'B' },
+      { pointIndex: 0, type: 'possession', playerId: 2, teamId: 'A' },  // open-play pickup
+    ])
+    const state = deriveGameState(session)
+    expect(state.holderFromPull).toBe(false)
+    expect(canRecord(state, 'goal')).toBe(true)
+  })
+
+  it('still allows a Callahan off an intercept (open play)', () => {
+    let session = makeSession('A')
+    session = appendEvents(session, [
+      startPoint(0),
+      { pointIndex: 0, type: 'pull', playerId: 1, teamId: 'A' },
+      { pointIndex: 0, type: 'possession', playerId: 14, teamId: 'B' },
+      { pointIndex: 0, type: 'intercept', playerId: 2, teamId: 'A' },
+    ])
+    const state = deriveGameState(session)
+    expect(state.holderFromPull).toBe(false)
     expect(canRecord(state, 'goal')).toBe(true)
   })
 
@@ -505,6 +582,22 @@ describe('validateSpliceBlock', () => {
     const result = validateSpliceBlock(session, splice)
     expect(result.ok).toBe(false)
     expect((result as { reason: string }).reason).toMatch(/cannot record pull/)
+  })
+
+  it('rejects a goal pasted off the pull-catch (no goal off the pull)', () => {
+    // Anchor after the opening point-start, then paste pull → pull-catch → goal.
+    // The goal is off the pull-catch, so the splice must be rejected.
+    let session = makeSession('A')
+    session = appendEvents(session, [startPoint(0)])  // 1 — awaiting-pull, B receives
+    const inner: RawEvent[] = [
+      { id: 100, timestamp: 0, pointIndex: 0, type: 'pull',       playerId: 1,  teamId: 'A' },
+      { id: 101, timestamp: 0, pointIndex: 0, type: 'possession', playerId: 14, teamId: 'B' },
+      { id: 102, timestamp: 0, pointIndex: 0, type: 'goal',       playerId: 14, teamId: 'B' },
+    ]
+    const splice = buildSplice({ id: 200, afterEventId: 1, events: inner })
+    const result = validateSpliceBlock(session, splice)
+    expect(result.ok).toBe(false)
+    expect((result as { reason: string }).reason).toMatch(/cannot record goal/)
   })
 
   it('rejects wrong-team puller after a goal', () => {

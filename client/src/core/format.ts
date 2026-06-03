@@ -55,8 +55,9 @@ export function getVisLogColor(type: VisLogEntry['type']): string {
     case 'turnover-throw-away':
       return 'var(--color-danger)'
     case 'turnover-unknown':
-      // Eye-catching red — flags a data-quality hole alongside unknown-player.
-      return 'var(--color-danger)'
+      // Dull grey — a data-quality hole, deliberately de-emphasised (not the
+      // eye-catching red of a real turnover), matching its recessive button.
+      return 'var(--color-dull)'
     case 'turnover-receiver-error':
       return 'var(--color-warn)'
     case 'turnover-stall':

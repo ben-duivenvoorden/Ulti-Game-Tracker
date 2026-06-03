@@ -120,7 +120,6 @@ interface GameStore {
   recordThrowAway:      () => void
   triggerReceiverError: () => void
   recordGoal:           () => void
-  recordUnknownPlayer:  () => void
   recordUnknownTurnover: () => void
   triggerDefBlock:      (type: 'block' | 'intercept') => void
   recordFoul:          () => void
@@ -553,7 +552,11 @@ export const useGameStore = create<GameStore>()(
         // legacy persisted state from before the toggle existed leaves
         // `passes` undefined, which we treat the same as the `true` default.
         if (state.gamePhase === 'in-play') {
-          if (get().recordingOptions.passes === false) return
+          // The Unknown-Player sentinel is the "I didn't see who" affordance, so
+          // it bypasses the Passes toggle — it must still set a holder even when
+          // individual-pass tracking is off, otherwise goals / turnovers can't be
+          // attributed at all.
+          if (player.id !== UNKNOWN_PLAYER_ID && get().recordingOptions.passes === false) return
           recordVia(get, set, s => {
             if (!canRecord(s, 'possession')) return null
             // Don't record if they already have possession
@@ -572,7 +575,9 @@ export const useGameStore = create<GameStore>()(
       // ── recordPull ──────────────────────────────────────────────────────────
       recordPull(bonus = false) {
         const { selPuller } = get()
-        if (!selPuller) return
+        // `=== null`, not `!selPuller` — the Unknown-Player sentinel is id 0
+        // (falsy) and is a valid puller (an unseen pull).
+        if (selPuller === null) return
         recordVia(get, set, state => {
           if (!canRecord(state, 'pull')) return null
           const pullingTeam = otherTeam(state.possession)
@@ -591,7 +596,8 @@ export const useGameStore = create<GameStore>()(
       // difference is purely the recorded event type (for stats / reporting).
       recordBrick() {
         const { selPuller } = get()
-        if (!selPuller) return
+        // `=== null`, not `!selPuller` — id 0 (Unknown Player) is a valid puller.
+        if (selPuller === null) return
         recordVia(get, set, state => {
           if (!canRecord(state, 'brick')) return null
           const pullingTeam = otherTeam(state.possession)
@@ -607,7 +613,7 @@ export const useGameStore = create<GameStore>()(
       // ── recordThrowAway ─────────────────────────────────────────────────────
       recordThrowAway() {
         recordVia(get, set, state => {
-          if (!canRecord(state, 'turnover-throw-away') || !state.discHolder) return null
+          if (!canRecord(state, 'turnover-throw-away') || state.discHolder === null) return null
           return [{
             pointIndex: state.pointIndex,
             type:     'turnover-throw-away',
@@ -624,7 +630,7 @@ export const useGameStore = create<GameStore>()(
       // possession), then taps Receiver Error to mark it as a drop.
       triggerReceiverError() {
         recordVia(get, set, state => {
-          if (!canRecord(state, 'turnover-receiver-error') || !state.discHolder) return null
+          if (!canRecord(state, 'turnover-receiver-error') || state.discHolder === null) return null
           return [{
             pointIndex: state.pointIndex,
             type:     'turnover-receiver-error',
@@ -647,7 +653,7 @@ export const useGameStore = create<GameStore>()(
       recordGoal() {
         const live = get().truncateCursor === null
         recordVia(get, set, state => {
-          if (!canRecord(state, 'goal') || !state.discHolder) return null
+          if (!canRecord(state, 'goal') || state.discHolder === null) return null
           return [{
             pointIndex: state.pointIndex,
             type:     'goal',
@@ -655,23 +661,6 @@ export const useGameStore = create<GameStore>()(
             teamId:   state.possession,
           }]
         }, live ? { screen: 'point-summary' } : undefined)
-      },
-
-      // ── recordUnknownPlayer ───────────────────────────────────────────────────
-      // Marks the Unknown-Player sentinel (PlayerId 0) as the current disc
-      // holder — a placeholder when the recorder missed who has the disc but
-      // wants to keep the chain going. Recorded as a possession by player 0.
-      recordUnknownPlayer() {
-        recordVia(get, set, state => {
-          if (!canRecord(state, 'possession')) return null
-          if (state.discHolder === UNKNOWN_PLAYER_ID) return null
-          return [{
-            pointIndex: state.pointIndex,
-            type:     'possession',
-            playerId: UNKNOWN_PLAYER_ID,
-            teamId:   state.possession,
-          }]
-        })
       },
 
       // ── recordUnknownTurnover ─────────────────────────────────────────────────
@@ -867,7 +856,7 @@ export const useGameStore = create<GameStore>()(
 
       recordStall() {
         recordVia(get, set, state => {
-          if (!canRecord(state, 'turnover-stall') || !state.discHolder) return null
+          if (!canRecord(state, 'turnover-stall') || state.discHolder === null) return null
           return [{
             pointIndex: state.pointIndex,
             type:     'turnover-stall',

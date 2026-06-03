@@ -1,10 +1,16 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-import type { VisLogEntry, Player, TeamId } from '@/core/types'
+import { UNKNOWN_PLAYER_ID, type VisLogEntry, type Player, type TeamId } from '@/core/types'
 import { inkOn } from '@/core/contrast'
 
 interface PassNotationProps {
   visLog: VisLogEntry[]
   players: Player[]
+  /** Total number of flex rows in the PlayerColumn — players PLUS the
+   *  always-present Unknown-Player tile and any running-start `+` / filler
+   *  slots. Circle Y-centres divide the column height by THIS (not
+   *  players.length), so they land on the real player-tile centres; the tiles
+   *  shrink and rise as slots are added. Matches the SankeyBridge geometry. */
+  slotCount: number
   activeTeam: TeamId
   /** Active team's brand colour. Drives the contrast pick (light circles
    *  + lines on dark team colours, dark on light team colours) so the
@@ -49,7 +55,7 @@ const INK_DARK    = '#111111'
 // circles = the last (VISIBLE_PASSES) prior passers. Lines connect
 // consecutive chain nodes with alternating curve direction so each new
 // pass introduces a distinct bow.
-export function PassNotation({ visLog, players, activeTeam, teamColor, passesEnabled, playersOn }: PassNotationProps) {
+export function PassNotation({ visLog, players, slotCount, activeTeam, teamColor, passesEnabled, playersOn }: PassNotationProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
   useLayoutEffect(() => {
@@ -70,7 +76,6 @@ export function PassNotation({ visLog, players, activeTeam, teamColor, passesEna
   }
 
   const chain = deriveChain(visLog, activeTeam, players, VISIBLE_PASSES)
-  const N = players.length
   // Same contrast pick the player-pill text uses, so the notation
   // automatically inverts for light team colours (e.g. white kits).
   const notationColor = inkOn(teamColor, INK_LIGHT, INK_DARK)
@@ -111,8 +116,8 @@ export function PassNotation({ visLog, players, activeTeam, teamColor, passesEna
             // recorded pass introduces the next chainIdx, which is by
             // construction opposite the previous one.
             const sign = (dst.chainIdx % 2 === 0) ? +1 : -1
-            const y1 = rowCenter(src.playerIdx, N, size.h)
-            const y2 = rowCenter(dst.playerIdx, N, size.h)
+            const y1 = rowCenter(src.playerIdx, slotCount, size.h)
+            const y2 = rowCenter(dst.playerIdx, slotCount, size.h)
             const ctrlX = circleX + outwardSign * sign * CURVE_MAG
             const ctrlY = (y1 + y2) / 2
             const d = `M ${circleX} ${y1} Q ${ctrlX} ${ctrlY} ${circleX} ${y2}`
@@ -144,7 +149,7 @@ export function PassNotation({ visLog, players, activeTeam, teamColor, passesEna
           {chain.map((node, i) => {
             const isActive = i === chain.length - 1
             if (!isActive && node.playerIdx === activeIdx) return null
-            const cy = rowCenter(node.playerIdx, N, size.h)
+            const cy = rowCenter(node.playerIdx, slotCount, size.h)
             return isActive ? (
               // Active (solid) circle: paint-order draws the halo stroke
               // first, then the fill on top — leaving a HALO_W/2 ring of
@@ -227,7 +232,9 @@ function deriveChain(
 
   const nodes: ChainNode[] = []
   for (let i = 0; i < raw.length; i++) {
-    const idx = players.findIndex(p => p.id === raw[i])
+    // The Unknown-Player sentinel isn't a line member; it renders in the row
+    // directly after the roster, so map it to `players.length`.
+    const idx = raw[i] === UNKNOWN_PLAYER_ID ? players.length : players.findIndex(p => p.id === raw[i])
     if (idx >= 0) nodes.push({ playerIdx: idx, chainIdx: i })
   }
   return nodes.slice(-(maxArrows + 1))

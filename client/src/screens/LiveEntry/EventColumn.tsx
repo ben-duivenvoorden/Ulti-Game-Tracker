@@ -24,7 +24,6 @@ interface EventColumnProps {
   onBlock:         () => void
   onIntercept:     () => void
   onStall:         () => void
-  onUnknownPlayer:   () => void
   onUnknownTurnover: () => void
 
   // Awaiting-pull
@@ -42,6 +41,10 @@ interface EventBtnDef {
   enabled:  boolean
   onTap:    () => void
   hidden?:  boolean
+  /** Dull variant — grey, dotted, recessive. Used for the de-emphasised
+   *  data-quality affordance (Unknown Turnover): readable, but not as
+   *  enticing to press as the solid category buttons. */
+  dull?:    boolean
 }
 
 // In-play layout: turnover cluster at the top, ordered receiver-first
@@ -110,20 +113,14 @@ export function EventColumn(props: EventColumnProps) {
       onTap: props.onStall,
     },
     {
-      // Data-quality hole: the disc is now held by someone we couldn't
-      // identify. Records a possession by the Unknown-Player sentinel so the
-      // chain keeps going. Eye-catching red.
-      label: 'Unknown player',
-      fg:    'var(--color-danger)',
-      ink:   '#fff',
-      enabled: armed && inPlay && canRecord(state, 'possession'),
-      onTap: props.onUnknownPlayer,
-    },
-    {
-      // A turnover we couldn't fully attribute. No holder required.
+      // A turnover we couldn't fully attribute. No holder required. Styled
+      // grey + dull + dotted (not the eye-catching category colours) so it
+      // reads as a fallback, not a primary action. (Unknown Player now lives
+      // in the player column — it's a player-attribution choice, not an event.)
       label: 'Unknown turnover',
-      fg:    'var(--color-danger)',
-      ink:   '#fff',
+      fg:    'var(--color-dull)',
+      ink:   'var(--color-content)',
+      dull:  true,
       enabled: armed && inPlay && canRecord(state, 'turnover-unknown'),
       onTap: props.onUnknownTurnover,
     },
@@ -131,9 +128,11 @@ export function EventColumn(props: EventColumnProps) {
       label: 'Goal',
       fg:    'var(--color-success)',
       ink:   '#fff',
-      // Any possession — including a fresh block / intercept — can be
-      // followed by a goal. Post-log analysis flags the
-      // block/intercept → goal pair as a Callahan.
+      // Most possessions — including a fresh block / intercept — can be
+      // followed by a goal (post-log analysis flags the block/intercept → goal
+      // pair as a Callahan). The exception is the pull-catch: `canRecord`
+      // disables Goal until the receiving team completes ≥1 pass (no goal /
+      // Callahan off a pull).
       enabled: armed && inPlay && hasHolder && canRecord(state, 'goal'),
       onTap: props.onGoal,
     },
@@ -165,22 +164,28 @@ export function EventColumn(props: EventColumnProps) {
     },
   ]
 
-  // In-play: turnover-family buttons + the two unknown-data buttons,
-  // followed by Goal at the bottom. Awaiting-pull: Pull / Bonus / Brick.
-  // Plus a gap + the More button at the bottom, separate from the group.
+  // In-play: turnover-family buttons + Unknown turnover, followed by Goal at
+  // the bottom. Awaiting-pull: Pull / Bonus / Brick. Plus filler rows + the
+  // More button at the bottom, separate from the group.
   const actionButtons = inPlay
     ? inPlayButtons.filter(b => !b.hidden)
     : awaitingPullButtons.filter(b => !b.hidden)
-  // Pad to match playerCount so each action tile renders at player-tile
-  // height. The spacer between actions and More carries the remainder.
-  const gapFlex = Math.max(0, playerCount - actionButtons.length - 1)
+  // Filler rows between the actions and More so the event column has exactly
+  // `playerCount` equal flex rows — structurally identical to the player
+  // column (same child + gap count). This keeps every action tile at
+  // player-tile height AND keeps the SankeyBridge wrap (which sizes tiles from
+  // playerCount, i.e. playerCount-1 gaps) flush around the action buttons. A
+  // single collapsed `flex` spacer under-counts gaps, so the wrap falls short
+  // of the last action button — most visible around the 3 pull options on
+  // awaiting-pull, where the filler region is largest.
+  const fillerRows = Math.max(0, playerCount - actionButtons.length - 1)
 
   return (
     <div className="flex flex-col gap-4 p-3 h-full overflow-y-auto">
       {actionButtons.map((b, i) => <EventBtn key={`a${i}`} {...b} />)}
-      {gapFlex > 0 && (
-        <div className="min-h-0" style={{ flex: gapFlex }} aria-hidden />
-      )}
+      {Array.from({ length: fillerRows }).map((_, i) => (
+        <div key={`f${i}`} className="flex-1 min-h-0" aria-hidden />
+      ))}
       <EventBtn
         label="More"
         fg="var(--color-muted)"
@@ -192,8 +197,15 @@ export function EventColumn(props: EventColumnProps) {
   )
 }
 
-function EventBtn({ label, fg, ink, enabled, onTap }: EventBtnDef) {
+function EventBtn({ label, fg, ink, enabled, dull, onTap }: EventBtnDef) {
   const [first, rest] = splitLabel(label)
+  // Disabled state drops the category colour entirely for a flat grey that
+  // reads as "not available" (matches the ineligible-pill treatment in
+  // PlayerColumn). The dull variant is recessive even when enabled: a grey,
+  // dotted outline on the dark surface rather than a solid colour fill.
+  const background  = !enabled ? 'var(--color-surf-2)' : dull ? 'var(--color-surf-2)' : fg
+  const color       = !enabled ? 'var(--color-dim)'    : dull ? 'var(--color-dull)'   : ink
+  const borderColor = !enabled ? 'var(--color-border)' : dull ? 'var(--color-dull)'   : fg
   return (
     <button
       type="button"
@@ -201,12 +213,10 @@ function EventBtn({ label, fg, ink, enabled, onTap }: EventBtnDef) {
       disabled={!enabled}
       className="flex-1 min-h-0 rounded-xl border-2 cursor-pointer transition-colors select-none disabled:cursor-default flex flex-col items-center justify-center px-2 text-center"
       style={{
-        // Disabled state drops the category colour entirely for a flat
-        // grey that reads as "not available" against the dark background
-        // — matches the ineligible-pill treatment in PlayerColumn.
-        background:    enabled ? fg                       : 'var(--color-surf-2)',
-        color:         enabled ? ink                      : 'var(--color-dim)',
-        borderColor:   enabled ? fg                       : 'var(--color-border)',
+        background,
+        color,
+        borderColor,
+        borderStyle:   dull ? 'dotted' : 'solid',
         fontWeight:    700,
         letterSpacing: 0.2,
         lineHeight:    1.15,

@@ -1,6 +1,35 @@
-import { useRef } from 'react'
-import type { Player, PlayerId } from '@/core/types'
+import { useRef, type CSSProperties } from 'react'
+import { UNKNOWN_PLAYER_ID, type Player, type PlayerId } from '@/core/types'
 import { inkOn } from '@/core/contrast'
+
+// Shared "dull" tile look for the non-player affordances in the column — the
+// `+` add slot and the Unknown-Player tile — matching the event column's
+// "Unknown turnover" button: grey surface, dull dotted outline, recessive so
+// they don't compete with the solid player pills.
+const DULL_TILE_CLASS =
+  'flex-1 min-h-0 rounded-xl border-2 cursor-pointer transition-colors select-none flex flex-col items-center justify-center px-2 text-center'
+const DULL_TILE_STYLE: CSSProperties = {
+  background:    'var(--color-surf-2)',
+  color:         'var(--color-dull)',
+  borderColor:   'var(--color-dull)',
+  borderStyle:   'dotted',
+  fontWeight:    700,
+  letterSpacing: 0.2,
+  lineHeight:    1.15,
+}
+// Active state for the Unknown-Player tile — it can hold the disc / be the
+// puller just like a real player, so it lights up when selected. Mirrors the
+// roster-pill active look: transparent fill + white ink, letting the Sankey
+// wash (now anchored to its row) show through and read as one group.
+const UNKNOWN_ACTIVE_STYLE: CSSProperties = {
+  background:    'transparent',
+  color:         '#fff',
+  borderColor:   'transparent',
+  borderStyle:   'solid',
+  fontWeight:    700,
+  letterSpacing: 0.2,
+  lineHeight:    1.15,
+}
 
 interface PlayerColumnProps {
   players: Player[]
@@ -25,6 +54,11 @@ interface PlayerColumnProps {
   onAddSlot?: () => void
   /** Remove a player from the line (shown as a ✕ badge while in Move mode). */
   onRemove?: (player: Player) => void
+  /** Tap the always-present "Unknown Player" tile. Behaves like tapping a real
+   *  player tile, but with the Unknown-Player sentinel — selects the puller
+   *  (awaiting-pull), records a possession (in-play), or resolves a pick
+   *  (block / intercept), for when the recorder missed who it was. */
+  onUnknownPlayer?: () => void
 }
 
 const LONG_PRESS_MS = 450
@@ -34,12 +68,15 @@ const LONG_PRESS_MS = 450
 // then tap another player to swap their positions.
 export function PlayerColumn(props: PlayerColumnProps) {
   const { players, teamColor, holderId, pullerId, ineligibleIds, onTap, onLongPress, moveSelectedId,
-          lineSize, onAddSlot, onRemove } = props
+          lineSize, onAddSlot, onRemove, onUnknownPlayer } = props
   const timerRef    = useRef<number | null>(null)
   const triggeredRef = useRef(false)
   const downIdRef   = useRef<PlayerId | null>(null)
   const inMoveMode = moveSelectedId !== null && moveSelectedId !== undefined
   const emptySlots = Math.max(0, (lineSize ?? 0) - players.length)
+  // The Unknown-Player tile holds the disc / is the puller exactly like a
+  // roster player — light it up when it's the active selection.
+  const unknownActive = holderId === UNKNOWN_PLAYER_ID || pullerId === UNKNOWN_PLAYER_ID
 
   const clearTimer = () => {
     if (timerRef.current !== null) {
@@ -149,18 +186,47 @@ export function PlayerColumn(props: PlayerColumnProps) {
           </button>
         )
       })}
-      {/* Running-start empty slots — tap to backfill a player mid-point. */}
-      {Array.from({ length: emptySlots }).map((_, i) => (
+      {/* Unknown-player tile — always present, sitting directly beneath the
+          roster like another line member. It taps through the same handler as a
+          real player (puller / possession / pick), and lights up when it's the
+          active selection. Grey + dull + dotted at rest (matching the event
+          column's "Unknown turnover" button) so it reads as a fallback. */}
+      <button
+        type="button"
+        onClick={() => onUnknownPlayer?.()}
+        className={DULL_TILE_CLASS}
+        style={unknownActive ? UNKNOWN_ACTIVE_STYLE : DULL_TILE_STYLE}
+        title="Attribute this action to an unidentified player"
+      >
+        <span className="block w-full text-center truncate" style={{ fontSize: 'clamp(14px, 4.5vw, 20px)' }}>
+          Unknown
+        </span>
+        <span className="block w-full text-center truncate" style={{ fontSize: 'clamp(14px, 4.5vw, 20px)' }}>
+          Player
+        </span>
+      </button>
+      {/* Running-start: a single `+` slot to backfill the next player —
+          tap to open the picker. Capped at one regardless of how many line
+          slots are still empty. Sits below the Unknown-Player tile. */}
+      {emptySlots > 0 && (
         <button
-          key={`slot-${i}`}
+          key="slot"
           type="button"
           onClick={() => onAddSlot?.()}
-          className="flex-1 min-h-0 rounded-xl border-2 border-dashed cursor-pointer transition-all select-none flex items-center justify-center"
-          style={{ borderColor: `${teamColor}88`, background: `${teamColor}14`, color: teamColor }}
+          className={DULL_TILE_CLASS}
+          style={DULL_TILE_STYLE}
           title="Add a player to the line"
         >
-          <span style={{ fontSize: 'clamp(20px, 6vw, 30px)', fontWeight: 700, lineHeight: 1 }}>+</span>
+          <span style={{ fontSize: 'clamp(20px, 6vw, 30px)', lineHeight: 1 }}>+</span>
         </button>
+      )}
+      {/* Invisible filler rows for the still-empty line slots — placed last so
+          the empty slack falls BELOW the Unknown-Player tile. Keeps the column
+          at `lineSize + 1` flex children so every tile stays the same height as
+          a full line (no stretching) and the Sankey / event-column geometry
+          stays aligned. Mirrors EventColumn's fillers. */}
+      {Array.from({ length: Math.max(0, emptySlots - 1) }).map((_, i) => (
+        <div key={`slot-fill-${i}`} className="flex-1 min-h-0" aria-hidden />
       ))}
     </div>
   )
