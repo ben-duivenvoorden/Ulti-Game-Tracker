@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json.schemastore.org/staticwebapp.config.json",
+  "routes": [
+    { "route": "/app", "redirect": "/app/", "statusCode": 301 }
+  ],
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": ["/app/*"]
+  }
+}

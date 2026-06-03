@@ -7,3 +7,6 @@ node_modules
 
 # Local-only working docs (plans, design notes, feedback). Kept on disk, not tracked.
 docs/
+
+# Combined single-SWA build output (landing + app), produced by scripts/build-site.mjs
+dist-site/

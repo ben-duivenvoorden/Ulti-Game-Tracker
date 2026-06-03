@@ -1,10 +1,12 @@
-import { APP_URL, GITHUB_URL } from '../constants'
+import { GITHUB_URL } from '../constants'
 import Wordmark from './Wordmark'
 import { GitHubIcon } from './icons'
+import { usePreview } from '../preview'
 
 // Sticky, translucent top bar. Section anchors collapse on small screens; the
-// GitHub + Try-the-web-app actions stay visible at every width.
+// GitHub + Preview-the-web-app actions stay visible at every width.
 export default function Nav() {
+  const { previewLinkProps } = usePreview()
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-border/70 bg-bg/70 backdrop-blur-md">
       <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 sm:px-8">
@@ -30,9 +32,7 @@ export default function Nav() {
             <GitHubIcon className="h-5 w-5" />
           </a>
           <a
-            href={APP_URL}
-            target="_blank"
-            rel="noopener noreferrer"
+            {...previewLinkProps}
             className="rounded-lg bg-accent px-3.5 py-2 text-sm font-semibold text-content shadow-lg shadow-accent/25 transition-colors hover:bg-accent/90"
           >
             Preview the web app
