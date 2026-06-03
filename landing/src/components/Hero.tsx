@@ -42,7 +42,8 @@ export default function Hero() {
           className="animate-enter mt-6 max-w-2xl text-lg leading-relaxed text-muted sm:text-xl"
           style={{ animationDelay: '120ms' }}
         >
-          A fast, offline-first web app that makes tracking a live game easy.
+          A fast, offline-first web app that makes tracking a live game of
+          ultimate frisbee easy.
         </p>
 
         <div
