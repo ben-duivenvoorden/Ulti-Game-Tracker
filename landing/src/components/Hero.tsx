@@ -57,7 +57,7 @@ export default function Hero() {
             rel="noopener noreferrer"
             className="group inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-6 py-3 text-base font-semibold text-content shadow-lg shadow-accent/25 transition-colors hover:bg-accent/90"
           >
-            Open the web app
+            Preview the web app
             <ArrowRightIcon className="h-5 w-5 transition-transform group-hover:translate-x-0.5" />
           </a>
           <a

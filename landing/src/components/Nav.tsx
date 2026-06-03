@@ -35,7 +35,7 @@ export default function Nav() {
             rel="noopener noreferrer"
             className="rounded-lg bg-accent px-3.5 py-2 text-sm font-semibold text-content shadow-lg shadow-accent/25 transition-colors hover:bg-accent/90"
           >
-            Try the web app
+            Preview the web app
           </a>
         </div>
       </nav>
