@@ -37,6 +37,9 @@ param branch string = 'main'
 @allowed([ 'centralus', 'eastus2', 'westus2', 'westeurope' ])
 param staticWebAppLocation string = 'westus2'
 
+@description('Custom apex domain to serve the SPA from (Phase 7). Empty = no DNS zone / custom-domain wiring. When set, an Azure DNS zone is provisioned and its name servers are output for delegation at the registrar (Namecheap). The apex TXT + ALIAS records and managed TLS cert are auto-created by SWA when the domain is added "on Azure DNS"; the staticSites/customDomains binding is codified later (once validated).')
+param customDomain string = 'ultigametracker.com'
+
 // ─── Naming ───────────────────────────────────────────────────────────────────
 // Follows CAF convention: <type>-<workload>-<env>-<region>. Instance suffix
 // (`-001`) deliberately omitted — single-instance hobby project. Global-unique
@@ -63,6 +66,13 @@ var planName           = 'asp-${namePrefix}-${environment}-${regionCode}'       
 var functionAppName    = 'func-${namePrefix}-${environment}-${regionCode}'        // e.g. func-ugt-prod-aue
 var staticWebAppName   = 'stapp-${namePrefix}-${environment}-${regionCode}'       // e.g. stapp-ugt-prod-aue
 var rawContainerName   = 'raw'
+
+// CORS origins the Function App accepts. Always the SWA default hostname; when a
+// custom domain is configured, also the apex + www (both https-only).
+var corsAllowedOrigins = concat(
+  [ 'https://${staticWebApp.properties.defaultHostname}' ],
+  empty(customDomain) ? [] : [ 'https://${customDomain}', 'https://www.${customDomain}' ]
+)
 
 // Common tags applied to every resource. The Bicep file declares this once;
 // child resources inherit via `tags: commonTags`.
@@ -139,7 +149,7 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'RAW_BLOB_NAME',                value: 'events.csv' }
       ]
       cors: {
-        allowedOrigins:     [ 'https://${staticWebApp.properties.defaultHostname}' ]
+        allowedOrigins:     corsAllowedOrigins
         supportCredentials: false
       }
     }
@@ -184,6 +194,34 @@ resource staticWebApp 'Microsoft.Web/staticSites@2024-04-01' = {
   }
 }
 
+// ─── Custom domain DNS (Phase 7) ───────────────────────────────────────────────
+// Azure-hosted DNS zone for the apex domain. Delegate the registrar's name
+// servers (Namecheap → Custom DNS) to the `dnsZoneNameServers` output, then add
+// the domain to the SWA "on Azure DNS" — SWA auto-creates the apex TXT + ALIAS
+// records and provisions a managed TLS cert. The `www` CNAME is codified here so
+// it's reproducible; the apex/www staticSites/customDomains bindings are added
+// once the apex validates (see plan step 6).
+
+resource dnsZone 'Microsoft.Network/dnszones@2023-07-01-preview' = if (!empty(customDomain)) {
+  name:     customDomain
+  location: 'global'
+  tags:     commonTags
+  properties: {
+    zoneType: 'Public'
+  }
+}
+
+resource wwwCname 'Microsoft.Network/dnszones/CNAME@2023-07-01-preview' = if (!empty(customDomain)) {
+  parent: dnsZone
+  name:   'www'
+  properties: {
+    TTL: 3600
+    CNAMERecord: {
+      cname: staticWebApp.properties.defaultHostname
+    }
+  }
+}
+
 // ─── Outputs ──────────────────────────────────────────────────────────────────
 
 output storageAccountName string = storage.name
@@ -192,3 +230,6 @@ output functionAppName    string = functionApp.name
 output functionAppUrl     string = 'https://${functionApp.properties.defaultHostName}'
 output staticWebAppName   string = staticWebApp.name
 output staticWebAppUrl    string = 'https://${staticWebApp.properties.defaultHostname}'
+output customDomainUrl    string = empty(customDomain) ? '' : 'https://${customDomain}'
+// The 4 Azure name servers to enter at the registrar (Namecheap → Custom DNS).
+output dnsZoneNameServers array = dnsZone.?properties.nameServers ?? []
