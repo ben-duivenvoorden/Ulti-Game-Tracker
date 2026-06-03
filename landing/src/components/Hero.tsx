@@ -42,7 +42,7 @@ export default function Hero() {
           className="animate-enter mt-6 max-w-2xl text-lg leading-relaxed text-muted sm:text-xl"
           style={{ animationDelay: '120ms' }}
         >
-          A fast, offline-first web app that makes tracking a game effortless.
+          A fast, offline-first web app that makes tracking a live game easy.
         </p>
 
         <div
