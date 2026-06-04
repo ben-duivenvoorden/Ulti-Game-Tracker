@@ -1,73 +1,48 @@
-# React + TypeScript + Vite
+# Ulti Game Tracker — web app
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The mobile-first SPA scorers use on the sideline. Ships to **`/app`** on the combined site (see the root `README.md` for the big picture and deployment).
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **React 19 + TypeScript** (strict) + **Vite**
+- **Tailwind v4** via `@tailwindcss/vite` — design tokens live in `src/index.css` under `@theme`
+- **Zustand v5** with `persist` middleware — the store holds an append-only `rawLog` plus transient UI state
+- **Vitest** for tests
+- Path alias: `@` → `src/` (`vite.config.ts` + `tsconfig`)
 
-## React Compiler
+## Architecture
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+`session.rawLog` is the single source of truth for game history. `deriveGameState(session)` (`core/engine.ts`) is a **pure function** over the log — the store never stores derived state like the score, phase, or active line. Game phases are derived; `canRecord(state, eventType)` is the single guard for every recording action.
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```
+src/
+  core/
+    types.ts        domain types + the RawEvent union
+    engine.ts       deriveGameState · step · canRecord · log resolution (undo/amend/truncate/splice)
+    store.ts        Zustand store + persist (STORAGE_VERSION + migrate)
+    sync.ts         best-effort one-way log → /api/events (per-segment cursor; noop if VITE_API_BASE_URL unset)
+    games/          scheduled-games append-only log
+    teams/          teams + rosters append-only log
+    selectors.ts · format.ts · contrast.ts · serverLog.ts · wire.ts · data.ts · …
+  screens/          GameSetup · NewGame · GameSettings · TeamsManager · LineSelection · LiveEntry · PointSummary
+  components/ui/    Btn · Chip · Label · Icons   (+ MomentBackdrop · PromptSheet · ConfirmSheet)
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Adding a new event type touches three files: `types.ts` (union + interface), `engine.ts` (`step` + `canRecord`), `format.ts` (label + colour). See `../design/component-map/README.md` for the component glossary and screen wireframes.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Develop
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```sh
+npm install
+npm run dev        # http://localhost:5173
+npm run build      # tsc -b && vite build  -> dist/
+npm test           # vitest run
+npm run test:watch
+npm run lint
 ```
+
+After any change, run `npx tsc -b && npx vitest run` — both must be clean before committing.
+
+## Sync (optional)
+
+`core/sync.ts` mirrors the log to the API one event at a time. It's a strict noop unless `VITE_API_BASE_URL` is set, so `npm run dev` is fully local by default. When enabled it tracks a per-segment cursor in `localStorage` and retries on the next store change or a 30s tick — offline-safe.
