@@ -489,10 +489,11 @@ function SankeyBridge({
   const LANE_W  = 16   // matches the centre spacer (w-4)
   const COL_PAD = 12   // matches PlayerColumn/EventColumn p-3
   const GAP     = 16   // matches PlayerColumn/EventColumn gap-4
-  // Outer corners of the encompass — larger than the pill's own rounded-xl
-  // (12 px) so the wrap reads as a softer ribbon around the pill rather
-  // than tracing its corners tightly.
-  const RADIUS  = 18
+  // Corner radii. The events side keeps a soft 18 px; the player-tile corners
+  // hug at the tile's own rounded-xl (12 px) so the wrap traces the button
+  // rather than bowing past its corners.
+  const RADIUS        = 18
+  const PLAYER_RADIUS = 12
   const EVT_PAD     = 9   // px the encompass extends past the action tiles on all four sides
   // The events-side BOTTOM gets extra room below the last action tile — but
   // only for the pull stack (Pull / Bonus / Brick), where it was crowding the
@@ -578,7 +579,7 @@ function SankeyBridge({
   // curve takes over directly).
   const d = playerLeft
     ? [
-        `M ${tileL + RADIUS} ${activeTop}`,
+        `M ${tileL + PLAYER_RADIUS} ${activeTop}`,
         `L ${sourceX} ${activeTop}`,
         `C ${ctrlPX} ${activeTop}, ${ctrlEX} ${evtTop}, ${targetX} ${evtTop}`,
         `L ${evtR - RADIUS} ${evtTop}`,
@@ -587,14 +588,14 @@ function SankeyBridge({
         arc(evtR - RADIUS, evtBottom),
         `L ${targetX} ${evtBottom}`,
         `C ${ctrlEX} ${evtBottom}, ${ctrlPX} ${activeBottom}, ${sourceX} ${activeBottom}`,
-        `L ${tileL + RADIUS} ${activeBottom}`,
-        arc(tileL, activeBottom - RADIUS),
-        `L ${tileL} ${activeTop + RADIUS}`,
-        arc(tileL + RADIUS, activeTop),
+        `L ${tileL + PLAYER_RADIUS} ${activeBottom}`,
+        `A ${PLAYER_RADIUS} ${PLAYER_RADIUS} 0 0 1 ${tileL} ${activeBottom - PLAYER_RADIUS}`,
+        `L ${tileL} ${activeTop + PLAYER_RADIUS}`,
+        `A ${PLAYER_RADIUS} ${PLAYER_RADIUS} 0 0 1 ${tileL + PLAYER_RADIUS} ${activeTop}`,
         'Z',
       ].join(' ')
     : [
-        `M ${tileR - RADIUS} ${activeTop}`,
+        `M ${tileR - PLAYER_RADIUS} ${activeTop}`,
         `L ${sourceX} ${activeTop}`,
         `C ${ctrlPX} ${activeTop}, ${ctrlEX} ${evtTop}, ${targetX} ${evtTop}`,
         `L ${evtL + RADIUS} ${evtTop}`,
@@ -603,10 +604,10 @@ function SankeyBridge({
         `A ${RADIUS} ${RADIUS} 0 0 0 ${evtL + RADIUS} ${evtBottom}`,
         `L ${targetX} ${evtBottom}`,
         `C ${ctrlEX} ${evtBottom}, ${ctrlPX} ${activeBottom}, ${sourceX} ${activeBottom}`,
-        `L ${tileR - RADIUS} ${activeBottom}`,
-        `A ${RADIUS} ${RADIUS} 0 0 0 ${tileR} ${activeBottom - RADIUS}`,
-        `L ${tileR} ${activeTop + RADIUS}`,
-        `A ${RADIUS} ${RADIUS} 0 0 0 ${tileR - RADIUS} ${activeTop}`,
+        `L ${tileR - PLAYER_RADIUS} ${activeBottom}`,
+        `A ${PLAYER_RADIUS} ${PLAYER_RADIUS} 0 0 0 ${tileR} ${activeBottom - PLAYER_RADIUS}`,
+        `L ${tileR} ${activeTop + PLAYER_RADIUS}`,
+        `A ${PLAYER_RADIUS} ${PLAYER_RADIUS} 0 0 0 ${tileR - PLAYER_RADIUS} ${activeTop}`,
         'Z',
       ].join(' ')
 
