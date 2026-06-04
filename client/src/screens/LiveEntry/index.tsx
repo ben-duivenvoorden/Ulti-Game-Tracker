@@ -498,7 +498,12 @@ function SankeyBridge({
   // only for the pull stack (Pull / Bonus / Brick), where it was crowding the
   // Brick edge. In-play keeps the tighter all-sides pad.
   const EVT_PAD_BOTTOM = awaitingPull ? EVT_PAD * 2 : EVT_PAD
-  const PLAYER_PAD  = 9   // px the encompass extends past the active player tile on all four sides
+  // The outline hugs the active player tile directly (no halo). The active
+  // tile renders its own border transparent, so this wrap IS its outline —
+  // tracing its top / outer / bottom edges reads cleaner than a spacer around
+  // it. The bridge-facing (inner) side isn't traced; the ribbon springs from
+  // there toward the events.
+  const PLAYER_PAD  = 0
   // How far INSIDE each region's bridge-facing edge the bezier attaches.
   // Larger = shorter flat segments along both the player pill and the
   // events region, so the sankey curve begins earlier on both sides
