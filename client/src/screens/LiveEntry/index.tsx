@@ -489,31 +489,35 @@ function SankeyBridge({
   const LANE_W  = 16   // matches the centre spacer (w-4)
   const COL_PAD = 12   // matches PlayerColumn/EventColumn p-3
   const GAP     = 16   // matches PlayerColumn/EventColumn gap-4
-  // Corner radii. The events side keeps a soft 18 px; the player-tile corners
-  // hug at the tile's own rounded-xl (12 px) so the wrap traces the button
-  // rather than bowing past its corners.
-  const RADIUS        = 18
-  const PLAYER_RADIUS = 12
-  const EVT_PAD     = 9   // px the encompass extends past the action tiles on all four sides
+  // ★ TUNE ME ★ RADIUS — how much the sankey wrap's corners are ROUNDED where it
+  // surrounds the player tile and the events region (bigger = more rounding that
+  // eats into the corner). Shared by both sides; the tiles are rounded-xl = 12.
+  const PLAYER_EVT_RADIUS = 12
+  const PLAYER_EVT_PAD = 5   // px the encompass extends past the action tiles on all four sides
+  const EVT_PAD = PLAYER_EVT_PAD   // px the encompass extends past the action tiles on all four sides
   // The events-side BOTTOM gets extra room below the last action tile — but
   // only for the pull stack (Pull / Bonus / Brick), where it was crowding the
   // Brick edge. In-play keeps the tighter all-sides pad.
-  const EVT_PAD_BOTTOM = awaitingPull ? EVT_PAD * 2 : EVT_PAD
+  const EVT_PAD_BOTTOM = 0 + (awaitingPull ? EVT_PAD + 6 : EVT_PAD)
   // The outline hugs the active player tile directly (no halo). The active
   // tile renders its own border transparent, so this wrap IS its outline —
   // tracing its top / outer / bottom edges reads cleaner than a spacer around
   // it. The bridge-facing (inner) side isn't traced; the ribbon springs from
   // there toward the events.
-  const PLAYER_PAD  = 0
-  // How far INSIDE each region's bridge-facing edge the bezier attaches.
-  // Larger = shorter flat segments along both the player pill and the
-  // events region, so the sankey curve begins earlier on both sides
-  // rather than springing off the very corners.
-  const BRIDGE_INSET = 12
-  // Bezier control-point bias along the bridge. Higher = control points
-  // sit closer to the opposite tile, so the curve stays flat next to the
-  // tile it springs from and only bends in the middle. Smooths the
-  // perceived transition where the bridge meets the straight tile edges.
+  const PLAYER_PAD  = PLAYER_EVT_PAD
+  // ★ TUNE ME ★ CURVE OFFSET — where the bridge curve STARTS, i.e. how far in from
+  // each region's bridge-facing corner the flat edge ends and the curve springs.
+  // Not a radius (the corner rounding is RADIUS above); just a position. Split per
+  // side. Larger = longer neck / shorter flat edge; 0 = springs from the corner.
+  const SANKEY_PLAYER_RADIUS = PLAYER_EVT_RADIUS
+  const EVENT_CURVE_RADIUS  = PLAYER_EVT_RADIUS
+  // ★ TUNE ME ★ Bezier handle length along the bridge (0–1). It sets how long
+  // each control handle reaches toward the opposite anchor:
+  //   1.0  → handles reach the far anchor: flat at the tiles, vertical centre.
+  //   0.5  → handles at the midpoint: gentle S, centre angles along the anchors.
+  //   ~0.25→ short handles: tighter curve right AT the anchors, straighter middle.
+  //   0.0  → straight diagonal line (no curve).
+  // Lower = more curve near the anchors.
   const BRIDGE_EASE = 1
 
   if (size.w === 0 || size.h === 0 || playerCount <= 0 || actionCount <= 0) {
@@ -554,16 +558,12 @@ function SankeyBridge({
   const evtL  = playerLeft ? colWidth + LANE_W + COL_PAD - EVT_PAD : COL_PAD - EVT_PAD
   const evtR  = playerLeft ? W - COL_PAD + EVT_PAD          : colWidth - COL_PAD + EVT_PAD
 
-  // Source/target points for the bridge curves — the edges that face
-  // each other across the pass lane. Both are pulled INWARD from the
-  // padded edges by BRIDGE_INSET, so the flat segments along the
-  // pill's and the events region's top/bottom are shorter and the
-  // bezier begins/ends earlier on both sides.
-  // Player side: run the flat top/bottom edges the FULL width to the tile's
-  // sankey-side corner (a square corner there), then let the bezier spring from
-  // the corner. The events side keeps BRIDGE_INSET so its flat segment is shorter.
-  const sourceX = playerLeft ? tileR : tileL
-  const targetX = playerLeft ? evtL  + BRIDGE_INSET : evtR  - BRIDGE_INSET
+  // Source/target points for the bridge curves — the edges that face each other
+  // across the pass lane. Each side is pulled inward from its bridge-facing edge
+  // by its own curve offset (player vs events), so the flat top/bottom segment
+  // is shorter and the bezier springs earlier. 0 = spring from the very corner.
+  const sourceX = playerLeft ? tileR - SANKEY_PLAYER_RADIUS : tileL + SANKEY_PLAYER_RADIUS
+  const targetX = playerLeft ? evtL  + EVENT_CURVE_RADIUS  : evtR  - EVENT_CURVE_RADIUS
   // Asymmetric control-point X coords — biased toward the OTHER tile so
   // the bezier eases out of the tile it springs from. Replaces ctrlMid
   // (which sat exactly halfway, causing a sharp bend right at the joint).
@@ -573,7 +573,7 @@ function SankeyBridge({
   // Helper: SVG rounded-corner arc. Use the same RADIUS as the player
   // tile rounded-lg so the active-tile portion of the outline matches
   // inactive tile corners.
-  const arc = (x: number, y: number) => `A ${RADIUS} ${RADIUS} 0 0 1 ${x} ${y}`
+  const arc = (x: number, y: number) => `A ${PLAYER_EVT_RADIUS} ${PLAYER_EVT_RADIUS} 0 0 1 ${x} ${y}`
 
   // Build the closed outline tracing clockwise around the combined
   // shape (active tile + bridge + events region). The four "outer"
@@ -582,35 +582,35 @@ function SankeyBridge({
   // curve takes over directly).
   const d = playerLeft
     ? [
-        `M ${tileL + PLAYER_RADIUS} ${activeTop}`,
+        `M ${tileL + PLAYER_EVT_RADIUS} ${activeTop}`,
         `L ${sourceX} ${activeTop}`,
         `C ${ctrlPX} ${activeTop}, ${ctrlEX} ${evtTop}, ${targetX} ${evtTop}`,
-        `L ${evtR - RADIUS} ${evtTop}`,
-        arc(evtR, evtTop + RADIUS),
-        `L ${evtR} ${evtBottom - RADIUS}`,
-        arc(evtR - RADIUS, evtBottom),
+        `L ${evtR - PLAYER_EVT_RADIUS} ${evtTop}`,
+        arc(evtR, evtTop + PLAYER_EVT_RADIUS),
+        `L ${evtR} ${evtBottom - PLAYER_EVT_RADIUS}`,
+        arc(evtR - PLAYER_EVT_RADIUS, evtBottom),
         `L ${targetX} ${evtBottom}`,
         `C ${ctrlEX} ${evtBottom}, ${ctrlPX} ${activeBottom}, ${sourceX} ${activeBottom}`,
-        `L ${tileL + PLAYER_RADIUS} ${activeBottom}`,
-        `A ${PLAYER_RADIUS} ${PLAYER_RADIUS} 0 0 1 ${tileL} ${activeBottom - PLAYER_RADIUS}`,
-        `L ${tileL} ${activeTop + PLAYER_RADIUS}`,
-        `A ${PLAYER_RADIUS} ${PLAYER_RADIUS} 0 0 1 ${tileL + PLAYER_RADIUS} ${activeTop}`,
+        `L ${tileL + PLAYER_EVT_RADIUS} ${activeBottom}`,
+        `A ${PLAYER_EVT_RADIUS} ${PLAYER_EVT_RADIUS} 0 0 1 ${tileL} ${activeBottom - PLAYER_EVT_RADIUS}`,
+        `L ${tileL} ${activeTop + PLAYER_EVT_RADIUS}`,
+        `A ${PLAYER_EVT_RADIUS} ${PLAYER_EVT_RADIUS} 0 0 1 ${tileL + PLAYER_EVT_RADIUS} ${activeTop}`,
         'Z',
       ].join(' ')
     : [
-        `M ${tileR - PLAYER_RADIUS} ${activeTop}`,
+        `M ${tileR - PLAYER_EVT_RADIUS} ${activeTop}`,
         `L ${sourceX} ${activeTop}`,
         `C ${ctrlPX} ${activeTop}, ${ctrlEX} ${evtTop}, ${targetX} ${evtTop}`,
-        `L ${evtL + RADIUS} ${evtTop}`,
-        `A ${RADIUS} ${RADIUS} 0 0 0 ${evtL} ${evtTop + RADIUS}`,
-        `L ${evtL} ${evtBottom - RADIUS}`,
-        `A ${RADIUS} ${RADIUS} 0 0 0 ${evtL + RADIUS} ${evtBottom}`,
+        `L ${evtL + PLAYER_EVT_RADIUS} ${evtTop}`,
+        `A ${PLAYER_EVT_RADIUS} ${PLAYER_EVT_RADIUS} 0 0 0 ${evtL} ${evtTop + PLAYER_EVT_RADIUS}`,
+        `L ${evtL} ${evtBottom - PLAYER_EVT_RADIUS}`,
+        `A ${PLAYER_EVT_RADIUS} ${PLAYER_EVT_RADIUS} 0 0 0 ${evtL + PLAYER_EVT_RADIUS} ${evtBottom}`,
         `L ${targetX} ${evtBottom}`,
         `C ${ctrlEX} ${evtBottom}, ${ctrlPX} ${activeBottom}, ${sourceX} ${activeBottom}`,
-        `L ${tileR - PLAYER_RADIUS} ${activeBottom}`,
-        `A ${PLAYER_RADIUS} ${PLAYER_RADIUS} 0 0 0 ${tileR} ${activeBottom - PLAYER_RADIUS}`,
-        `L ${tileR} ${activeTop + PLAYER_RADIUS}`,
-        `A ${PLAYER_RADIUS} ${PLAYER_RADIUS} 0 0 0 ${tileR - PLAYER_RADIUS} ${activeTop}`,
+        `L ${tileR - PLAYER_EVT_RADIUS} ${activeBottom}`,
+        `A ${PLAYER_EVT_RADIUS} ${PLAYER_EVT_RADIUS} 0 0 0 ${tileR} ${activeBottom - PLAYER_EVT_RADIUS}`,
+        `L ${tileR} ${activeTop + PLAYER_EVT_RADIUS}`,
+        `A ${PLAYER_EVT_RADIUS} ${PLAYER_EVT_RADIUS} 0 0 0 ${tileR - PLAYER_EVT_RADIUS} ${activeTop}`,
         'Z',
       ].join(' ')
 

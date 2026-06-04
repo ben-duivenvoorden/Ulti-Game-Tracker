@@ -227,7 +227,9 @@ export function PlayerColumn(props: PlayerColumnProps) {
           a full line (no stretching) and the Sankey / event-column geometry
           stays aligned. Mirrors EventColumn's fillers. */}
       {Array.from({ length: Math.max(0, emptySlots - 1) }).map((_, i) => (
-        <div key={`slot-fill-${i}`} className="flex-1 min-h-0" aria-hidden />
+        // Match the tile border-box (see EventColumn filler) so the flex column
+        // distributes evenly and rows stay aligned with the event column.
+        <div key={`slot-fill-${i}`} className="flex-1 min-h-0 border-2 border-transparent" aria-hidden />
       ))}
     </div>
   )
