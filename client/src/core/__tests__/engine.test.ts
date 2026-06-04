@@ -263,7 +263,7 @@ describe('canRecord', () => {
 
   // ─── No goal / Callahan off the pull ──────────────────────────────────────
 
-  it('marks the pull receiver as holderFromPull and blocks a goal off the pull-catch', () => {
+  it('marks the pull receiver as holderFromDeadDisc and blocks a goal off the pull-catch', () => {
     let session = makeSession('A')
     session = appendEvents(session, [
       startPoint(0),
@@ -271,11 +271,11 @@ describe('canRecord', () => {
       { pointIndex: 0, type: 'possession', playerId: 14, teamId: 'B' },
     ])
     const state = deriveGameState(session)
-    expect(state.holderFromPull).toBe(true)
+    expect(state.holderFromDeadDisc).toBe(true)
     expect(canRecord(state, 'goal')).toBe(false)
   })
 
-  it('clears holderFromPull after a completed pass', () => {
+  it('clears holderFromDeadDisc after a completed pass', () => {
     let session = makeSession('A')
     session = appendEvents(session, [
       startPoint(0),
@@ -284,7 +284,7 @@ describe('canRecord', () => {
       { pointIndex: 0, type: 'possession', playerId: 15, teamId: 'B' },
     ])
     const state = deriveGameState(session)
-    expect(state.holderFromPull).toBe(false)
+    expect(state.holderFromDeadDisc).toBe(false)
   })
 
   it('blocks block / intercept immediately following a pull (no holder)', () => {
@@ -310,17 +310,53 @@ describe('canRecord', () => {
     expect(canRecord(state, 'intercept')).toBe(true)
   })
 
-  it('still allows an open-play pickup → goal (not a pull-catch)', () => {
+  it('blocks a goal off a dead-disc pickup (throw-away → pickup)', () => {
     let session = makeSession('A')
     session = appendEvents(session, [
       startPoint(0),
       { pointIndex: 0, type: 'pull', playerId: 1, teamId: 'A' },
       { pointIndex: 0, type: 'possession', playerId: 14, teamId: 'B' },
       { pointIndex: 0, type: 'turnover-throw-away', playerId: 14, teamId: 'B' },
-      { pointIndex: 0, type: 'possession', playerId: 2, teamId: 'A' },  // open-play pickup
+      { pointIndex: 0, type: 'possession', playerId: 2, teamId: 'A' },  // dead-disc pickup
     ])
     const state = deriveGameState(session)
-    expect(state.holderFromPull).toBe(false)
+    expect(state.holderFromDeadDisc).toBe(true)
+    expect(canRecord(state, 'goal')).toBe(false)
+  })
+
+  it('allows a goal once the dead-disc pickup completes a pass', () => {
+    let session = makeSession('A')
+    session = appendEvents(session, [
+      startPoint(0),
+      { pointIndex: 0, type: 'pull', playerId: 1, teamId: 'A' },
+      { pointIndex: 0, type: 'possession', playerId: 14, teamId: 'B' },
+      { pointIndex: 0, type: 'turnover-throw-away', playerId: 14, teamId: 'B' },
+      { pointIndex: 0, type: 'possession', playerId: 2, teamId: 'A' },  // dead-disc pickup
+      { pointIndex: 0, type: 'possession', playerId: 1, teamId: 'A' },  // completed pass
+    ])
+    const state = deriveGameState(session)
+    expect(state.holderFromDeadDisc).toBe(false)
+    expect(canRecord(state, 'goal')).toBe(true)
+  })
+
+  it('blocks a goal off a block pickup, allows it after a pass', () => {
+    let session = makeSession('A')
+    session = appendEvents(session, [
+      startPoint(0),
+      { pointIndex: 0, type: 'pull', playerId: 1, teamId: 'A' },
+      { pointIndex: 0, type: 'possession', playerId: 14, teamId: 'B' },  // B pull-catch
+      { pointIndex: 0, type: 'possession', playerId: 15, teamId: 'B' },  // B completes a pass
+      { pointIndex: 0, type: 'block', playerId: 2, teamId: 'A' },        // A blocks → dead disc
+      { pointIndex: 0, type: 'possession', playerId: 1, teamId: 'A' },   // A picks up dead disc
+    ])
+    let state = deriveGameState(session)
+    expect(state.holderFromDeadDisc).toBe(true)
+    expect(canRecord(state, 'goal')).toBe(false)
+    session = appendEvents(session, [
+      { pointIndex: 0, type: 'possession', playerId: 2, teamId: 'A' },   // completed pass
+    ])
+    state = deriveGameState(session)
+    expect(state.holderFromDeadDisc).toBe(false)
     expect(canRecord(state, 'goal')).toBe(true)
   })
 
@@ -333,7 +369,7 @@ describe('canRecord', () => {
       { pointIndex: 0, type: 'intercept', playerId: 2, teamId: 'A' },
     ])
     const state = deriveGameState(session)
-    expect(state.holderFromPull).toBe(false)
+    expect(state.holderFromDeadDisc).toBe(false)
     expect(canRecord(state, 'goal')).toBe(true)
   })
 

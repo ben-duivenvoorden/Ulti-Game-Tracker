@@ -171,8 +171,8 @@ function initialState(session: GameSession, hasEvents: boolean): DerivedGameStat
     possession: offence,
     attackLeft: offence,
     discHolder: null,
-    pullPending: false,
-    holderFromPull: false,
+    deadDiscPending: false,
+    holderFromDeadDisc: false,
     pointIndex: anchor ? anchor.scoreA + anchor.scoreB : 0,
     activeLine: { A: [], B: [] },
   }
@@ -195,8 +195,8 @@ function step(state: DerivedGameState, event: Resolved, session: GameSession): v
     case 'point-start':
       state.gamePhase = 'awaiting-pull'
       state.discHolder = null
-      state.pullPending = false
-      state.holderFromPull = false
+      state.deadDiscPending = false
+      state.holderFromDeadDisc = false
       state.activeLine = {
         A: resolveLine(event.lineA, session.gameConfig.rosters.A),
         B: resolveLine(event.lineB, session.gameConfig.rosters.B),
@@ -210,9 +210,9 @@ function step(state: DerivedGameState, event: Resolved, session: GameSession): v
       state.discHolder = null
       // The disc is dead and the receiving team's first touch will be a
       // pull-catch — flag it so the next `possession` is marked
-      // `holderFromPull` (no goal / block / intercept off the pull).
-      state.pullPending = true
-      state.holderFromPull = false
+      // `holderFromDeadDisc` (no goal off the pull until a pass is completed).
+      state.deadDiscPending = true
+      state.holderFromDeadDisc = false
       // possession is already the receiving team — none of these change it.
       // (A brick goes out of bounds; the receiving team takes possession at
       // the brick mark, so the receiving-team assignment from point-start
@@ -222,40 +222,46 @@ function step(state: DerivedGameState, event: Resolved, session: GameSession): v
     case 'possession':
       state.discHolder = event.playerId
       state.possession = event.teamId
-      // A possession that consumes a pending pull is the pull-catch; any
-      // later possession is a completed pass (clears the flag).
-      state.holderFromPull = state.pullPending
-      state.pullPending = false
+      // A possession that consumes a pending dead disc is the pickup (off a
+      // pull, turnover, or block) — flag the holder so a goal is blocked until
+      // they complete a pass. Any later possession is that completed pass and
+      // clears the flag.
+      state.holderFromDeadDisc = state.deadDiscPending
+      state.deadDiscPending = false
       break
 
     case 'turnover-throw-away':
     case 'turnover-receiver-error':
     case 'turnover-stall':
     case 'turnover-unknown':
+      // Disc turned over — it's now dead on the ground. Whoever picks it up is
+      // a dead-disc pickup (no goal off that pickup until a pass completes).
       state.possession = otherTeam(state.possession)
       state.discHolder = null
-      state.pullPending = false
-      state.holderFromPull = false
+      state.deadDiscPending = true
+      state.holderFromDeadDisc = false
       break
 
     case 'block':
       // Disc is knocked down, not caught — the defending team gets
-      // possession but there's no holder yet. The next event is a
-      // `possession` recording whoever picks up the dead disc.
+      // possession but there's no holder yet, and the disc is dead. The next
+      // event is a `possession` recording whoever picks it up; that pickup
+      // can't score directly (no goal off a block until a pass completes).
       state.possession = event.teamId
       state.discHolder = null
-      state.pullPending = false
-      state.holderFromPull = false
+      state.deadDiscPending = true
+      state.holderFromDeadDisc = false
       break
 
     case 'intercept':
       // Defender catches the disc cleanly — they're the new holder
-      // immediately, no follow-up possession event needed. An intercept is
-      // open play (a Callahan off an intercept is allowed), not a pull-catch.
+      // immediately, no follow-up possession event needed. An intercept is a
+      // LIVE catch (not a dead-disc pickup), so a Callahan off an intercept
+      // stays allowed.
       state.possession = event.teamId
       state.discHolder = event.playerId
-      state.pullPending = false
-      state.holderFromPull = false
+      state.deadDiscPending = false
+      state.holderFromDeadDisc = false
       break
 
     case 'goal':
@@ -263,8 +269,8 @@ function step(state: DerivedGameState, event: Resolved, session: GameSession): v
       state.pointIndex++
       state.gamePhase = 'point-over'
       state.discHolder = null
-      state.pullPending = false
-      state.holderFromPull = false
+      state.deadDiscPending = false
+      state.holderFromDeadDisc = false
       state.possession = otherTeam(event.teamId)
       state.attackLeft = otherTeam(event.teamId)
       break
@@ -279,8 +285,8 @@ function step(state: DerivedGameState, event: Resolved, session: GameSession): v
     case 'half-time':
       state.gamePhase = 'half-time'
       state.discHolder = null
-      state.pullPending = false
-      state.holderFromPull = false
+      state.deadDiscPending = false
+      state.holderFromDeadDisc = false
       state.possession = session.gameStartPullingTeam
       state.attackLeft = session.gameStartPullingTeam
       break
@@ -298,8 +304,8 @@ function step(state: DerivedGameState, event: Resolved, session: GameSession): v
       state.pointIndex = event.scoreA + event.scoreB
       state.gamePhase  = 'point-over'
       state.discHolder = null
-      state.pullPending = false
-      state.holderFromPull = false
+      state.deadDiscPending = false
+      state.holderFromDeadDisc = false
       state.possession = event.offenceTeam
       state.attackLeft = event.offenceTeam
       break
@@ -360,12 +366,15 @@ export function canRecord(state: DerivedGameState, eventType: RawEventType): boo
       return state.gamePhase === 'in-play' && state.discHolder !== null
 
     case 'goal':
-      // No goal off the pull-catch — the receiving team must complete ≥1 pass
-      // before scoring (you can't score by catching the pull; a Callahan off a
-      // pull is impossible). `holderFromPull` is true only on the pull receiver.
+      // No goal off a dead-disc pickup. After a pull, a turnover, or a block the
+      // disc is dead; whoever picks it up must complete ≥1 pass before scoring
+      // (you can't score straight off the pickup). `holderFromDeadDisc` is true
+      // only on that first pickup. An intercept is a LIVE catch (it sets the
+      // holder directly, never flagging this), so a Callahan off an intercept
+      // is still allowed.
       return state.gamePhase === 'in-play'
           && state.discHolder !== null
-          && !state.holderFromPull
+          && !state.holderFromDeadDisc
 
     case 'turnover-unknown':
       // No holder requirement — the whole point is to mark a turnover when we

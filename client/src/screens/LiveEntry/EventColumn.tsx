@@ -128,11 +128,9 @@ export function EventColumn(props: EventColumnProps) {
       label: 'Goal',
       fg:    'var(--color-success)',
       ink:   '#fff',
-      // Most possessions — including a fresh block / intercept — can be
-      // followed by a goal (post-log analysis flags the block/intercept → goal
-      // pair as a Callahan). The exception is the pull-catch: `canRecord`
-      // disables Goal until the receiving team completes ≥1 pass (no goal /
-      // Callahan off a pull).
+      // A goal needs a live disc. `canRecord` blocks it off every dead-disc
+      // pickup — pull, turnover, OR block — until the team completes ≥1 pass.
+      // Only an intercept (a live catch) can score immediately, as a Callahan.
       enabled: armed && inPlay && hasHolder && canRecord(state, 'goal'),
       onTap: props.onGoal,
     },
@@ -199,11 +197,13 @@ export function EventColumn(props: EventColumnProps) {
 
 function EventBtn({ label, fg, ink, enabled, dull, onTap }: EventBtnDef) {
   const [first, rest] = splitLabel(label)
-  // Disabled state drops the category colour entirely for a flat grey that
-  // reads as "not available" (matches the ineligible-pill treatment in
-  // PlayerColumn). The dull variant is recessive even when enabled: a grey,
-  // dotted outline on the dark surface rather than a solid colour fill.
-  const background  = !enabled ? 'var(--color-surf-2)' : dull ? 'var(--color-surf-2)' : fg
+  // Two distinct de-emphasised states, deliberately pulled apart:
+  //  - DISABLED (not available now): darker-than-surface flat fill, dim text,
+  //    faint solid border, ~40% opacity — clearly inert, recedes.
+  //  - DISCOURAGED (`dull`, available but a fallback — Unknown turnover): the
+  //    surf-2 tile with a dull dotted outline, full opacity, and a hover-lift,
+  //    so it reads as a real (if secondary) control you *can* press.
+  const background  = !enabled ? 'var(--color-surf)'   : dull ? 'var(--color-surf-2)' : fg
   const color       = !enabled ? 'var(--color-dim)'    : dull ? 'var(--color-dull)'   : ink
   const borderColor = !enabled ? 'var(--color-border)' : dull ? 'var(--color-dull)'   : fg
   return (
@@ -211,12 +211,13 @@ function EventBtn({ label, fg, ink, enabled, dull, onTap }: EventBtnDef) {
       type="button"
       onClick={onTap}
       disabled={!enabled}
-      className="flex-1 min-h-0 rounded-xl border-2 cursor-pointer transition-colors select-none disabled:cursor-default flex flex-col items-center justify-center px-2 text-center"
+      className={`flex-1 min-h-0 rounded-xl border-2 cursor-pointer transition select-none disabled:cursor-default flex flex-col items-center justify-center px-2 text-center ${dull ? 'hover:brightness-125' : ''}`}
       style={{
         background,
         color,
         borderColor,
         borderStyle:   dull ? 'dotted' : 'solid',
+        opacity:       !enabled ? 0.4 : 1,
         fontWeight:    700,
         letterSpacing: 0.2,
         lineHeight:    1.15,

@@ -4,6 +4,13 @@
 @import '@fontsource/roboto/900.css';
 @import '@fontsource/roboto-mono/400.css';
 @import '@fontsource/roboto-mono/500.css';
+/* Rajdhani — condensed, squared "digital scoreboard" face. Used only for
+ * scores + big numerals (the money moments); body stays Roboto, system
+ * labels stay Roboto Mono. Tops out at 700 (no 900), so score elements use
+ * font-display at weight 700 rather than font-black. */
+@import '@fontsource/rajdhani/500.css';
+@import '@fontsource/rajdhani/600.css';
+@import '@fontsource/rajdhani/700.css';
 @import "tailwindcss";
 
 @theme {
@@ -53,8 +60,10 @@
   --color-brick:         #c1693d;
 
   /* Typography */
-  --font-sans: 'Roboto', sans-serif;
-  --font-mono: 'Roboto Mono', monospace;
+  --font-sans:    'Roboto', sans-serif;
+  --font-mono:    'Roboto Mono', monospace;
+  /* Display / scoreboard — scores + big numerals only (see import note). */
+  --font-display: 'Rajdhani', 'Roboto', sans-serif;
 }
 
 *, *::before, *::after {
@@ -82,4 +91,30 @@ html, body, #root {
   touch-action: manipulation;
   /* Hint to mobile browsers that we want to use the entire safe area. */
   overscroll-behavior: none;
+}
+
+/* ── Motion ─────────────────────────────────────────────────────────────────
+ * Plain keyframes applied via inline `animation` styles in components (kept out
+ * of @theme so they're framework-agnostic). Respects reduced-motion below. */
+
+/* Goal score punch — a quick scale + glow when a score value changes. The
+ * element is remounted via a React `key` on its value, so this runs once. */
+@keyframes scorePulse {
+  0%   { transform: scale(1);    text-shadow: none; }
+  35%  { transform: scale(1.18); text-shadow: 0 0 18px currentColor; }
+  100% { transform: scale(1);    text-shadow: none; }
+}
+
+/* Staggered entrance for the moment screens (PointSummary). */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }

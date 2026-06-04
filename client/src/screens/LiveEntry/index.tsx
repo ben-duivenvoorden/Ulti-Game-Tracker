@@ -13,7 +13,10 @@ import { PlayerColumn } from './PlayerColumn'
 import { EventColumn } from './EventColumn'
 import { PassNotation } from './PassNotation'
 import { BottomSheet, type SheetTab } from './BottomSheet'
+import { useTween } from './useTween'
 import { Btn } from '@/components/ui/Btn'
+import { MomentBackdrop } from '@/components/MomentBackdrop'
+import { CloseIcon } from '@/components/ui/Icons'
 
 // True until the active team's possession run has at least 2 recorded
 // disc-in-hand events — i.e. the current holder hasn't received a pass
@@ -145,33 +148,21 @@ export default function LiveEntry() {
       />
 
       {pickMode && (
-        <button
+        <ModeBanner
           onClick={actions.cancelPickMode}
-          className="flex-shrink-0 h-8 w-full flex items-center justify-center text-[11px] font-semibold tracking-widest cursor-pointer"
-          style={{
-            background: 'var(--color-warn-bg)',
-            color: 'var(--color-warn)',
-            borderBottom: '1px solid var(--color-warn)',
-          }}
           title="Tap to cancel"
-        >
-          {resolveContextLabel(pickMode, { defendingShort })} · TAP TO CANCEL
-        </button>
+          label={resolveContextLabel(pickMode, { defendingShort })}
+          hint="TAP TO CANCEL"
+        />
       )}
 
       {previewing && !pickMode && (
-        <button
+        <ModeBanner
           onClick={() => actions.setTruncateCursor(null)}
-          className="flex-shrink-0 h-8 w-full flex items-center justify-center text-[11px] font-semibold tracking-widest cursor-pointer"
-          style={{
-            background: 'var(--color-warn-bg)',
-            color: 'var(--color-warn)',
-            borderBottom: '1px solid var(--color-warn)',
-          }}
           title="Tap to cancel preview"
-        >
-          VIEWING HISTORY · RECORD TO TRUNCATE FORWARD · TAP TO CANCEL
-        </button>
+          label="VIEWING HISTORY · RECORD TO TRUNCATE FORWARD"
+          hint="TAP TO CANCEL"
+        />
       )}
 
       {notification && (
@@ -327,6 +318,7 @@ export default function LiveEntry() {
                   actionCount={actionCount}
                   playerLeft={playerLeft}
                   teamColor={activeTeamColor}
+                  awaitingPull={phase === 'awaiting-pull'}
                 />
                 <div
                   className="h-full grid relative"
@@ -409,7 +401,7 @@ function BackfillPicker({
           <span className="text-xs font-mono tracking-widest" style={{ color: 'var(--color-muted)' }}>
             ADD PLAYER TO LINE
           </span>
-          <button onClick={onClose} className="cursor-pointer text-muted hover:text-content" title="Cancel">✕</button>
+          <button onClick={onClose} className="cursor-pointer text-muted hover:text-content flex items-center" title="Cancel"><CloseIcon size={18} /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-3 grid grid-cols-2 gap-2">
           {sorted.length === 0 ? (
@@ -455,7 +447,7 @@ function BackfillPicker({
 // action-button stack (NOT the gap below or the More button) — so
 // More sits outside the encompass.
 function SankeyBridge({
-  activeIdx, playerCount, actionCount, playerLeft, teamColor,
+  activeIdx, playerCount, actionCount, playerLeft, teamColor, awaitingPull,
 }: {
   activeIdx:   number
   playerCount: number
@@ -465,6 +457,9 @@ function SankeyBridge({
   actionCount: number
   playerLeft:  boolean
   teamColor:   string
+  /** Awaiting-pull (the Pull / Bonus / Brick stack) gets extra bottom room;
+   *  in-play keeps the tighter pad. */
+  awaitingPull: boolean
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
@@ -482,15 +477,34 @@ function SankeyBridge({
     return () => ro.disconnect()
   }, [])
 
+  // Animate the ribbon to the active row. When there's no holder (activeIdx < 0,
+  // e.g. just after a turnover before the pickup) freeze at the last valid row
+  // and fade the whole ribbon out — so a possession change glides to the new
+  // player instead of hard-cutting.
+  const lastValidRef = useRef(activeIdx >= 0 ? activeIdx : 0)
+  useEffect(() => { if (activeIdx >= 0) lastValidRef.current = activeIdx }, [activeIdx])
+  const animIdx = useTween(activeIdx >= 0 ? activeIdx : lastValidRef.current, { ms: 240 })
+  const visible = activeIdx >= 0
+
   const LANE_W  = 16   // matches the centre spacer (w-4)
   const COL_PAD = 12   // matches PlayerColumn/EventColumn p-3
   const GAP     = 16   // matches PlayerColumn/EventColumn gap-4
-  // Outer corners of the encompass — larger than the pill's own rounded-xl
-  // (12 px) so the wrap reads as a softer ribbon around the pill rather
-  // than tracing its corners tightly.
-  const RADIUS  = 18
+  // Corner radii. The events side keeps a soft 18 px; the player-tile corners
+  // hug at the tile's own rounded-xl (12 px) so the wrap traces the button
+  // rather than bowing past its corners.
+  const RADIUS        = 18
+  const PLAYER_RADIUS = 12
   const EVT_PAD     = 9   // px the encompass extends past the action tiles on all four sides
-  const PLAYER_PAD  = 9   // px the encompass extends past the active player tile on all four sides
+  // The events-side BOTTOM gets extra room below the last action tile — but
+  // only for the pull stack (Pull / Bonus / Brick), where it was crowding the
+  // Brick edge. In-play keeps the tighter all-sides pad.
+  const EVT_PAD_BOTTOM = awaitingPull ? EVT_PAD * 2 : EVT_PAD
+  // The outline hugs the active player tile directly (no halo). The active
+  // tile renders its own border transparent, so this wrap IS its outline —
+  // tracing its top / outer / bottom edges reads cleaner than a spacer around
+  // it. The bridge-facing (inner) side isn't traced; the ribbon springs from
+  // there toward the events.
+  const PLAYER_PAD  = 0
   // How far INSIDE each region's bridge-facing edge the bezier attaches.
   // Larger = shorter flat segments along both the player pill and the
   // events region, so the sankey curve begins earlier on both sides
@@ -502,7 +516,7 @@ function SankeyBridge({
   // perceived transition where the bridge meets the straight tile edges.
   const BRIDGE_EASE = 1
 
-  if (activeIdx < 0 || size.w === 0 || size.h === 0 || playerCount <= 0 || actionCount <= 0) {
+  if (size.w === 0 || size.h === 0 || playerCount <= 0 || actionCount <= 0) {
     return <div ref={ref} className="absolute inset-0 pointer-events-none" aria-hidden />
   }
 
@@ -518,7 +532,7 @@ function SankeyBridge({
   // Active-tile vertical extent (in player column). Padded out by
   // PLAYER_PAD so the encompass surrounds the tile rather than tracing
   // its edges directly.
-  const tileTopRaw    = COL_PAD + activeIdx * (tileH + GAP)
+  const tileTopRaw    = COL_PAD + animIdx * (tileH + GAP)
   const tileBottomRaw = tileTopRaw + tileH
   const activeTop     = tileTopRaw - PLAYER_PAD
   const activeBottom  = tileBottomRaw + PLAYER_PAD
@@ -529,7 +543,7 @@ function SankeyBridge({
   // encompass visibly surrounds the action tiles without sitting on top of
   // their borders.
   const evtTop    = COL_PAD - EVT_PAD
-  const evtBottom = COL_PAD + actionCount * (tileH + GAP) - GAP + EVT_PAD
+  const evtBottom = COL_PAD + actionCount * (tileH + GAP) - GAP + EVT_PAD_BOTTOM
 
   // Active-tile horizontal extent — also pushed out by PLAYER_PAD on
   // both the outer side AND the bridge-facing side.
@@ -545,7 +559,10 @@ function SankeyBridge({
   // padded edges by BRIDGE_INSET, so the flat segments along the
   // pill's and the events region's top/bottom are shorter and the
   // bezier begins/ends earlier on both sides.
-  const sourceX = playerLeft ? tileR - BRIDGE_INSET : tileL + BRIDGE_INSET
+  // Player side: run the flat top/bottom edges the FULL width to the tile's
+  // sankey-side corner (a square corner there), then let the bezier spring from
+  // the corner. The events side keeps BRIDGE_INSET so its flat segment is shorter.
+  const sourceX = playerLeft ? tileR : tileL
   const targetX = playerLeft ? evtL  + BRIDGE_INSET : evtR  - BRIDGE_INSET
   // Asymmetric control-point X coords — biased toward the OTHER tile so
   // the bezier eases out of the tile it springs from. Replaces ctrlMid
@@ -565,7 +582,7 @@ function SankeyBridge({
   // curve takes over directly).
   const d = playerLeft
     ? [
-        `M ${tileL + RADIUS} ${activeTop}`,
+        `M ${tileL + PLAYER_RADIUS} ${activeTop}`,
         `L ${sourceX} ${activeTop}`,
         `C ${ctrlPX} ${activeTop}, ${ctrlEX} ${evtTop}, ${targetX} ${evtTop}`,
         `L ${evtR - RADIUS} ${evtTop}`,
@@ -574,14 +591,14 @@ function SankeyBridge({
         arc(evtR - RADIUS, evtBottom),
         `L ${targetX} ${evtBottom}`,
         `C ${ctrlEX} ${evtBottom}, ${ctrlPX} ${activeBottom}, ${sourceX} ${activeBottom}`,
-        `L ${tileL + RADIUS} ${activeBottom}`,
-        arc(tileL, activeBottom - RADIUS),
-        `L ${tileL} ${activeTop + RADIUS}`,
-        arc(tileL + RADIUS, activeTop),
+        `L ${tileL + PLAYER_RADIUS} ${activeBottom}`,
+        `A ${PLAYER_RADIUS} ${PLAYER_RADIUS} 0 0 1 ${tileL} ${activeBottom - PLAYER_RADIUS}`,
+        `L ${tileL} ${activeTop + PLAYER_RADIUS}`,
+        `A ${PLAYER_RADIUS} ${PLAYER_RADIUS} 0 0 1 ${tileL + PLAYER_RADIUS} ${activeTop}`,
         'Z',
       ].join(' ')
     : [
-        `M ${tileR - RADIUS} ${activeTop}`,
+        `M ${tileR - PLAYER_RADIUS} ${activeTop}`,
         `L ${sourceX} ${activeTop}`,
         `C ${ctrlPX} ${activeTop}, ${ctrlEX} ${evtTop}, ${targetX} ${evtTop}`,
         `L ${evtL + RADIUS} ${evtTop}`,
@@ -590,10 +607,10 @@ function SankeyBridge({
         `A ${RADIUS} ${RADIUS} 0 0 0 ${evtL + RADIUS} ${evtBottom}`,
         `L ${targetX} ${evtBottom}`,
         `C ${ctrlEX} ${evtBottom}, ${ctrlPX} ${activeBottom}, ${sourceX} ${activeBottom}`,
-        `L ${tileR - RADIUS} ${activeBottom}`,
-        `A ${RADIUS} ${RADIUS} 0 0 0 ${tileR} ${activeBottom - RADIUS}`,
-        `L ${tileR} ${activeTop + RADIUS}`,
-        `A ${RADIUS} ${RADIUS} 0 0 0 ${tileR - RADIUS} ${activeTop}`,
+        `L ${tileR - PLAYER_RADIUS} ${activeBottom}`,
+        `A ${PLAYER_RADIUS} ${PLAYER_RADIUS} 0 0 0 ${tileR} ${activeBottom - PLAYER_RADIUS}`,
+        `L ${tileR} ${activeTop + PLAYER_RADIUS}`,
+        `A ${PLAYER_RADIUS} ${PLAYER_RADIUS} 0 0 0 ${tileR - PLAYER_RADIUS} ${activeTop}`,
         'Z',
       ].join(' ')
 
@@ -602,17 +619,42 @@ function SankeyBridge({
       ref={ref}
       className="absolute inset-0 pointer-events-none"
       aria-hidden
+      style={{ opacity: visible ? 1 : 0, transition: 'opacity 200ms ease-out' }}
     >
       <svg width={W} height={H} style={{ display: 'block' }}>
         <path
           d={d}
-          fill={`${teamColor}39`}
-          stroke={`${teamColor}cc`}
-          strokeWidth={2}
-          strokeLinejoin="round"
+          fill={`${teamColor}80`}
+          stroke="none"
         />
       </svg>
     </div>
+  )
+}
+
+// Full-width transient mode strip stacked under the Header (pick mode,
+// rewind/preview). Two centred lines: the context label, then the cancel
+// hint on its own line so neither gets cramped or truncated. The dormant
+// `notification` toast is intentionally NOT routed through this.
+function ModeBanner({ tone = 'warn', onClick, title, label, hint }: {
+  tone?:    'warn' | 'success'
+  onClick?: () => void
+  title?:   string
+  label:    string
+  hint?:    string
+}) {
+  const color = tone === 'success' ? 'var(--color-success)'    : 'var(--color-warn)'
+  const bg    = tone === 'success' ? 'var(--color-success-bg)' : 'var(--color-warn-bg)'
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className="flex-shrink-0 w-full flex flex-col items-center justify-center py-1.5 text-[11px] font-semibold tracking-widest cursor-pointer leading-tight"
+      style={{ background: bg, color, borderBottom: `1px solid ${color}` }}
+    >
+      <span>{label}</span>
+      {hint && <span style={{ opacity: 0.7, marginTop: 2 }}>{hint}</span>}
+    </button>
   )
 }
 
@@ -625,14 +667,20 @@ function GameOverBanner({
 }) {
   const winner: TeamId = score.A >= score.B ? 'A' : 'B'
   return (
-    <div className="absolute inset-0 flex items-center justify-center">
-      <div className="flex flex-col items-center gap-4 px-6">
-        <div className="text-xs tracking-widest font-mono text-muted">GAME OVER</div>
-        <div className="text-5xl font-black tabular-nums" style={{ color: teams[winner].color }}>
-          {score.A} – {score.B}
+    <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+      <MomentBackdrop tint={teams[winner].color} />
+      <div className="relative z-10 flex flex-col items-center gap-4 px-6">
+        <div className="text-xs tracking-[0.3em] font-mono text-muted" style={{ animation: 'fadeUp 460ms ease-out both' }}>GAME OVER</div>
+        <div
+          className="text-7xl font-display font-bold tabular-nums leading-none"
+          style={{ color: teams[winner].color, animation: 'fadeUp 460ms ease-out both', animationDelay: '80ms' }}
+        >
+          {score.A} <span className="font-sans font-black" style={{ color: 'var(--color-dim)' }}>–</span> {score.B}
         </div>
-        <div className="text-sm text-muted">{teams[winner].name} wins</div>
-        <Btn variant="ghost" size="md" onClick={onBack}>Back to games</Btn>
+        <div className="text-sm text-muted" style={{ animation: 'fadeUp 460ms ease-out both', animationDelay: '160ms' }}>{teams[winner].name} wins</div>
+        <div style={{ animation: 'fadeUp 460ms ease-out both', animationDelay: '240ms' }}>
+          <Btn variant="ghost" size="md" onClick={onBack}>Back to games</Btn>
+        </div>
       </div>
     </div>
   )

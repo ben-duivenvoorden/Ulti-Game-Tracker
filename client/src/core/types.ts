@@ -176,14 +176,17 @@ export interface DerivedGameState {
   possession: TeamId           // team currently entitled to disc (or about to receive)
   attackLeft: TeamId           // team currently attacking left → right (UI orientation)
   discHolder: PlayerId | null  // null between possession events / turnovers
-  /** True from a pull / pull-bonus / brick until the receiving team takes
-   *  possession (bookkeeping for the post-pull rules below). */
-  pullPending: boolean
-  /** True when the current `discHolder` is the pull receiver — i.e. the first
-   *  possession after a pull. A goal can't be scored off the pull-catch, so
-   *  `canRecord('goal')` requires this to be false (no Callahan from a pull;
-   *  the receiving team must complete ≥1 pass before scoring). */
-  holderFromPull: boolean
+  /** True from a dead-disc event (pull / pull-bonus / brick / any turnover /
+   *  block) until the next team takes possession — bookkeeping for the
+   *  dead-disc pickup rule below. */
+  deadDiscPending: boolean
+  /** True when the current `discHolder` picked up a *dead* disc — the first
+   *  possession after a pull, turnover, or block. A goal can't be scored off a
+   *  dead-disc pickup (you must put the disc back in play first), so
+   *  `canRecord('goal')` requires this to be false. An intercept is a *live*
+   *  catch (sets the holder directly), so a Callahan off an intercept stays
+   *  allowed. */
+  holderFromDeadDisc: boolean
   pointIndex: number           // total goals scored so far
   /** Players on the field for each team, in roster order. Derived from
    *  point-start / injury-sub events. */

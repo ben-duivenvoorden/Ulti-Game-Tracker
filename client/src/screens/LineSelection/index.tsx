@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Btn } from '@/components/ui/Btn'
 import { Chip } from '@/components/ui/Chip'
-import { IconBtn, SettingsIcon, TeamsIcon } from '@/components/ui/Icons'
+import { IconBtn, SettingsIcon, TeamsIcon, BackIcon, CheckIcon } from '@/components/ui/Icons'
 import { ScorerInfoButton } from '@/components/ScorerInfoButton'
 import { useSession, useDerivedState, useRecordingOptions, useSuggestedTransition } from '@/core/selectors'
 import { useGameStore, seedDefaultLine } from '@/core/store'
@@ -86,10 +86,10 @@ export default function LineSelection() {
         <div className="flex items-center justify-start pl-3">
           <button
             onClick={backToGameList}
-            className="text-muted hover:text-content transition-colors cursor-pointer text-lg leading-none"
+            className="text-muted hover:text-content transition-colors cursor-pointer flex items-center leading-none"
             title="Back to games"
           >
-            ←
+            <BackIcon size={20} />
           </button>
         </div>
         <div className="flex items-center justify-center gap-2 min-w-0 px-2">
@@ -102,9 +102,9 @@ export default function LineSelection() {
               {headerNames.A}
             </span>
           </span>
-          <strong className="text-3xl font-black tabular-nums leading-none text-content flex-shrink-0 ml-2">{score.A}</strong>
+          <strong className="text-[34px] font-display font-bold tabular-nums leading-none text-content flex-shrink-0 ml-2">{score.A}</strong>
           <span className="text-dim text-base flex-shrink-0">–</span>
-          <strong className="text-3xl font-black tabular-nums leading-none text-content flex-shrink-0 mr-2">{score.B}</strong>
+          <strong className="text-[34px] font-display font-bold tabular-nums leading-none text-content flex-shrink-0 mr-2">{score.B}</strong>
           <span className="flex-1 flex justify-start min-w-0">
             <span
               className="text-sm font-bold truncate px-2 py-0.5 rounded"
@@ -456,7 +456,7 @@ function PlayerTile({
           color:       on ? inkOn(color) : 'var(--color-dim)',
         }}
       >
-        {on && '✓'}
+        {on && <CheckIcon size={13} />}
       </span>
       <span
         className="text-base flex-1 text-left truncate"

@@ -2,6 +2,7 @@ import { useGameStore } from '@/core/store'
 import { useRecordingOptions } from '@/core/selectors'
 import { Label } from '@/components/ui/Label'
 import { Btn } from '@/components/ui/Btn'
+import { BackIcon } from '@/components/ui/Icons'
 
 export default function GameSettings() {
   const closeGameSettings   = useGameStore(s => s.closeGameSettings)
@@ -14,10 +15,10 @@ export default function GameSettings() {
       <div className="flex-shrink-0 h-16 border-b border-border flex items-center gap-3 px-4">
         <button
           onClick={closeGameSettings}
-          className="text-muted hover:text-content transition-colors cursor-pointer text-lg leading-none flex-shrink-0"
+          className="text-muted hover:text-content transition-colors cursor-pointer flex items-center leading-none flex-shrink-0"
           title="Back"
         >
-          ←
+          <BackIcon size={20} />
         </button>
         <div className="flex-1">
           <Label block className="mb-0.5">RECORDING SETTINGS</Label>

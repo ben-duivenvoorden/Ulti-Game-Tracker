@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type CSSProperties } from 'react'
 import {
   useSession, useDerivedState, useVisLog, useGameActions,
   useRecordingOptions, useTruncateCursor,
@@ -7,6 +7,8 @@ import { UNKNOWN_PLAYER_ID, UNKNOWN_PLAYER, type TeamId, type VisLogEntry } from
 import { inkOn } from '@/core/contrast'
 import { Btn } from '@/components/ui/Btn'
 import { BottomSheet } from '@/screens/LiveEntry/BottomSheet'
+import { MomentBackdrop } from '@/components/MomentBackdrop'
+import { WarnIcon, UndoIcon } from '@/components/ui/Icons'
 
 // Full-screen point-completion splash shown after each goal, before line
 // selection. Dismissible (tap to continue) and keeps undo + log accessible.
@@ -36,35 +38,43 @@ export default function PointSummary() {
     ? UNKNOWN_PLAYER.name
     : (players.find(p => p.id === summary.scorerId)?.name ?? 'Unknown')
 
+  // Staggered fade-up entrance — the screen mounts fresh each point, so a
+  // CSS-only reveal keyed by child index is enough.
+  const reveal = (i: number): CSSProperties => ({
+    animation: 'fadeUp 460ms cubic-bezier(0.2, 0.7, 0.2, 1) both',
+    animationDelay: `${i * 70}ms`,
+  })
+
   return (
-    <div className="h-full flex flex-col bg-bg text-content relative">
+    <div className="h-full flex flex-col bg-bg text-content relative overflow-hidden">
+      <MomentBackdrop tint={teams[scoringTeam].color} />
       {/* Tap-anywhere-to-continue surface. The buttons below stop propagation. */}
       <button
         type="button"
         onClick={actions.dismissPointSummary}
-        className="flex-1 w-full flex flex-col items-center justify-center gap-6 px-6 cursor-pointer select-none"
+        className="relative z-10 flex-1 w-full flex flex-col items-center justify-center gap-6 px-6 cursor-pointer select-none"
         aria-label="Continue to next point"
       >
-        <div className="text-xs tracking-[0.3em] font-mono" style={{ color: 'var(--color-muted)' }}>
+        <div className="text-xs tracking-[0.3em] font-mono" style={{ color: 'var(--color-muted)', ...reveal(0) }}>
           POINT COMPLETE
         </div>
 
         <div
           className="px-4 py-1 rounded-full text-sm font-bold"
-          style={{ background: teams[scoringTeam].color, color: inkOn(teams[scoringTeam].color) }}
+          style={{ background: teams[scoringTeam].color, color: inkOn(teams[scoringTeam].color), ...reveal(1) }}
         >
           {teams[scoringTeam].name}
         </div>
 
-        <div className="text-7xl font-black tabular-nums leading-none">
-          {state.score.A} <span className="text-dim">–</span> {state.score.B}
+        <div className="text-8xl font-display font-bold tabular-nums leading-none" style={reveal(2)}>
+          {state.score.A} <span className="text-dim font-sans font-black">–</span> {state.score.B}
         </div>
 
-        <div className="text-base" style={{ color: 'var(--color-content)' }}>
+        <div className="text-base" style={{ color: 'var(--color-content)', ...reveal(3) }}>
           Goal — <span className="font-bold">{scorerName}</span>
         </div>
 
-        <div className="text-sm" style={{ color: 'var(--color-muted)' }}>
+        <div className="text-sm" style={{ color: 'var(--color-muted)', ...reveal(4) }}>
           {summary.turnovers === 0
             ? 'Clean hold — no turnovers'
             : `${summary.turnovers} turnover${summary.turnovers === 1 ? '' : 's'} this point`}
@@ -72,14 +82,15 @@ export default function PointSummary() {
 
         {summary.hasUnknownData && (
           <div
-            className="px-4 py-2 rounded-lg text-sm font-semibold text-center max-w-xs"
-            style={{ background: 'var(--color-warn-bg)', color: 'var(--color-danger)', border: '1px solid var(--color-danger)' }}
+            className="px-4 py-2 rounded-lg text-sm font-semibold text-center max-w-xs flex items-center gap-2"
+            style={{ background: 'var(--color-warn-bg)', color: 'var(--color-danger)', border: '1px solid var(--color-danger)', ...reveal(5) }}
           >
-            ⚠ Unknown data in this point — review the log to fill in who had the disc.
+            <WarnIcon size={18} />
+            <span>Unknown data in this point — review the log to fill in who had the disc.</span>
           </div>
         )}
 
-        <div className="text-[11px] tracking-widest font-mono mt-2" style={{ color: 'var(--color-dim)' }}>
+        <div className="text-[11px] tracking-widest font-mono mt-2" style={{ color: 'var(--color-dim)', ...reveal(6) }}>
           TAP ANYWHERE TO CONTINUE
         </div>
       </button>
@@ -90,8 +101,8 @@ export default function PointSummary() {
         style={{ borderTop: '1px solid var(--color-border)' }}
         onClick={e => e.stopPropagation()}
       >
-        <Btn variant="ghost" size="md" full onClick={actions.undoPointSummary}>↶ Undo goal</Btn>
-        <Btn variant="ghost" size="md" full onClick={() => setSheetOpen(true)}>View log</Btn>
+        <Btn variant="default" size="md" full onClick={actions.undoPointSummary}><UndoIcon size={15} /><span className="ml-1.5">Undo goal</span></Btn>
+        <Btn variant="default" size="md" full onClick={() => setSheetOpen(true)}>View log</Btn>
         <Btn variant="primary" size="md" full onClick={actions.dismissPointSummary}>Next point</Btn>
       </div>
 

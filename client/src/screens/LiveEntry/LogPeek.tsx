@@ -1,5 +1,6 @@
 import type { VisLogEntry, Player } from '@/core/types'
 import { formatVisLogEntry, getVisLogColor, isMutedLogEntry } from '@/core/format'
+import { UndoIcon } from '@/components/ui/Icons'
 
 interface LogPeekProps {
   visLog: VisLogEntry[]
@@ -41,7 +42,14 @@ export function LogPeek({ visLog, players, onOpen, onUndo }: LogPeekProps) {
         title="Open event log"
       >
         <span className="truncate text-left flex-1 mr-2">
-          {last ? formatVisLogEntry(last, players) : 'No events yet'}
+          {/* Point-start lists the whole line — far too long for this one-line
+              strip (it just truncates mid-name). Show a short label here; the
+              full LOG sheet still renders the rosters via formatVisLogEntry. */}
+          {!last
+            ? 'No events yet'
+            : last.type === 'point-start'
+              ? '— Point Started —'
+              : formatVisLogEntry(last, players)}
         </span>
         <span style={{ color: 'var(--color-muted)' }}>LOG ▾</span>
       </button>
@@ -49,7 +57,7 @@ export function LogPeek({ visLog, players, onOpen, onUndo }: LogPeekProps) {
         type="button"
         onClick={onUndo}
         disabled={!canUndo}
-        className="flex-shrink-0 px-4 h-full cursor-pointer text-sm font-semibold tracking-wider disabled:opacity-25 disabled:cursor-default"
+        className="flex-shrink-0 px-4 h-full cursor-pointer text-sm font-semibold tracking-wider disabled:opacity-25 disabled:cursor-default flex items-center justify-center gap-1.5"
         style={{
           background: 'var(--color-warn-bg)',
           color:      'var(--color-warn)',
@@ -57,7 +65,7 @@ export function LogPeek({ visLog, players, onOpen, onUndo }: LogPeekProps) {
         }}
         title="Undo last event"
       >
-        ↶ UNDO
+        <UndoIcon size={14} />UNDO
       </button>
     </div>
   )

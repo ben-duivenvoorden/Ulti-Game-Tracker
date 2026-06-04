@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Btn } from '@/components/ui/Btn'
 import { Label } from '@/components/ui/Label'
+import { BackIcon } from '@/components/ui/Icons'
+import { PromptSheet } from '@/components/PromptSheet'
 import { useGameStore } from '@/core/store'
 import { useTeamsState } from '@/core/selectors'
 import type { GlobalTeamId } from '@/core/teams/types'
@@ -24,6 +26,8 @@ export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
   const [teamB, setTeamB] = useState<GlobalTeamId | null>(null)
   const [halfTimeAt, setHalfTimeAt] = useState(8)
   const [scoreCapAt, setScoreCapAt] = useState(15)
+  // Which slot triggered the new-team prompt (null = closed).
+  const [createSlot, setCreateSlot] = useState<'A' | 'B' | null>(null)
 
   const canSave = name.trim().length > 0 && teamA !== null && teamB !== null && teamA !== teamB
 
@@ -40,19 +44,17 @@ export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
     onCreated(gameId)
   }
 
-  // Create-team inline from the picker. The fresh id flows straight back into
-  // the picker that asked for it.
-  const handleCreateTeam = (slot: 'A' | 'B'): GlobalTeamId | null => {
-    const proposed = window.prompt('Team name:')
-    if (!proposed || !proposed.trim()) return null
-    const id = addTeam(proposed.trim(), suggestShortName(proposed), DEFAULT_TEAM_COLOR)
-    if (slot === 'A') setTeamA(id)
-    else              setTeamB(id)
-    return id
+  // Create-team from the picker — the "+ Add new team…" choice opens an in-app
+  // prompt (remembering which slot asked); the fresh id drops into that slot.
+  const submitNewTeam = (proposed: string) => {
+    const id = addTeam(proposed, suggestShortName(proposed), DEFAULT_TEAM_COLOR)
+    if (createSlot === 'A') setTeamA(id)
+    else if (createSlot === 'B') setTeamB(id)
+    setCreateSlot(null)
   }
 
   return (
-    <div className="h-full flex flex-col bg-bg text-content">
+    <div className="h-full flex flex-col bg-bg text-content relative">
       {/* Header */}
       <div
         className="flex-shrink-0 flex items-center justify-between px-3 h-16"
@@ -60,10 +62,10 @@ export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
       >
         <button
           onClick={onCancel}
-          className="text-muted hover:text-content transition-colors cursor-pointer text-lg leading-none"
+          className="text-muted hover:text-content transition-colors cursor-pointer flex items-center leading-none"
           title="Cancel"
         >
-          ←
+          <BackIcon size={20} />
         </button>
         <div className="flex-1 text-center">
           <Label block>NEW GAME</Label>
@@ -94,7 +96,7 @@ export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
           slot="A"
           value={teamA}
           onChange={setTeamA}
-          onCreate={() => handleCreateTeam('A')}
+          onCreate={() => setCreateSlot('A')}
           excludeId={teamB}
           teams={teamsState.teams}
         />
@@ -102,7 +104,7 @@ export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
           slot="B"
           value={teamB}
           onChange={setTeamB}
-          onCreate={() => handleCreateTeam('B')}
+          onCreate={() => setCreateSlot('B')}
           excludeId={teamA}
           teams={teamsState.teams}
         />
@@ -116,6 +118,16 @@ export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
         <Stepper label="Score cap"     value={scoreCapAt} onChange={setScoreCapAt} min={1}  max={30} />
       </Section>
       </div>
+
+      <PromptSheet
+        open={createSlot !== null}
+        title="New team"
+        label="Team name"
+        placeholder="e.g. New York Empire"
+        confirmLabel="Add"
+        onSubmit={submitNewTeam}
+        onCancel={() => setCreateSlot(null)}
+      />
     </div>
   )
 }
