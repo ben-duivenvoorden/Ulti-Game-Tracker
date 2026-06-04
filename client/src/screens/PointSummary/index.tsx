@@ -1,7 +1,7 @@
 import { useMemo, useState, type CSSProperties } from 'react'
 import {
   useSession, useDerivedState, useVisLog, useGameActions,
-  useRecordingOptions, useTruncateCursor,
+  useRecordingOptions, useTruncateCursor, useSuggestedTransition,
 } from '@/core/selectors'
 import { UNKNOWN_PLAYER_ID, UNKNOWN_PLAYER, type TeamId, type VisLogEntry } from '@/core/types'
 import { inkOn } from '@/core/contrast'
@@ -21,7 +21,18 @@ export default function PointSummary() {
   const actions          = useGameActions()
   const recordingOptions = useRecordingOptions()
   const truncateCursor   = useTruncateCursor()
+  const suggestion       = useSuggestedTransition()
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [dismissed, setDismissed] = useState(false)
+
+  // Confirm the suggested transition then advance — dismissPointSummary
+  // re-reads the session and routes correctly (line-selection after half-time,
+  // game-over banner after end-game).
+  const confirmSuggestion = () => {
+    if (suggestion === 'half-time') actions.triggerHalfTime()
+    else actions.triggerEndGame()
+    actions.dismissPointSummary()
+  }
 
   const players = useMemo(
     () => session ? [...session.gameConfig.rosters.A, ...session.gameConfig.rosters.B] : [],
@@ -95,13 +106,46 @@ export default function PointSummary() {
         </div>
       </button>
 
+      {/* Half-time / end-game suggestion — fires here, at the point boundary. */}
+      {suggestion && !dismissed && (
+        <div
+          className="relative z-10 flex-shrink-0 flex items-stretch text-[11px] font-semibold tracking-widest"
+          style={{
+            background:   'var(--color-warn-bg)',
+            color:        'var(--color-warn)',
+            borderTop:    '1px solid var(--color-warn)',
+          }}
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="flex-1 flex items-center justify-center px-3 py-2 text-center">
+            {suggestion === 'half-time'
+              ? 'HALF-TIME SCORE REACHED — CALL HALF TIME?'
+              : 'SCORE CAP REACHED — END THE GAME?'}
+          </div>
+          <button
+            onClick={confirmSuggestion}
+            className="px-3 cursor-pointer font-semibold"
+            style={{ borderLeft: '1px solid var(--color-warn)' }}
+          >
+            {suggestion === 'half-time' ? 'CALL HALF' : 'END GAME'}
+          </button>
+          <button
+            onClick={() => setDismissed(true)}
+            className="px-3 cursor-pointer"
+            style={{ borderLeft: '1px solid var(--color-warn)' }}
+          >
+            NOT YET
+          </button>
+        </div>
+      )}
+
       {/* Undo + log — kept reachable on this screen. */}
       <div
         className="flex-shrink-0 flex items-stretch gap-2 p-3"
         style={{ borderTop: '1px solid var(--color-border)' }}
         onClick={e => e.stopPropagation()}
       >
-        <Btn variant="default" size="md" full onClick={actions.undoPointSummary}><UndoIcon size={15} /><span className="ml-1.5">Undo goal</span></Btn>
+        <Btn variant="default" size="md" full style={{ background: 'var(--color-warn-bg)', color: 'var(--color-warn)' }} onClick={actions.undoPointSummary}><UndoIcon size={15} /><span className="ml-1.5">Undo goal</span></Btn>
         <Btn variant="default" size="md" full onClick={() => setSheetOpen(true)}>View log</Btn>
         <Btn variant="primary" size="md" full onClick={actions.dismissPointSummary}>Next point</Btn>
       </div>
@@ -122,8 +166,6 @@ export default function PointSummary() {
         onTimeout={actions.recordTimeout}
         onFoul={actions.recordFoul}
         onPick={actions.recordPick}
-        onHalfTime={actions.triggerHalfTime}
-        onEndGame={actions.triggerEndGame}
         onResumeFromScore={actions.resumeFromScore}
       />
     </div>

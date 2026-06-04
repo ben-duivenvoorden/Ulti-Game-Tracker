@@ -31,8 +31,6 @@ interface BottomSheetProps {
   onTimeout:        () => void
   onFoul:           () => void
   onPick:           () => void
-  onHalfTime:       () => void
-  onEndGame:        () => void
   onResumeFromScore: (scoreA: number, scoreB: number, offenceTeam: TeamId) => void
 }
 
@@ -180,7 +178,7 @@ function LogTab(props: BottomSheetProps) {
 
 function MoreTab(props: BottomSheetProps) {
   const { state, recordingOptions, teams,
-          onInjurySub, onTimeout, onFoul, onPick, onHalfTime, onEndGame, onResumeFromScore } = props
+          onInjurySub, onTimeout, onFoul, onPick, onResumeFromScore } = props
   const can = (t: Parameters<typeof canRecord>[1]) => canRecord(state, t)
   const [resumeOpen, setResumeOpen] = useState(false)
 
@@ -195,11 +193,6 @@ function MoreTab(props: BottomSheetProps) {
         {recordingOptions.pick && (
           <Btn variant="ghost" size="sm" full disabled={!can('pick')} onClick={onPick}>Pick</Btn>
         )}
-      </Section>
-
-      <Section title="MANUAL TRIGGERS">
-        <Btn variant="ghost" size="sm" full disabled={!can('half-time')} onClick={onHalfTime}>Half Time</Btn>
-        <Btn variant="ghost" size="sm" full disabled={!can('end-game')}  onClick={onEndGame}>End Game</Btn>
       </Section>
 
       <Section title="RESYNC">

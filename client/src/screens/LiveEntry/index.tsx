@@ -349,8 +349,6 @@ export default function LiveEntry() {
           onTimeout={actions.recordTimeout}
           onFoul={actions.recordFoul}
           onPick={actions.recordPick}
-          onHalfTime={actions.triggerHalfTime}
-          onEndGame={actions.triggerEndGame}
           onResumeFromScore={actions.resumeFromScore}
         />
 

@@ -3,7 +3,7 @@ import { Btn } from '@/components/ui/Btn'
 import { Chip } from '@/components/ui/Chip'
 import { IconBtn, SettingsIcon, TeamsIcon, BackIcon, CheckIcon } from '@/components/ui/Icons'
 import { ScorerInfoButton } from '@/components/ScorerInfoButton'
-import { useSession, useDerivedState, useRecordingOptions, useSuggestedTransition } from '@/core/selectors'
+import { useSession, useDerivedState, useRecordingOptions } from '@/core/selectors'
 import { useGameStore, seedDefaultLine } from '@/core/store'
 import { inkOn } from '@/core/contrast'
 import { pickDisplayNames } from '@/core/teams/shortName'
@@ -22,12 +22,8 @@ export default function LineSelection() {
   const openTeamsManager = useGameStore(s => s.openTeamsManager)
   const openGameSettings = useGameStore(s => s.openGameSettings)
   const addPlayer      = useGameStore(s => s.addPlayer)
-  const triggerHalfTime = useGameStore(s => s.triggerHalfTime)
-  const triggerEndGame  = useGameStore(s => s.triggerEndGame)
   const options        = useRecordingOptions()
   const { lineRatio, gameMode, lineSize } = options
-  const suggestion     = useSuggestedTransition()
-  const [dismissed, setDismissed] = useState(false)
 
   const rosters = session?.gameConfig.rosters
   const teams   = session?.gameConfig.teams
@@ -121,41 +117,6 @@ export default function LineSelection() {
           </Btn>
         </div>
       </div>
-
-      {/* Half-time / end-game suggestion banner */}
-      {suggestion && !dismissed && !isInjurySub && (
-        <div
-          className="flex-shrink-0 flex items-stretch text-[11px] font-semibold tracking-widest"
-          style={{
-            background:   'var(--color-warn-bg)',
-            color:        'var(--color-warn)',
-            borderBottom: '1px solid var(--color-warn)',
-          }}
-        >
-          <div className="flex-1 flex items-center justify-center px-3 py-2">
-            {suggestion === 'half-time'
-              ? 'HALF-TIME SCORE REACHED — CALL HALF TIME?'
-              : 'SCORE CAP REACHED — END THE GAME?'}
-          </div>
-          <button
-            onClick={() => {
-              if (suggestion === 'half-time') triggerHalfTime()
-              else triggerEndGame()
-            }}
-            className="px-3 cursor-pointer font-semibold"
-            style={{ borderLeft: '1px solid var(--color-warn)' }}
-          >
-            {suggestion === 'half-time' ? 'CALL HALF' : 'END GAME'}
-          </button>
-          <button
-            onClick={() => setDismissed(true)}
-            className="px-3 cursor-pointer"
-            style={{ borderLeft: '1px solid var(--color-warn)' }}
-          >
-            NOT YET
-          </button>
-        </div>
-      )}
 
       {/* Injury-sub banner replaces the tab switcher; for normal line
           selection the tab switcher carries the screen's identity. */}
