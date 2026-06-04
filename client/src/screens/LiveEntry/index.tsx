@@ -559,7 +559,10 @@ function SankeyBridge({
   // padded edges by BRIDGE_INSET, so the flat segments along the
   // pill's and the events region's top/bottom are shorter and the
   // bezier begins/ends earlier on both sides.
-  const sourceX = playerLeft ? tileR - BRIDGE_INSET : tileL + BRIDGE_INSET
+  // Player side: run the flat top/bottom edges the FULL width to the tile's
+  // sankey-side corner (a square corner there), then let the bezier spring from
+  // the corner. The events side keeps BRIDGE_INSET so its flat segment is shorter.
+  const sourceX = playerLeft ? tileR : tileL
   const targetX = playerLeft ? evtL  + BRIDGE_INSET : evtR  - BRIDGE_INSET
   // Asymmetric control-point X coords — biased toward the OTHER tile so
   // the bezier eases out of the tile it springs from. Replaces ctrlMid
@@ -621,10 +624,8 @@ function SankeyBridge({
       <svg width={W} height={H} style={{ display: 'block' }}>
         <path
           d={d}
-          fill={`${teamColor}39`}
-          stroke={`${teamColor}cc`}
-          strokeWidth={2}
-          strokeLinejoin="round"
+          fill={`${teamColor}80`}
+          stroke="none"
         />
       </svg>
     </div>
