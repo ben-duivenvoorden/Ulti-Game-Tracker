@@ -64,6 +64,23 @@ export default function PhonePreview({ open, onClose }: Props) {
         aria-hidden
       />
 
+      {/* Open the app as a full page (same-origin /app/, new tab) — for when the
+          framed preview isn't enough and you want the real URL. */}
+      <a
+        href={APP_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className={`absolute left-4 top-4 z-10 inline-flex h-10 items-center gap-2 rounded-full border border-border-2 bg-surf/80 px-4 text-sm font-semibold text-muted backdrop-blur transition-all duration-300 hover:bg-surf-2 hover:text-content ${
+          visible ? 'opacity-100' : 'opacity-0'
+        }`}
+      >
+        Open in new tab
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M14 4h6v6M20 4l-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5" />
+        </svg>
+      </a>
+
       <button
         ref={closeRef}
         onClick={onClose}
