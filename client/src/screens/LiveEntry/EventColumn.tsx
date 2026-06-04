@@ -182,7 +182,11 @@ export function EventColumn(props: EventColumnProps) {
     <div className="flex flex-col gap-4 p-3 h-full overflow-y-auto">
       {actionButtons.map((b, i) => <EventBtn key={`a${i}`} {...b} />)}
       {Array.from({ length: fillerRows }).map((_, i) => (
-        <div key={`f${i}`} className="flex-1 min-h-0" aria-hidden />
+        // border-2 border-transparent gives the filler the SAME box as the action
+        // tiles. Without it the borderless filler renders a few px short and flex
+        // spreads that slack across the buttons, drifting them down and breaking
+        // row alignment with the player column (visible as Goal vs its player row).
+        <div key={`f${i}`} className="flex-1 min-h-0 border-2 border-transparent" aria-hidden />
       ))}
       <EventBtn
         label="More"
