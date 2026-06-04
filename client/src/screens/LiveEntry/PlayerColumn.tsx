@@ -8,7 +8,7 @@ import { CloseIcon } from '@/components/ui/Icons'
 // "Unknown turnover" button: grey surface, dull dotted outline, recessive so
 // they don't compete with the solid player pills.
 const DULL_TILE_CLASS =
-  'flex-1 min-h-0 rounded-xl border-2 cursor-pointer transition-colors select-none flex flex-col items-center justify-center px-2 text-center'
+  'flex-1 min-h-0 rounded-xl border-2 cursor-pointer transition select-none flex flex-col items-center justify-center px-2 text-center hover:brightness-125'
 const DULL_TILE_STYLE: CSSProperties = {
   background:    'var(--color-surf-2)',
   color:         'var(--color-dull)',
@@ -127,7 +127,7 @@ export function PlayerColumn(props: PlayerColumnProps) {
             }}
             className="relative flex-1 min-h-0 rounded-xl border cursor-pointer transition-all select-none flex flex-col items-center justify-center px-2"
             style={{
-              background:    ineligible       ? 'var(--color-surf-2)'
+              background:    ineligible       ? 'var(--color-surf)'
                             : isMoveSelected ? `${teamColor}66`
                             : isActive       ? 'transparent'
                             : teamColor,
@@ -145,7 +145,7 @@ export function PlayerColumn(props: PlayerColumnProps) {
                             : teamColor,
               borderStyle:   isMoveTarget ? 'dashed' : 'solid',
               borderWidth:   isMoveSelected ? 3 : 2,
-              opacity:       ineligible ? 0.45 : 1,
+              opacity:       ineligible ? 0.4 : 1,
               fontWeight:    700,
               letterSpacing: 0.2,
               lineHeight:    1.1,

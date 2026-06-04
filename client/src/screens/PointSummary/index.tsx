@@ -101,8 +101,8 @@ export default function PointSummary() {
         style={{ borderTop: '1px solid var(--color-border)' }}
         onClick={e => e.stopPropagation()}
       >
-        <Btn variant="ghost" size="md" full onClick={actions.undoPointSummary}><UndoIcon size={15} /><span className="ml-1.5">Undo goal</span></Btn>
-        <Btn variant="ghost" size="md" full onClick={() => setSheetOpen(true)}>View log</Btn>
+        <Btn variant="default" size="md" full onClick={actions.undoPointSummary}><UndoIcon size={15} /><span className="ml-1.5">Undo goal</span></Btn>
+        <Btn variant="default" size="md" full onClick={() => setSheetOpen(true)}>View log</Btn>
         <Btn variant="primary" size="md" full onClick={actions.dismissPointSummary}>Next point</Btn>
       </div>
 

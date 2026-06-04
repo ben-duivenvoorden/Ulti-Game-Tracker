@@ -148,33 +148,21 @@ export default function LiveEntry() {
       />
 
       {pickMode && (
-        <button
+        <ModeBanner
           onClick={actions.cancelPickMode}
-          className="flex-shrink-0 h-8 w-full flex items-center justify-center text-[11px] font-semibold tracking-widest cursor-pointer"
-          style={{
-            background: 'var(--color-warn-bg)',
-            color: 'var(--color-warn)',
-            borderBottom: '1px solid var(--color-warn)',
-          }}
           title="Tap to cancel"
-        >
-          {resolveContextLabel(pickMode, { defendingShort })} · TAP TO CANCEL
-        </button>
+          label={resolveContextLabel(pickMode, { defendingShort })}
+          hint="TAP TO CANCEL"
+        />
       )}
 
       {previewing && !pickMode && (
-        <button
+        <ModeBanner
           onClick={() => actions.setTruncateCursor(null)}
-          className="flex-shrink-0 h-8 w-full flex items-center justify-center text-[11px] font-semibold tracking-widest cursor-pointer"
-          style={{
-            background: 'var(--color-warn-bg)',
-            color: 'var(--color-warn)',
-            borderBottom: '1px solid var(--color-warn)',
-          }}
           title="Tap to cancel preview"
-        >
-          VIEWING HISTORY · RECORD TO TRUNCATE FORWARD · TAP TO CANCEL
-        </button>
+          label="VIEWING HISTORY · RECORD TO TRUNCATE FORWARD"
+          hint="TAP TO CANCEL"
+        />
       )}
 
       {notification && (
@@ -502,6 +490,9 @@ function SankeyBridge({
   // than tracing its corners tightly.
   const RADIUS  = 18
   const EVT_PAD     = 9   // px the encompass extends past the action tiles on all four sides
+  // The events-side BOTTOM gets extra room below the last action tile (2× the
+  // all-sides pad) so the wrap doesn't crowd the Brick / Goal edge.
+  const EVT_PAD_BOTTOM = EVT_PAD * 2
   const PLAYER_PAD  = 9   // px the encompass extends past the active player tile on all four sides
   // How far INSIDE each region's bridge-facing edge the bezier attaches.
   // Larger = shorter flat segments along both the player pill and the
@@ -541,7 +532,7 @@ function SankeyBridge({
   // encompass visibly surrounds the action tiles without sitting on top of
   // their borders.
   const evtTop    = COL_PAD - EVT_PAD
-  const evtBottom = COL_PAD + actionCount * (tileH + GAP) - GAP + EVT_PAD
+  const evtBottom = COL_PAD + actionCount * (tileH + GAP) - GAP + EVT_PAD_BOTTOM
 
   // Active-tile horizontal extent — also pushed out by PLAYER_PAD on
   // both the outer side AND the bridge-facing side.
@@ -626,6 +617,32 @@ function SankeyBridge({
         />
       </svg>
     </div>
+  )
+}
+
+// Full-width transient mode strip stacked under the Header (pick mode,
+// rewind/preview). Two centred lines: the context label, then the cancel
+// hint on its own line so neither gets cramped or truncated. The dormant
+// `notification` toast is intentionally NOT routed through this.
+function ModeBanner({ tone = 'warn', onClick, title, label, hint }: {
+  tone?:    'warn' | 'success'
+  onClick?: () => void
+  title?:   string
+  label:    string
+  hint?:    string
+}) {
+  const color = tone === 'success' ? 'var(--color-success)'    : 'var(--color-warn)'
+  const bg    = tone === 'success' ? 'var(--color-success-bg)' : 'var(--color-warn-bg)'
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className="flex-shrink-0 w-full flex flex-col items-center justify-center py-1.5 text-[11px] font-semibold tracking-widest cursor-pointer leading-tight"
+      style={{ background: bg, color, borderBottom: `1px solid ${color}` }}
+    >
+      <span>{label}</span>
+      {hint && <span style={{ opacity: 0.7, marginTop: 2 }}>{hint}</span>}
+    </button>
   )
 }
 

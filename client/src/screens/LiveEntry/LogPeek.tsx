@@ -42,7 +42,14 @@ export function LogPeek({ visLog, players, onOpen, onUndo }: LogPeekProps) {
         title="Open event log"
       >
         <span className="truncate text-left flex-1 mr-2">
-          {last ? formatVisLogEntry(last, players) : 'No events yet'}
+          {/* Point-start lists the whole line — far too long for this one-line
+              strip (it just truncates mid-name). Show a short label here; the
+              full LOG sheet still renders the rosters via formatVisLogEntry. */}
+          {!last
+            ? 'No events yet'
+            : last.type === 'point-start'
+              ? '— Point Started —'
+              : formatVisLogEntry(last, players)}
         </span>
         <span style={{ color: 'var(--color-muted)' }}>LOG ▾</span>
       </button>
