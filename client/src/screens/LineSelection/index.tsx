@@ -167,13 +167,7 @@ export default function LineSelection() {
       {/* Active team's roster */}
       <div className="flex-1 overflow-hidden">
         {(() => {
-          const slot: TeamId = isInjurySub
-            // In injury-sub mode, lock to the team whose active line we're
-            // editing — the engine drives this off the affected team's
-            // mid-point change; we infer it from the diff side that's most
-            // likely. For now, the tab follows the user's selection.
-            ? activeTab
-            : activeTab
+          const slot: TeamId = activeTab
           const sel = slot === 'A' ? selA : selB
           const setSel = slot === 'A' ? setSelA : setSelB
           return (

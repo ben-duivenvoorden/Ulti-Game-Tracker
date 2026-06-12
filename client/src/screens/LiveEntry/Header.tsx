@@ -20,11 +20,10 @@ interface HeaderProps {
 // Never one long + one short.
 const NAME_FIT_THRESHOLD = 10
 
-// Top strip on Live Entry: back arrow + live score. The "–" between
-// the two score numbers doubles as the swap-ends control — tap it to
-// flip which team renders on which side. Transient mode strips (pick
-// mode, truncate preview, edit mode, suggestion, notification) are
-// stacked separately below this header by the parent screen.
+// Top strip on Live Entry: back arrow + live score. The swap icon between
+// the two score numbers is the swap-ends control — tap it to flip which
+// team renders on which side. Transient mode strips (pick mode, truncate
+// preview) are stacked separately below this header by the parent screen.
 export function Header({ teams, score, endsSwapped, onToggleEnds, onBack }: HeaderProps) {
   const names = pickDisplayNames(teams.A, teams.B, NAME_FIT_THRESHOLD)
   const left:  TeamId = endsSwapped ? 'B' : 'A'

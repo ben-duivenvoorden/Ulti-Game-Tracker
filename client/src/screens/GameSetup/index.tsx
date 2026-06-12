@@ -181,10 +181,7 @@ export default function GameSetup() {
               {expanded && (
                 <div className="px-4 pb-4 flex flex-col gap-3">
                   {isDone ? (
-                    <div className="flex gap-2">
-                      <Btn variant="primary" size="md" full onClick={() => resumeGame(g.id)}>View Final Stats</Btn>
-                      <Btn variant="ghost"   size="md" full>Export</Btn>
-                    </div>
+                    <Btn variant="primary" size="md" full onClick={() => resumeGame(g.id)}>View Final Stats</Btn>
                   ) : (
                     <>
                       {summary && summary.segmentCount > 0 && (

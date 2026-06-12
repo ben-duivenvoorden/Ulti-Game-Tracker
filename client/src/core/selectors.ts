@@ -4,7 +4,7 @@ import { useGameStore, effectiveSession } from './store'
 import { computeVisLog, deriveGameState, deriveEndsSwapped } from './engine'
 import { deriveTeamsState } from './teams/engine'
 import { deriveScheduledGamesState, resolveGameConfig } from './games/engine'
-import type { DerivedGameState, VisLogEntry, GameSession, RecordingOptions, EventId, Notification } from './types'
+import type { DerivedGameState, VisLogEntry, GameSession, RecordingOptions, EventId } from './types'
 import type { TeamsState } from './teams/types'
 import type { ScheduledGame, ScheduledGameEvent } from './games/types'
 import type { TeamEvent } from './teams/types'
@@ -60,10 +60,6 @@ export function useSession(): GameSession | null {
     () => (stored ? resolveSessionWith(stored, teamsState, scheduledGames) : null),
     [stored, teamsState, scheduledGames],
   )
-}
-
-export function useNotification(): Notification | null {
-  return useGameStore(s => s.notification)
 }
 
 export function useDerivedState(): DerivedGameState | null {

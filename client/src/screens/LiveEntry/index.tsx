@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   useSession, useDerivedState, useVisLog, useGameActions, useUiState, useRecordingOptions,
-  useTruncateCursor, useNotification, useDisplayEndsSwapped,
+  useTruncateCursor, useDisplayEndsSwapped,
 } from '@/core/selectors'
 import { otherTeam, UNKNOWN_PLAYER, type Player, type PlayerId, type TeamId, type VisLogEntry } from '@/core/types'
 import { isPickMode, pickActiveTeam, resolveContextLabel } from '@/core/pickModes'
@@ -62,7 +62,6 @@ export default function LiveEntry() {
   const actions          = useGameActions()
   const recordingOptions = useRecordingOptions()
   const truncateCursor   = useTruncateCursor()
-  const notification     = useNotification()
 
   const [sheetOpen, setSheetOpen] = useState(false)
   const [sheetTab, setSheetTab] = useState<SheetTab>('log')
@@ -129,7 +128,6 @@ export default function LiveEntry() {
   if (!session || !state || !activeTeam) return null
 
   const { teams } = session.gameConfig
-  const ineligibleIds: never[] = []
 
   const isGameOver = phase === 'game-over'
   const previewing = truncateCursor !== null
@@ -163,23 +161,6 @@ export default function LiveEntry() {
           label="VIEWING HISTORY · RECORD TO TRUNCATE FORWARD"
           hint="TAP TO CANCEL"
         />
-      )}
-
-      {notification && (
-        <button
-          onClick={actions.dismissNotification}
-          className="flex-shrink-0 w-full px-3 py-1.5 text-[11px] font-semibold cursor-pointer text-left"
-          style={{
-            background: notification.kind === 'success' ? 'var(--color-success-bg)' : 'var(--color-warn-bg)',
-            color:      notification.kind === 'success' ? 'var(--color-success)'    : 'var(--color-warn)',
-            borderBottom: `1px solid ${notification.kind === 'success' ? 'var(--color-success)' : 'var(--color-warn)'}`,
-          }}
-        >
-          {notification.message}
-          {notification.detail && (
-            <span style={{ opacity: 0.75, marginLeft: 8, fontWeight: 400 }}>· {notification.detail}</span>
-          )}
-        </button>
       )}
 
       <LogPeek
@@ -247,7 +228,6 @@ export default function LiveEntry() {
                   teamColor={activeTeamColor}
                   holderId={state.discHolder}
                   pullerId={ui.selPuller}
-                  ineligibleIds={ineligibleIds}
                   onTap={handleTap}
                   onLongPress={handleLongPress}
                   moveSelectedId={moveSelectedId}
@@ -632,8 +612,7 @@ function SankeyBridge({
 
 // Full-width transient mode strip stacked under the Header (pick mode,
 // rewind/preview). Two centred lines: the context label, then the cancel
-// hint on its own line so neither gets cramped or truncated. The dormant
-// `notification` toast is intentionally NOT routed through this.
+// hint on its own line so neither gets cramped or truncated.
 function ModeBanner({ tone = 'warn', onClick, title, label, hint }: {
   tone?:    'warn' | 'success'
   onClick?: () => void

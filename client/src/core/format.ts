@@ -38,7 +38,6 @@ export function formatVisLogEntry(entry: VisLogEntry, players: Player[]): string
     case 'timeout':                  return 'Timeout'
     case 'foul':                     return 'Foul'
     case 'pick':                     return 'Pick'
-    case 'system':                   return entry.text
   }
 }
 
@@ -77,14 +76,12 @@ export function getVisLogColor(type: VisLogEntry['type']): string {
     case 'half-time':
     case 'end-game':
     case 'score-resume':
-    case 'system':
       return 'var(--color-dim)'
   }
 }
 
 export function isMutedLogEntry(type: VisLogEntry['type']): boolean {
-  return type === 'possession' || type === 'system' || type === 'point-start'
-      || type === 'score-resume'
+  return type === 'possession' || type === 'point-start' || type === 'score-resume'
 }
 
 // Events that put the game into a "dead disc / waiting for pickup" state
