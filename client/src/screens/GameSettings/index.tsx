@@ -1,31 +1,21 @@
-import { useGameStore } from '@/core/store'
-import { useRecordingOptions } from '@/core/selectors'
-import { Label } from '@/components/ui/Label'
+import { useGameActions, useRecordingOptions } from '@/core/selectors'
 import { Btn } from '@/components/ui/Btn'
-import { BackIcon } from '@/components/ui/Icons'
+import { Section, Stepper } from '@/components/ui/form'
+import { ScreenHeader } from '@/components/ScreenHeader'
 
 export default function GameSettings() {
-  const closeGameSettings   = useGameStore(s => s.closeGameSettings)
-  const updateRecordingOption = useGameStore(s => s.updateRecordingOption)
+  const { closeGameSettings, updateRecordingOption } = useGameActions()
   const options = useRecordingOptions()
 
   return (
     <div className="h-full flex flex-col bg-bg text-content">
-      {/* Header — same h-16 (64 px) height as every screen. */}
-      <div className="flex-shrink-0 h-16 border-b border-border flex items-center gap-3 px-4">
-        <button
-          onClick={closeGameSettings}
-          className="text-muted hover:text-content transition-colors cursor-pointer flex items-center leading-none flex-shrink-0"
-          title="Back"
-        >
-          <BackIcon size={20} />
-        </button>
-        <div className="flex-1">
-          <Label block className="mb-0.5">RECORDING SETTINGS</Label>
-          <div className="text-sm font-bold leading-tight">Configure what events are tracked</div>
-        </div>
-        <Btn variant="primary" size="md" onClick={closeGameSettings}>Done</Btn>
-      </div>
+      <ScreenHeader
+        onBack={closeGameSettings}
+        backTitle="Back"
+        kicker="RECORDING SETTINGS"
+        title={<span className="text-sm">Configure what events are tracked</span>}
+        right={<Btn variant="primary" size="md" onClick={closeGameSettings}>Done</Btn>}
+      />
 
       {/* Settings body — single column for portrait */}
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
@@ -42,7 +32,7 @@ export default function GameSettings() {
             >Open</ModeButton>
           </div>
           {options.gameMode === 'open' ? (
-            <CompactStepper
+            <Stepper
               label="Players per line"
               value={options.lineSize}
               onChange={v => updateRecordingOption('lineSize', v)}
@@ -53,7 +43,7 @@ export default function GameSettings() {
             <div className="flex flex-col gap-2">
               {/* In mixed, line size is derived from MMP + FMP so the ratio
                   always sums to it. Spell the terms out here (first appearance). */}
-              <CompactStepper
+              <Stepper
                 label="MMP (Male Matching)"
                 value={options.lineRatio.M}
                 onChange={v => {
@@ -64,7 +54,7 @@ export default function GameSettings() {
                 min={0}
                 max={15}
               />
-              <CompactStepper
+              <Stepper
                 label="FMP (Female Matching)"
                 value={options.lineRatio.F}
                 onChange={v => {
@@ -148,18 +138,6 @@ export default function GameSettings() {
 
 // ── Building blocks ────────────────────────────────────────────────────────────
 
-function Section({ title, children, className = '' }: { title: string; children: React.ReactNode; className?: string }) {
-  return (
-    <div
-      className={`rounded-lg border p-3 flex flex-col gap-2 ${className}`}
-      style={{ background: 'var(--color-surf)', borderColor: 'var(--color-border)' }}
-    >
-      <Label className="text-[9px]">{title}</Label>
-      {children}
-    </div>
-  )
-}
-
 function ModeButton({ children, selected, onClick }: { children: string; selected: boolean; onClick: () => void }) {
   return (
     <button
@@ -170,48 +148,6 @@ function ModeButton({ children, selected, onClick }: { children: string; selecte
         background:  selected ? 'var(--color-team-a)' : 'transparent',
         borderColor: selected ? 'transparent' : 'var(--color-border)',
         color:       selected ? '#fff' : 'var(--color-muted)',
-      }}
-    >
-      {children}
-    </button>
-  )
-}
-
-function CompactStepper({
-  label, value, min, max, onChange,
-}: {
-  label:    string
-  value:    number
-  min:      number
-  max:      number
-  onChange: (v: number) => void
-}) {
-  return (
-    <div
-      className="flex items-center justify-between gap-3 px-3 h-10 rounded-md border"
-      style={{ background: 'var(--color-surf-2)', borderColor: 'var(--color-border-2)' }}
-    >
-      <span className="text-sm font-semibold text-content">{label}</span>
-      <div className="flex items-center gap-1.5 flex-shrink-0">
-        <StepperButton onClick={() => onChange(Math.max(min, value - 1))} disabled={value <= min}>−</StepperButton>
-        <span className="w-5 text-center text-base font-bold tabular-nums">{value}</span>
-        <StepperButton onClick={() => onChange(Math.min(max, value + 1))} disabled={value >= max}>+</StepperButton>
-      </div>
-    </div>
-  )
-}
-
-function StepperButton({ children, onClick, disabled }: { children: string; onClick: () => void; disabled?: boolean }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className="w-7 h-7 rounded-md border text-base font-bold cursor-pointer transition-colors disabled:opacity-30 disabled:cursor-default"
-      style={{
-        background:  'var(--color-surf-3)',
-        borderColor: 'var(--color-border-2)',
-        color:       'var(--color-content)',
       }}
     >
       {children}

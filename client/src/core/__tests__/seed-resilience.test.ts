@@ -106,7 +106,6 @@ async function resetStoreModule(): Promise<typeof import('../store')> {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var localStorage: LocalStorageStub
 }
 

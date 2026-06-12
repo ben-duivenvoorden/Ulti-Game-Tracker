@@ -3,8 +3,9 @@ import { Btn } from '@/components/ui/Btn'
 import { Chip } from '@/components/ui/Chip'
 import { Label } from '@/components/ui/Label'
 import { IconBtn, SettingsIcon, TeamsIcon } from '@/components/ui/Icons'
+import { ScreenHeader } from '@/components/ScreenHeader'
 import { useGameStore } from '@/core/store'
-import { useScheduledGames, useSession, useTeamsState } from '@/core/selectors'
+import { useGameActions, useScheduledGames, useSession, useTeamsState } from '@/core/selectors'
 import { deriveGameState, deriveGameStatus } from '@/core/engine'
 import { resolveGameConfig } from '@/core/games/engine'
 import { fetchGameSummary, decideResume, type GameSummary } from '@/core/serverLog'
@@ -15,15 +16,11 @@ import NewGameForm from '@/screens/NewGame'
 const NEW_GAME_SENTINEL = -1
 
 export default function GameSetup() {
-  const selectGame            = useGameStore(s => s.selectGame)
-  const resumeGame            = useGameStore(s => s.resumeGame)
-  const startSegmentFromScore = useGameStore(s => s.startSegmentFromScore)
-  const deviceId              = useGameStore(s => s.deviceId)
-  const openGameSettings = useGameStore(s => s.openGameSettings)
-  const openTeamsManager = useGameStore(s => s.openTeamsManager)
-  const session          = useSession()
-  const games            = useScheduledGames()
-  const teamsState       = useTeamsState()
+  const { selectGame, resumeGame, startSegmentFromScore, openGameSettings, openTeamsManager } = useGameActions()
+  const deviceId   = useGameStore(s => s.deviceId)
+  const session    = useSession()
+  const games      = useScheduledGames()
+  const teamsState = useTeamsState()
 
   // When set, expand the matching card inline to show pulling-team picker.
   const [expandedId, setExpandedId] = useState<number | null>(null)
@@ -83,22 +80,20 @@ export default function GameSetup() {
 
   return (
     <div className="h-full flex flex-col bg-bg text-content">
-      {/* Header — same h-16 (64 px) height across every screen. Two-line
-          title on the left, two large action icons on the right. */}
-      <div className="flex-shrink-0 h-16 border-b border-border flex items-center justify-between px-4 gap-3">
-        <div>
-          <Label block className="mb-0.5">GAME SETUP</Label>
-          <div className="text-base font-bold leading-tight">Games</div>
-        </div>
-        <div className="flex items-center gap-1">
-          <IconBtn onClick={openTeamsManager} title="Manage teams">
-            <TeamsIcon />
-          </IconBtn>
-          <IconBtn onClick={openGameSettings} title="Recording settings">
-            <SettingsIcon />
-          </IconBtn>
-        </div>
-      </div>
+      <ScreenHeader
+        kicker="GAME SETUP"
+        title="Games"
+        right={
+          <>
+            <IconBtn onClick={openTeamsManager} title="Manage teams">
+              <TeamsIcon />
+            </IconBtn>
+            <IconBtn onClick={openGameSettings} title="Recording settings">
+              <SettingsIcon />
+            </IconBtn>
+          </>
+        }
+      />
 
       {/* Game list */}
       <div className="flex-1 overflow-y-auto">
