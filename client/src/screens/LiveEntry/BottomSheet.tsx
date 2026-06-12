@@ -148,7 +148,7 @@ function LogTab(props: BottomSheetProps) {
                   borderLeft: `${isCursor ? 3 : 2}px solid ${color}`,
                   background: `${color}12`,
                   color: muted ? 'var(--color-muted)' : color,
-                  fontFamily: e.type === 'system' || e.type === 'point-start' ? 'var(--font-mono)' : 'var(--font-sans)',
+                  fontFamily: e.type === 'point-start' ? 'var(--font-mono)' : 'var(--font-sans)',
                   opacity: past ? 0.4 : 1,
                   textDecoration: past ? 'line-through' : 'none',
                 }}

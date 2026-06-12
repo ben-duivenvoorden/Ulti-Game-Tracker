@@ -39,8 +39,6 @@ interface PlayerColumnProps {
   holderId: PlayerId | null
   /** Selected as the puller (awaiting-pull only) — strong highlight. */
   pullerId: PlayerId | null
-  /** Dimmed and untappable (e.g. thrower during Receiver Error Pick). */
-  ineligibleIds: PlayerId[]
   onTap: (player: Player) => void
   /** Long-press a player to enter Move mode with that player selected. */
   onLongPress?: (player: Player) => void
@@ -68,7 +66,7 @@ const LONG_PRESS_MS = 450
 // Tap to record a possession; long-press a player to enter Move mode,
 // then tap another player to swap their positions.
 export function PlayerColumn(props: PlayerColumnProps) {
-  const { players, teamColor, holderId, pullerId, ineligibleIds, onTap, onLongPress, moveSelectedId,
+  const { players, teamColor, holderId, pullerId, onTap, onLongPress, moveSelectedId,
           lineSize, onAddSlot, onRemove, onUnknownPlayer } = props
   const timerRef    = useRef<number | null>(null)
   const triggeredRef = useRef(false)
@@ -92,14 +90,12 @@ export function PlayerColumn(props: PlayerColumnProps) {
         const isHolder = p.id === holderId
         const isPuller = p.id === pullerId
         const isActive = isHolder || isPuller
-        const ineligible = ineligibleIds.includes(p.id)
         const isMoveSelected = moveSelectedId === p.id
         const isMoveTarget   = inMoveMode && !isMoveSelected
         const [first, rest] = splitName(p.name)
         return (
           <button
             key={p.id}
-            disabled={ineligible}
             onPointerDown={() => {
               triggeredRef.current = false
               downIdRef.current = p.id
@@ -127,29 +123,24 @@ export function PlayerColumn(props: PlayerColumnProps) {
             }}
             className="relative flex-1 min-h-0 rounded-xl border cursor-pointer transition-all select-none flex flex-col items-center justify-center px-2"
             style={{
-              background:    ineligible       ? 'var(--color-surf)'
-                            : isMoveSelected ? `${teamColor}66`
+              background:    isMoveSelected ? `${teamColor}66`
                             : isActive       ? 'transparent'
                             : teamColor,
               // When active, the pill is transparent and the dark sankey
               // wash sits behind — so contrast against the team colour
               // (which inkOn assumes) gives unreadable dark text for
               // light team kits. Force light ink in that case.
-              color:         ineligible ? 'var(--color-dim)'
-                            : isActive  ? '#fff'
-                            : inkOn(teamColor),
-              borderColor:   ineligible       ? 'var(--color-border)'
-                            : isMoveSelected ? teamColor
+              color:         isActive ? '#fff' : inkOn(teamColor),
+              borderColor:   isMoveSelected ? teamColor
                             : isMoveTarget   ? teamColor
                             : isActive       ? 'transparent'
                             : teamColor,
               borderStyle:   isMoveTarget ? 'dashed' : 'solid',
               borderWidth:   isMoveSelected ? 3 : 2,
-              opacity:       ineligible ? 0.4 : 1,
               fontWeight:    700,
               letterSpacing: 0.2,
               lineHeight:    1.1,
-              boxShadow:     !ineligible && !isActive && !inMoveMode
+              boxShadow:     !isActive && !inMoveMode
                             ? `0 0 14px ${teamColor}33`
                             : 'none',
             }}

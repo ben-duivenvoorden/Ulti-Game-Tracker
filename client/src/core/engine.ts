@@ -6,8 +6,6 @@ import type {
   DerivedGameState,
   PlayerId,
   Player,
-  AmendRawEvent,
-  SpliceBlockRawEvent,
 } from './types'
 import { otherTeam } from './types'
 
@@ -27,70 +25,30 @@ export function nextEventId(session: GameSession): number {
 }
 
 // ─── Raw-log resolution ───────────────────────────────────────────────────────
-// One walker, two consumers: the visible event log and game-state derivation.
-// Both produce the same output; the two named exports below preserve intent
-// at call sites.
+// One walker, two consumers: the visible event log (`computeVisLog`) and
+// game-state derivation (`deriveGameState`). Both fold the same resolved list.
 
 export type Resolved = Exclude<RawEvent, StructuralOnly>
 
 function resolveRawLog(rawLog: RawEvent[]): Resolved[] {
   const out: Resolved[] = []
   for (const event of rawLog) {
-    if (event.type === 'undo')         { popLastVisible(out); continue }
-    if (event.type === 'amend')        { applyAmend(out, event); continue }
-    if (event.type === 'truncate')     { dropAfter(out, event.truncateAfterId); continue }
-    if (event.type === 'splice-block') { applySplice(out, event); continue }
+    if (event.type === 'undo')     { popLastVisible(out); continue }
+    if (event.type === 'truncate') { dropAfter(out, event.truncateAfterId); continue }
     out.push(event)
   }
   return out
 }
 
-// One splice call covers insert / replace / delete. Removal is by id-range
-// so the operation is identical regardless of inner-event composition.
-function applySplice(entries: Resolved[], event: SpliceBlockRawEvent): void {
-  const idx = entries.findIndex(e => e.id === event.afterEventId)
-  if (idx === -1) return
-  let removeCount = 0
-  if (event.removeFromId !== null && event.removeToId !== null) {
-    const lo = event.removeFromId
-    const hi = event.removeToId
-    while (idx + 1 + removeCount < entries.length) {
-      const candidate = entries[idx + 1 + removeCount]
-      if (candidate.id < lo) break  // shouldn't happen — anchor precedes range
-      if (candidate.id > hi) break
-      removeCount++
-    }
-  }
-  // Strip structural events from the inner payload — they don't belong in
-  // the resolved log directly.
-  const inner = event.events.filter((e): e is Resolved =>
-    e.type !== 'undo' && e.type !== 'amend' && e.type !== 'truncate'
-    && e.type !== 'splice-block')
-  entries.splice(idx + 1, removeCount, ...inner)
-}
-
 // Undoing structural events would corrupt phase tracking, so they're skipped:
-// point-start / half-time / end-game / system anchor the timeline.
+// point-start / half-time / end-game anchor the timeline.
 function popLastVisible(entries: Resolved[]): void {
   for (let i = entries.length - 1; i >= 0; i--) {
     const t = entries[i].type
-    if (t !== 'system' && t !== 'point-start' && t !== 'half-time' && t !== 'end-game') {
+    if (t !== 'point-start' && t !== 'half-time' && t !== 'end-game') {
       entries.splice(i, 1)
       return
     }
-  }
-}
-
-function applyAmend(entries: Resolved[], event: AmendRawEvent): void {
-  const idx = entries.findIndex(e => e.id === event.targetEventId)
-  if (idx === -1) return
-  if (event.replacement === null) {
-    entries.splice(idx, 1)
-    return
-  }
-  const r = event.replacement
-  if (r.type !== 'undo' && r.type !== 'amend' && r.type !== 'truncate' && r.type !== 'splice-block') {
-    entries[idx] = r
   }
 }
 
@@ -160,8 +118,7 @@ function resolveLine(ids: PlayerId[] | undefined, roster: Player[]): Player[] {
  *  team in possession to receive, and a `pointIndex` equal to the points already
  *  played. A from-the-start segment begins at 0–0 with the receiving team on
  *  offence. `hasEvents` only governs the transient initial phase, which the
- *  first stepped event overwrites. Shared by `deriveGameState` and
- *  `validateSpliceBlock` so both fold from the same origin. */
+ *  first stepped event overwrites. */
 function initialState(session: GameSession, hasEvents: boolean): DerivedGameState {
   const anchor  = session.segment.anchor
   const offence = anchor ? anchor.offence : otherTeam(session.gameStartPullingTeam)
@@ -179,7 +136,7 @@ function initialState(session: GameSession, hasEvents: boolean): DerivedGameStat
 }
 
 export function deriveGameState(session: GameSession): DerivedGameState {
-  const events = resolveLogForDerivation(session.rawLog)
+  const events = resolveRawLog(session.rawLog)
   const state = initialState(session, events.length > 0)
 
   for (const event of events) step(state, event, session)
@@ -187,9 +144,8 @@ export function deriveGameState(session: GameSession): DerivedGameState {
   return state
 }
 
-// Single source of truth for state transitions on a resolved event. Used by
-// deriveGameState's inner walk and by validateSpliceBlock to fold the spliced
-// events into a prefix state.
+// Single source of truth for state transitions on a resolved event —
+// deriveGameState's inner walk.
 function step(state: DerivedGameState, event: Resolved, session: GameSession): void {
   switch (event.type) {
     case 'point-start':
@@ -313,21 +269,12 @@ function step(state: DerivedGameState, event: Resolved, session: GameSession): v
     case 'foul':
     case 'pick':
     case 'timeout':
-    case 'system':
-      // Stoppages and metadata — no state change.
+      // Stoppages — no state change.
       break
   }
 }
 
-/** Alias for `computeVisLog` shape — kept as a separate export so callers
- *  that want to express "I'm walking the resolved log for state derivation"
- *  can read clearly at the call site, even though the two paths produce
- *  identical output today. */
-export function resolveLogForDerivation(rawLog: RawEvent[]): Resolved[] {
-  return resolveRawLog(rawLog)
-}
-
-type StructuralOnly = Extract<RawEvent, { type: 'undo' | 'amend' | 'truncate' | 'splice-block' }>
+type StructuralOnly = Extract<RawEvent, { type: 'undo' | 'truncate' }>
 
 // ─── Game status (also derived) ───────────────────────────────────────────────
 // status is purely a function of the rawLog — there is no static "this game is
@@ -420,94 +367,10 @@ export function canRecord(state: DerivedGameState, eventType: RawEventType): boo
     case 'timeout':
       return state.gamePhase === 'in-play' || state.gamePhase === 'awaiting-pull'
 
-    case 'system':
     case 'undo':
-    case 'amend':
     case 'truncate':
-    case 'splice-block':
       return true
   }
-}
-
-// ─── Splice validation ────────────────────────────────────────────────────────
-// A splice is valid iff:
-//   1. Each inner event is a legal continuation of the prefix state at
-//      afterEventId, walked sequentially through canRecord + step.
-//   2. When trailing entries remain (events past the splice in the resolved
-//      log, after dropping `removeCount`), the first such entry is itself a
-//      legal continuation of the post-splice state, with possession-coherent
-//      identities (puller is on the other team; possession-event team matches
-//      possession; turnovers require a holder).
-
-export type SpliceValidation = { ok: true } | { ok: false; reason: string }
-
-export function validateSpliceBlock(session: GameSession, splice: SpliceBlockRawEvent): SpliceValidation {
-  const resolved = resolveLogForDerivation(session.rawLog)
-  const idx = resolved.findIndex(e => e.id === splice.afterEventId)
-  if (idx === -1) return { ok: false, reason: `Anchor event #${splice.afterEventId} not found` }
-  let removeCount = 0
-  if (splice.removeFromId !== null && splice.removeToId !== null) {
-    const lo = splice.removeFromId
-    const hi = splice.removeToId
-    if (lo > hi) return { ok: false, reason: 'removeFromId must be ≤ removeToId' }
-    while (idx + 1 + removeCount < resolved.length) {
-      const candidate = resolved[idx + 1 + removeCount]
-      if (candidate.id < lo) break
-      if (candidate.id > hi) break
-      removeCount++
-    }
-  }
-
-  // 1. Prefix state — fold everything up through and including afterEventId.
-  const state = initialState(session, resolved.length > 0)
-  for (let i = 0; i <= idx; i++) step(state, resolved[i], session)
-
-  // 2. Inner walk — each event must be a legal continuation.
-  for (let i = 0; i < splice.events.length; i++) {
-    const e = splice.events[i]
-    if (e.type === 'undo' || e.type === 'amend' || e.type === 'truncate' || e.type === 'splice-block') {
-      return { ok: false, reason: `Pasted #${i + 1}: structural events are not allowed in a splice` }
-    }
-    if (!canRecord(state, e.type)) {
-      return { ok: false, reason: `Pasted #${i + 1}: cannot record ${e.type} in phase ${state.gamePhase}` }
-    }
-    // Identity coherence on the pasted event itself.
-    if (e.type === 'pull' || e.type === 'pull-bonus' || e.type === 'brick') {
-      if (e.teamId !== otherTeam(state.possession)) {
-        return { ok: false, reason: `Pasted #${i + 1}: pulling team mismatch — expected ${otherTeam(state.possession)}, got ${e.teamId}` }
-      }
-    } else if (e.type === 'possession') {
-      if (e.teamId !== state.possession) {
-        return { ok: false, reason: `Pasted #${i + 1}: possession team mismatch — expected ${state.possession}, got ${e.teamId}` }
-      }
-    } else if (e.type === 'turnover-throw-away' || e.type === 'turnover-receiver-error' || e.type === 'turnover-stall' || e.type === 'goal') {
-      if (state.discHolder === null) {
-        return { ok: false, reason: `Pasted #${i + 1}: ${e.type} requires a disc holder` }
-      }
-    }
-    step(state, e as Resolved, session)
-  }
-
-  // 3. Trailing edge — first resolved entry beyond the removed slice (if any).
-  const tail = resolved[idx + 1 + removeCount]
-  if (!tail) return { ok: true }
-  if (!canRecord(state, tail.type)) {
-    return { ok: false, reason: `Trailing #${tail.id}: cannot continue with ${tail.type} in phase ${state.gamePhase}` }
-  }
-  if (tail.type === 'pull' || tail.type === 'pull-bonus' || tail.type === 'brick') {
-    if (tail.teamId !== otherTeam(state.possession)) {
-      return { ok: false, reason: `Trailing pull at #${tail.id}: pulling team mismatch — expected ${otherTeam(state.possession)}, got ${tail.teamId}` }
-    }
-  } else if (tail.type === 'possession') {
-    if (tail.teamId !== state.possession) {
-      return { ok: false, reason: `Trailing #${tail.id}: possession team mismatch — expected ${state.possession}, got ${tail.teamId}` }
-    }
-  } else if (tail.type === 'turnover-throw-away' || tail.type === 'turnover-receiver-error' || tail.type === 'turnover-stall' || tail.type === 'goal') {
-    if (state.discHolder === null) {
-      return { ok: false, reason: `Trailing #${tail.id}: ${tail.type} requires a disc holder` }
-    }
-  }
-  return { ok: true }
 }
 
 // ─── Append helpers ───────────────────────────────────────────────────────────

@@ -1,9 +1,7 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { useGameStore } from '../store'
-import { MOCK_GAMES } from '../data'
 import { computeVisLog, deriveGameState } from '../engine'
-import { tryParse, serialize, buildEnvelope } from '../clipboard'
-import type { ClipboardEnvelope } from '../clipboard'
+import { MOCK_GAMES } from './fixtures'
 
 // The store is a singleton; reset to a known fresh state before each case.
 function resetAndStartGame() {

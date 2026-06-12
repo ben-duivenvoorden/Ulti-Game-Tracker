@@ -10,7 +10,6 @@ import type {
   GameSession,
   RecordingOptions,
   DerivedGameState,
-  Notification,
   ScorerId,
   DeviceId,
   SegmentAnchor,
@@ -80,9 +79,6 @@ interface GameStore {
    *  recorded — the action prepends a `truncate` event so the dropped tail
    *  is committed atomically with whatever the user did next. */
   truncateCursor: EventId | null
-  /** Banner notification shown for transient feedback (mostly stoppage
-   *  acks today). One at a time; auto-clears via setTimeout. */
-  notification: Notification | null
   /** Manual baseline for the scorer's preferred orientation. The displayed
    *  `endsSwapped` is derived by `deriveEndsSwapped(baseline, visLog)` — the
    *  baseline contributes one term, each goal flips, each half-time may add
@@ -142,9 +138,6 @@ interface GameStore {
   setTruncateCursor:   (cursor: EventId | null) => void
   toggleEndsSwapped:   () => void
 
-  // Notifications
-  dismissNotification: () => void
-
   // ── Teams + scheduled games management (append-only) ──────────────────────
   // Every CRUD funnels through the appendTeam/Game helpers — never a direct
   // mutation. Return ids so the caller can wire them into follow-up state
@@ -195,10 +188,10 @@ interface GameStore {
 
 // ─── Persistence ──────────────────────────────────────────────────────────────
 
-const STORAGE_VERSION = 17
+const STORAGE_VERSION = 18
 const STORAGE_KEY     = 'ugt-game'
 /** Tagged at build time so hydration logs identify which bundle is running. */
-const BUILD_MARKER    = 'ugt-build-2026-06-03-v17'
+const BUILD_MARKER    = 'ugt-build-2026-06-12-v18'
 
 // ─── Initial seeds ────────────────────────────────────────────────────────────
 // `seedTeamsAndGames()` produces deterministic id 1.. events; the same seed
@@ -303,27 +296,6 @@ export function effectiveSession(session: GameSession, cursor: EventId | null): 
   return cursor === null ? session : { ...session, rawLog: session.rawLog.filter(e => e.id <= cursor) }
 }
 
-// The session every recording control reads from. Kept as a wrapper so
-// any future "draft session" shape (e.g. inline-amend preview) slots in
-// without touching every call site.
-export function activeSession(state: { session: GameSession | null }): GameSession | null {
-  return state.session
-}
-
-// ─── Notification banner ──────────────────────────────────────────────────────
-// Banner shown for transient feedback. Kept minimal — only an idle-timer
-// reset helper for now; the notify() helper went away when copy/paste/edit
-// did, since nothing else writes failure notifications today.
-
-let notificationTimer: ReturnType<typeof setTimeout> | null = null
-
-function clearNotificationTimer() {
-  if (notificationTimer !== null) {
-    clearTimeout(notificationTimer)
-    notificationTimer = null
-  }
-}
-
 // ─── recordVia ────────────────────────────────────────────────────────────────
 // Common funnel for actions that append events. Reads the derived state at
 // the truncate cursor (or live), lets the caller's `build` decide whether to
@@ -342,8 +314,7 @@ function recordVia(
   build: (state: DerivedGameState) => RawEventInput[] | null,
   extra?: Partial<GameStore>,
 ): boolean {
-  const { session, truncateCursor } = get()
-  const target = activeSession({ session })
+  const { session: target, truncateCursor } = get()
   if (!target) return false
   const state = deriveGameState(effectiveSession(target, truncateCursor))
   const events = build(state)
@@ -377,7 +348,6 @@ export const useGameStore = create<GameStore>()(
       selPuller:         null,
       showEventMenu:     false,
       truncateCursor:    null,
-      notification:      null,
       endsSwappedBaseline: false,
       recordingOptions:  DEFAULT_RECORDING_OPTIONS,
 
@@ -474,8 +444,7 @@ export const useGameStore = create<GameStore>()(
       // emits 'point-start' carrying lineA/lineB. For an injury sub mid-point,
       // emits a separate 'injury-sub' event for each team whose line changed.
       confirmLine(lineA, lineB) {
-        const { session, isInjurySub } = get()
-        const target = activeSession({ session })
+        const { session: target, isInjurySub } = get()
         if (!target) return
 
         const state = deriveGameState(target)
@@ -514,8 +483,7 @@ export const useGameStore = create<GameStore>()(
 
       // ── tapPlayer ───────────────────────────────────────────────────────────
       tapPlayer(player) {
-        const { session, uiMode, truncateCursor } = get()
-        const target = activeSession({ session })
+        const { session: target, uiMode, truncateCursor } = get()
         if (!target) return
         // Branch on the cursor-aware state so the canvas tap matches what the
         // user is looking at; recordVia takes care of the truncate prepend.
@@ -785,8 +753,7 @@ export const useGameStore = create<GameStore>()(
       // half-time event exists yet, insert one first so ends-orientation + half
       // logic stay correct. Lands on line selection.
       resumeFromScore(scoreA, scoreB, offenceTeam) {
-        const { session } = get()
-        const target = activeSession({ session })
+        const { session: target } = get()
         if (!target) return
         const state = deriveGameState(target)
         const { halfTimeAt } = target.gameConfig
@@ -908,13 +875,6 @@ export const useGameStore = create<GameStore>()(
         set({ endsSwappedBaseline: !get().endsSwappedBaseline })
       },
 
-      // ── dismissNotification ────────────────────────────────────────────────
-      dismissNotification() {
-        clearNotificationTimer()
-        set({ notification: null })
-      },
-
-
       // ── Teams CRUD (all append-only) ───────────────────────────────────────
       // Every action funnels through `appendTeamEvents` — never a direct
       // mutation. The returned id lets the caller wire fresh entities into
@@ -987,14 +947,13 @@ export const useGameStore = create<GameStore>()(
       },
 
       // ── Debug: reset all data ──────────────────────────────────────────────
-      // Reseed teams + scheduled games, drop the current session + edit mode,
-      // and bounce to game-setup. The persist middleware writes the new state
+      // Reseed teams + scheduled games, drop the current session, and bounce
+      // to game-setup. The persist middleware writes the new state
       // out via partialize on the next tick, so a refresh after this lands on
       // a known-clean state. Useful when localStorage drifts from the demo
       // seed and the user can't recover via the UI.
       resetAllData() {
         const fresh = seedTeamsAndGames()
-        clearNotificationTimer()
         set({
           session:           null,
           teamsLog:          fresh.teamEvents,
@@ -1005,7 +964,6 @@ export const useGameStore = create<GameStore>()(
           selPuller:         null,
           showEventMenu:     false,
           truncateCursor:    null,
-          notification:      null,
         })
       },
     }),
@@ -1077,6 +1035,15 @@ export const useGameStore = create<GameStore>()(
           ? { ...sessionWithSegment, segment: { ...sessionWithSegment.segment, deviceId } }
           : sessionWithSegment
 
+        // v17 → v18: `amend` / `splice-block` / `system` left the event-type
+        // union when the copy/paste/edit-log feature was removed (phase-
+        // boundary cleanup). Strip any legacy entries from the persisted
+        // rawLog so the live engine never sees a now-unknown event type.
+        const deadTypes = ['amend', 'splice-block', 'system']
+        const sessionV18 = (sessionWithDevice && Array.isArray(sessionWithDevice.rawLog) && fromVersion < 18)
+          ? { ...sessionWithDevice, rawLog: sessionWithDevice.rawLog.filter(e => !deadTypes.includes(e.type)) }
+          : sessionWithDevice
+
         console.info('[ugt-game] migrate', {
           build: BUILD_MARKER,
           fromVersion,
@@ -1088,12 +1055,13 @@ export const useGameStore = create<GameStore>()(
           derivedLineSize: mergedRecOpts.lineSize,
           backfilledSegment: sessionWithSegment !== cleanedSession,
           backfilledDeviceId: sessionWithDevice !== sessionWithSegment,
+          strippedDeadEventTypes: sessionV18 !== sessionWithDevice,
           mintedScorerId: !obj.scorerId,
           mintedDeviceId: !obj.deviceId,
         })
         return {
           ...obj,
-          session:           sessionWithDevice,
+          session:           sessionV18,
           scorerId,
           deviceId,
           screen:            dropping ? 'game-setup'    : (obj.screen ?? 'game-setup'),

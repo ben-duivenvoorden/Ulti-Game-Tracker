@@ -2,14 +2,14 @@
 // On first boot (and on v6→v7 migrations) `seedTeamsAndGames()` produces the
 // team-add / player-add events for every demo team plus the game-add events
 // for every demo fixture. Engine tests also build their fixture sessions from
-// this seed (via MOCK_GAMES below — kept as a compatibility export).
+// this seed (resolved via `__tests__/fixtures.ts`).
 //
 // Layout, top to bottom: real BUML fixture (the live test target) emitted
 // first so it shows at the top of GameSetup, then Empire vs Breeze as the
 // canonical AUDL demo. AUDL Summer Series + Championship were removed in
 // the 2026-05-11 trim.
 
-import type { GameConfig, Player, Team } from './types'
+import type { Player, Team } from './types'
 import type { TeamEvent, TeamEventInput } from './teams/types'
 import type { ScheduledGameEvent, ScheduledGameEventInput } from './games/types'
 import { addPlayer, addTeam } from './teams/actions'
@@ -176,20 +176,3 @@ export function seedTeamsAndGames(): SeedResult {
     gameEvents: stampGame(gameInputs),
   }
 }
-
-// ─── Compatibility export ─────────────────────────────────────────────────────
-// `MOCK_GAMES` is still re-exported because the existing engine + store tests
-// read rosters directly off it. Element [0] stays Empire vs Breeze so the
-// existing test fixtures (which use player ids 1–26) keep working unchanged.
-// The runtime app no longer consults this — everything flows through the
-// seeded teamsLog / scheduledGamesLog.
-
-export const MOCK_GAMES: GameConfig[] = [
-  {
-    id: 1, name: 'Empire vs Breeze', scheduledTime: '09:00',
-    teamAGlobalId: EMPIRE_GID, teamBGlobalId: BREEZE_GID,
-    teams: { A: EMPIRE, B: BREEZE },
-    rosters: { A: EMPIRE_ROSTER, B: BREEZE_ROSTER },
-    halfTimeAt: 8, scoreCapAt: 15,
-  },
-]

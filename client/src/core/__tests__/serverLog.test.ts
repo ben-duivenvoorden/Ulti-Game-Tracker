@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { parseEventsCsv, rowsToSegments, summariseGame, decideResume, type GameSummary } from '../serverLog'
-import { MOCK_GAMES } from '../data'
+import { MOCK_GAMES } from './fixtures'
 import type { TeamId, Score, GameSession, RawEvent } from '../types'
 
 // Mirrors api/src/shared/csv.ts `eventToCsvRow` exactly — building rows this way
