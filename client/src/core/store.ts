@@ -20,12 +20,18 @@ import {
   deriveGameState,
   canRecord,
   appendEvents,
+  effectiveSession,
   type RawEventInput,
 } from './engine'
+import { stampAndAppend, nextIdFrom } from './log'
+import {
+  STORAGE_KEY, STORAGE_VERSION, INITIAL_SEED,
+  migrateGameStore, mergeGameStore, logRehydrate,
+} from './persistence'
 import { PICK_MODES, isPickMode } from './pickModes'
 import { seedTeamsAndGames } from './data'
-import type { TeamEvent, TeamEventInput, GlobalTeamId } from './teams/types'
-import type { ScheduledGameEvent, ScheduledGameEventInput } from './games/types'
+import type { TeamEvent, GlobalTeamId } from './teams/types'
+import type { ScheduledGameEvent } from './games/types'
 import { deriveTeamsState } from './teams/engine'
 import { deriveScheduledGamesState, resolveGameConfig } from './games/engine'
 import {
@@ -109,12 +115,13 @@ interface GameStore {
   editActiveLine:    (teamId: TeamId, line: PlayerId[]) => void
   backToGameList:    () => void
 
-  // Recording actions (all funnel through canRecord guards)
+  // Recording actions (all funnel through canRecord guards). `record*` appends
+  // events; `trigger*` only changes transient UI state (entering a mode).
   tapPlayer:            (player: Player) => void
   recordPull:           (bonus?: boolean) => void
   recordBrick:          () => void
   recordThrowAway:      () => void
-  triggerReceiverError: () => void
+  recordReceiverError:  () => void
   recordGoal:           () => void
   recordUnknownTurnover: () => void
   triggerDefBlock:      (type: 'block' | 'intercept') => void
@@ -123,8 +130,8 @@ interface GameStore {
   recordStall:         () => void
   recordTimeout:       () => void
   undo:                () => void
-  triggerHalfTime:     () => void
-  triggerEndGame:      () => void
+  recordHalfTime:      () => void
+  recordEndGame:       () => void
   triggerInjurySub:    () => void
   cancelPickMode:      () => void
 
@@ -139,8 +146,8 @@ interface GameStore {
   toggleEndsSwapped:   () => void
 
   // ── Teams + scheduled games management (append-only) ──────────────────────
-  // Every CRUD funnels through the appendTeam/Game helpers — never a direct
-  // mutation. Return ids so the caller can wire them into follow-up state
+  // Every CRUD funnels through `stampAndAppend` — never a direct mutation.
+  // Return ids so the caller can wire them into follow-up state
   // (e.g. select the freshly-created team in a picker).
   addTeam:             (name: string, short: string, color: string) => GlobalTeamId
   editTeam:            (teamId: GlobalTeamId, patch: { name?: string; short?: string; color?: string }) => void
@@ -186,19 +193,6 @@ interface GameStore {
   resetAllData:        () => void
 }
 
-// ─── Persistence ──────────────────────────────────────────────────────────────
-
-const STORAGE_VERSION = 18
-const STORAGE_KEY     = 'ugt-game'
-/** Tagged at build time so hydration logs identify which bundle is running. */
-const BUILD_MARKER    = 'ugt-build-2026-06-12-v18'
-
-// ─── Initial seeds ────────────────────────────────────────────────────────────
-// `seedTeamsAndGames()` produces deterministic id 1.. events; the same seed
-// is consumed by the migration so v5 → v6 upgrades inherit the same world.
-
-const INITIAL_SEED = seedTeamsAndGames()
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Build a fresh session for a given game by resolving the live teams + game
@@ -225,63 +219,14 @@ function freshSession(
   }
 }
 
-/** Append-only writer for the teams log. Mirrors `appendEvents` in engine.ts. */
-function appendTeamEvents(log: TeamEvent[], inputs: TeamEventInput[]): TeamEvent[] {
-  const startId = log.length === 0 ? 1 : log[log.length - 1].id + 1
-  const ts = Date.now()
-  const stamped: TeamEvent[] = inputs.map((e, i) => ({ ...e, id: startId + i, timestamp: ts } as TeamEvent))
-  return [...log, ...stamped]
-}
-
-function appendScheduledGameEvents(
-  log: ScheduledGameEvent[], inputs: ScheduledGameEventInput[],
-): ScheduledGameEvent[] {
-  const startId = log.length === 0 ? 1 : log[log.length - 1].id + 1
-  const ts = Date.now()
-  const stamped: ScheduledGameEvent[] = inputs.map((e, i) =>
-    ({ ...e, id: startId + i, timestamp: ts } as ScheduledGameEvent))
-  return [...log, ...stamped]
-}
-
-/** Next globally-unique GlobalTeamId — one past the max already in the log,
- *  including archived teams (we never reuse ids). */
-function nextGlobalTeamId(log: TeamEvent[]): GlobalTeamId {
-  let max = 0
-  for (const e of log) {
-    if (e.type === 'team-add' && e.teamId > max) max = e.teamId
-  }
-  return max + 1
-}
-
-/** Next globally-unique PlayerId — same reasoning. */
-function nextGlobalPlayerId(log: TeamEvent[]): PlayerId {
-  let max = 0
-  for (const e of log) {
-    if (e.type === 'player-add' && e.playerId > max) max = e.playerId
-  }
-  return max + 1
-}
-
-function nextGameId(log: ScheduledGameEvent[]): number {
-  let max = 0
-  for (const e of log) {
-    if (e.type === 'game-add' && e.gameId > max) max = e.gameId
-  }
-  return max + 1
-}
-
-/** Default seed for the line-selection screen on a *fresh* point. In mixed mode
- *  seeds `lineRatio.M` males + `lineRatio.F` females; in open mode seeds the
- *  first `lineSize` players regardless of matching division. Capped to what the
- *  roster actually has. */
-export function seedDefaultLine(roster: Player[], opts: RecordingOptions): Player[] {
-  if (opts.gameMode === 'open') {
-    return roster.slice(0, opts.lineSize)
-  }
-  const males   = roster.filter(p => p.gender === 'M').slice(0, opts.lineRatio.M)
-  const females = roster.filter(p => p.gender === 'F').slice(0, opts.lineRatio.F)
-  return [...males, ...females]
-}
+// Next globally-unique entity ids — one past the max already in the log,
+// including soft-deleted entities (ids are never reused).
+const nextGlobalTeamId   = (log: TeamEvent[]): GlobalTeamId =>
+  nextIdFrom(log, e => (e.type === 'team-add' ? e.teamId : null))
+const nextGlobalPlayerId = (log: TeamEvent[]): PlayerId =>
+  nextIdFrom(log, e => (e.type === 'player-add' ? e.playerId : null))
+const nextGameId         = (log: ScheduledGameEvent[]): number =>
+  nextIdFrom(log, e => (e.type === 'game-add' ? e.gameId : null))
 
 function sameLine(a: PlayerId[], b: PlayerId[]): boolean {
   if (a.length !== b.length) return false
@@ -289,12 +234,45 @@ function sameLine(a: PlayerId[], b: PlayerId[]): boolean {
   return true
 }
 
-// Returns a session that looks as if it ended at the cursor. Used by
-// canRecord-via-recordVia and useDerivedState so both the record decision
-// and the on-screen state reflect the historical view.
-export function effectiveSession(session: GameSession, cursor: EventId | null): GameSession {
-  return cursor === null ? session : { ...session, rawLog: session.rawLog.filter(e => e.id <= cursor) }
+/** Transient interaction state reset on every navigation between screens —
+ *  spread into `set()` alongside whatever the action actually changes. */
+const RESET_TRANSIENT_UI = {
+  isInjurySub:    false,
+  uiMode:         'idle',
+  selPuller:      null,
+  showEventMenu:  false,
+  truncateCursor: null,
+} satisfies Partial<GameStore>
+
+// ─── Event-input builders ─────────────────────────────────────────────────────
+// Shared `build` callbacks for recordVia — most recording actions differ only
+// by event type, so the shapes live here once.
+
+/** Holder-attributed turnovers: the event lands on whoever has the disc. */
+function holderTurnoverInput(type: 'turnover-throw-away' | 'turnover-receiver-error' | 'turnover-stall') {
+  return (state: DerivedGameState): RawEventInput[] | null => {
+    if (!canRecord(state, type) || state.discHolder === null) return null
+    return [{ pointIndex: state.pointIndex, type, playerId: state.discHolder, teamId: state.possession }]
+  }
 }
+
+/** Payload-free events (stoppages + phase transitions): record iff allowed. */
+function bareEventInput(type: 'foul' | 'pick' | 'timeout' | 'half-time' | 'end-game') {
+  return (state: DerivedGameState): RawEventInput[] | null =>
+    canRecord(state, type) ? [{ pointIndex: state.pointIndex, type }] : null
+}
+
+/** Pull-family events: attributed to the pre-selected puller, recorded for
+ *  the team that is NOT receiving. */
+function pullInput(type: 'pull' | 'pull-bonus' | 'brick', puller: PlayerId) {
+  return (state: DerivedGameState): RawEventInput[] | null => {
+    if (!canRecord(state, type)) return null
+    return [{ pointIndex: state.pointIndex, type, playerId: puller, teamId: otherTeam(state.possession) }]
+  }
+}
+
+const undoInput = (state: DerivedGameState): RawEventInput[] =>
+  [{ pointIndex: state.pointIndex, type: 'undo' }]
 
 // ─── recordVia ────────────────────────────────────────────────────────────────
 // Common funnel for actions that append events. Reads the derived state at
@@ -359,15 +337,7 @@ export const useGameStore = create<GameStore>()(
         const { teamsLog, scheduledGamesLog, scorerId, deviceId } = get()
         const session = freshSession(gameId, pullingTeam, scorerId, deviceId, teamsLog, scheduledGamesLog)
         if (!session) return
-        set({
-          session,
-          screen:         'line-selection',
-          isInjurySub:    false,
-          uiMode:         'idle',
-          selPuller:      null,
-          showEventMenu:  false,
-          truncateCursor: null,
-        })
+        set({ session, screen: 'line-selection', ...RESET_TRANSIENT_UI })
       },
 
       // ── startSegmentFromScore ─────────────────────────────────────────────────
@@ -383,15 +353,7 @@ export const useGameStore = create<GameStore>()(
           { scoreA, scoreB, offence },
         )
         if (!session) return
-        set({
-          session,
-          screen:         'line-selection',
-          isInjurySub:    false,
-          uiMode:         'idle',
-          selPuller:      null,
-          showEventMenu:  false,
-          truncateCursor: null,
-        })
+        set({ session, screen: 'line-selection', ...RESET_TRANSIENT_UI })
       },
 
       // ── forkSegment ───────────────────────────────────────────────────────────
@@ -414,15 +376,7 @@ export const useGameStore = create<GameStore>()(
           },
           rawLog: [...session.rawLog],
         }
-        set({
-          session:        forked,
-          screen:         'live-entry',
-          isInjurySub:    false,
-          uiMode:         'idle',
-          selPuller:      null,
-          showEventMenu:  false,
-          truncateCursor: null,
-        })
+        set({ session: forked, screen: 'live-entry', ...RESET_TRANSIENT_UI })
       },
 
       // ── resumeGame ──────────────────────────────────────────────────────────
@@ -432,7 +386,7 @@ export const useGameStore = create<GameStore>()(
       resumeGame(gameId) {
         const { session } = get()
         if (session && session.gameConfig.id === gameId) {
-          set({ screen: 'live-entry', uiMode: 'idle', selPuller: null, showEventMenu: false })
+          set({ screen: 'live-entry', ...RESET_TRANSIENT_UI })
         } else {
           // No persisted session for this game — fall back to fresh start.
           // Caller should re-prompt for pulling team.
@@ -540,72 +494,33 @@ export const useGameStore = create<GameStore>()(
         }
       },
 
-      // ── recordPull ──────────────────────────────────────────────────────────
+      // ── recordPull / recordBrick ────────────────────────────────────────────
+      // A brick is a pull gone out of bounds — engine-wise it transitions to
+      // in-play just like a pull; the difference is purely the recorded event
+      // type (for stats / reporting). `=== null`, not `!selPuller` — the
+      // Unknown-Player sentinel is id 0 (falsy) and is a valid puller.
       recordPull(bonus = false) {
         const { selPuller } = get()
-        // `=== null`, not `!selPuller` — the Unknown-Player sentinel is id 0
-        // (falsy) and is a valid puller (an unseen pull).
         if (selPuller === null) return
-        recordVia(get, set, state => {
-          if (!canRecord(state, 'pull')) return null
-          const pullingTeam = otherTeam(state.possession)
-          return [{
-            pointIndex: state.pointIndex,
-            type:     bonus ? 'pull-bonus' : 'pull',
-            playerId: selPuller,
-            teamId:   pullingTeam,
-          }]
-        }, { selPuller: null })
+        recordVia(get, set, pullInput(bonus ? 'pull-bonus' : 'pull', selPuller), { selPuller: null })
       },
 
-      // ── recordBrick ─────────────────────────────────────────────────────────
-      // Pull went out of bounds. Receiving team takes the disc at the brick
-      // mark — engine-wise this transitions to in-play just like pull, the
-      // difference is purely the recorded event type (for stats / reporting).
       recordBrick() {
         const { selPuller } = get()
-        // `=== null`, not `!selPuller` — id 0 (Unknown Player) is a valid puller.
         if (selPuller === null) return
-        recordVia(get, set, state => {
-          if (!canRecord(state, 'brick')) return null
-          const pullingTeam = otherTeam(state.possession)
-          return [{
-            pointIndex: state.pointIndex,
-            type:     'brick',
-            playerId: selPuller,
-            teamId:   pullingTeam,
-          }]
-        }, { selPuller: null })
+        recordVia(get, set, pullInput('brick', selPuller), { selPuller: null })
       },
 
-      // ── recordThrowAway ─────────────────────────────────────────────────────
+      // ── Holder-attributed turnovers ─────────────────────────────────────────
+      // All land on the current disc holder. Receiver error's mental model:
+      // the recorder taps the intended receiver (recording a possession),
+      // then taps Receiver Error to mark it as a drop.
       recordThrowAway() {
-        recordVia(get, set, state => {
-          if (!canRecord(state, 'turnover-throw-away') || state.discHolder === null) return null
-          return [{
-            pointIndex: state.pointIndex,
-            type:     'turnover-throw-away',
-            playerId: state.discHolder,
-            teamId:   state.possession,
-          }]
-        })
+        recordVia(get, set, holderTurnoverInput('turnover-throw-away'))
       },
 
-      // ── triggerReceiverError ────────────────────────────────────────────────
-      // Records receiver error directly against the current holder — the
-      // recorder doesn't need to pick a player. Mental model: the recorder
-      // taps the player who was the intended receiver (recording a
-      // possession), then taps Receiver Error to mark it as a drop.
-      triggerReceiverError() {
-        recordVia(get, set, state => {
-          if (!canRecord(state, 'turnover-receiver-error') || state.discHolder === null) return null
-          return [{
-            pointIndex: state.pointIndex,
-            type:     'turnover-receiver-error',
-            playerId: state.discHolder,
-            teamId:   state.possession,
-          }]
-        })
+      recordReceiverError() {
+        recordVia(get, set, holderTurnoverInput('turnover-receiver-error'))
       },
 
       // ── recordGoal ──────────────────────────────────────────────────────────
@@ -658,32 +573,16 @@ export const useGameStore = create<GameStore>()(
 
       // ── undo ────────────────────────────────────────────────────────────────
       undo() {
-        recordVia(
-          get, set,
-          state => [{ pointIndex: state.pointIndex, type: 'undo' }],
-          { uiMode: 'idle', selPuller: null },
-        )
+        recordVia(get, set, undoInput, { uiMode: 'idle', selPuller: null })
       },
 
-      // ── triggerHalfTime / triggerEndGame ────────────────────────────────────
-      triggerHalfTime() {
-        recordVia(
-          get, set,
-          state => canRecord(state, 'half-time')
-            ? [{ pointIndex: state.pointIndex, type: 'half-time' }]
-            : null,
-          { showEventMenu: false },
-        )
+      // ── recordHalfTime / recordEndGame ──────────────────────────────────────
+      recordHalfTime() {
+        recordVia(get, set, bareEventInput('half-time'), { showEventMenu: false })
       },
 
-      triggerEndGame() {
-        recordVia(
-          get, set,
-          state => canRecord(state, 'end-game')
-            ? [{ pointIndex: state.pointIndex, type: 'end-game' }]
-            : null,
-          { showEventMenu: false },
-        )
+      recordEndGame() {
+        recordVia(get, set, bareEventInput('end-game'), { showEventMenu: false })
       },
 
       // ── triggerInjurySub ────────────────────────────────────────────────────
@@ -691,13 +590,7 @@ export const useGameStore = create<GameStore>()(
       // so multiple players can be swapped at once. Clears the preview cursor
       // so the line confirmation lands on live state, not the historical view.
       triggerInjurySub() {
-        set({
-          screen:         'line-selection',
-          isInjurySub:    true,
-          showEventMenu:  false,
-          uiMode:         'idle',
-          truncateCursor: null,
-        })
+        set({ screen: 'line-selection', ...RESET_TRANSIENT_UI, isInjurySub: true })
       },
 
       // ── cancelPickMode ──────────────────────────────────────────────────────
@@ -708,14 +601,7 @@ export const useGameStore = create<GameStore>()(
       // ── nextPoint ────────────────────────────────────────────────────────────
       // Advance from terminal state (point-over / half-time) to line selection.
       nextPoint() {
-        set({
-          screen:         'line-selection',
-          isInjurySub:    false,
-          uiMode:         'idle',
-          selPuller:      null,
-          showEventMenu:  false,
-          truncateCursor: null,
-        })
+        set({ screen: 'line-selection', ...RESET_TRANSIENT_UI })
       },
 
       // ── dismissPointSummary ──────────────────────────────────────────────────
@@ -725,25 +611,14 @@ export const useGameStore = create<GameStore>()(
       dismissPointSummary() {
         const { session } = get()
         const over = !!session && deriveGameState(session).gamePhase === 'game-over'
-        set({
-          screen:         over ? 'live-entry' : 'line-selection',
-          isInjurySub:    false,
-          uiMode:         'idle',
-          selPuller:      null,
-          showEventMenu:  false,
-          truncateCursor: null,
-        })
+        set({ screen: over ? 'live-entry' : 'line-selection', ...RESET_TRANSIENT_UI })
       },
 
       // ── undoPointSummary ─────────────────────────────────────────────────────
       // Undo the just-scored goal from the point-completion screen and drop back
       // into live scoring to continue the point.
       undoPointSummary() {
-        recordVia(
-          get, set,
-          state => [{ pointIndex: state.pointIndex, type: 'undo' }],
-          { uiMode: 'idle', selPuller: null, screen: 'live-entry' },
-        )
+        recordVia(get, set, undoInput, { uiMode: 'idle', selPuller: null, screen: 'live-entry' })
       },
 
       // ── resumeFromScore ──────────────────────────────────────────────────────
@@ -764,15 +639,7 @@ export const useGameStore = create<GameStore>()(
           events.push({ pointIndex: state.pointIndex, type: 'half-time' })
         }
         events.push({ pointIndex: state.pointIndex, type: 'score-resume', scoreA, scoreB, offenceTeam })
-        set({
-          session:        appendEvents(target, events),
-          screen:         'line-selection',
-          isInjurySub:    false,
-          uiMode:         'idle',
-          selPuller:      null,
-          showEventMenu:  false,
-          truncateCursor: null,
-        })
+        set({ session: appendEvents(target, events), screen: 'line-selection', ...RESET_TRANSIENT_UI })
       },
 
       // ── editActiveLine ───────────────────────────────────────────────────────
@@ -790,57 +657,24 @@ export const useGameStore = create<GameStore>()(
       // ── backToGameList ───────────────────────────────────────────────────────
       // Returns to game-setup, preserving the session so it can be viewed again.
       backToGameList() {
-        set({
-          screen:         'game-setup',
-          uiMode:         'idle',
-          selPuller:      null,
-          showEventMenu:  false,
-          isInjurySub:    false,
-          truncateCursor: null,
-        })
+        set({ screen: 'game-setup', ...RESET_TRANSIENT_UI })
       },
 
-      // ── recordFoul / recordPick ──────────────────────────────────────────────
+      // ── Stoppages ────────────────────────────────────────────────────────────
       recordFoul() {
-        recordVia(
-          get, set,
-          state => canRecord(state, 'foul')
-            ? [{ pointIndex: state.pointIndex, type: 'foul' }]
-            : null,
-          { showEventMenu: false },
-        )
+        recordVia(get, set, bareEventInput('foul'), { showEventMenu: false })
       },
 
       recordPick() {
-        recordVia(
-          get, set,
-          state => canRecord(state, 'pick')
-            ? [{ pointIndex: state.pointIndex, type: 'pick' }]
-            : null,
-          { showEventMenu: false },
-        )
+        recordVia(get, set, bareEventInput('pick'), { showEventMenu: false })
       },
 
       recordStall() {
-        recordVia(get, set, state => {
-          if (!canRecord(state, 'turnover-stall') || state.discHolder === null) return null
-          return [{
-            pointIndex: state.pointIndex,
-            type:     'turnover-stall',
-            playerId: state.discHolder,
-            teamId:   state.possession,
-          }]
-        })
+        recordVia(get, set, holderTurnoverInput('turnover-stall'))
       },
 
       recordTimeout() {
-        recordVia(
-          get, set,
-          state => canRecord(state, 'timeout')
-            ? [{ pointIndex: state.pointIndex, type: 'timeout' }]
-            : null,
-          { showEventMenu: false },
-        )
+        recordVia(get, set, bareEventInput('timeout'), { showEventMenu: false })
       },
 
       // ── Settings navigation ──────────────────────────────────────────────────
@@ -876,38 +710,38 @@ export const useGameStore = create<GameStore>()(
       },
 
       // ── Teams CRUD (all append-only) ───────────────────────────────────────
-      // Every action funnels through `appendTeamEvents` — never a direct
+      // Every action funnels through `stampAndAppend` — never a direct
       // mutation. The returned id lets the caller wire fresh entities into
       // follow-up UI state (e.g. select a just-created team in a picker).
 
       addTeam(name, short, color) {
         const id = nextGlobalTeamId(get().teamsLog)
-        set(s => ({ teamsLog: appendTeamEvents(s.teamsLog, [buildAddTeam(id, name, short, color)]) }))
+        set(s => ({ teamsLog: stampAndAppend(s.teamsLog, [buildAddTeam(id, name, short, color)]) }))
         return id
       },
 
       editTeam(teamId, patch) {
-        set(s => ({ teamsLog: appendTeamEvents(s.teamsLog, [buildEditTeam(teamId, patch)]) }))
+        set(s => ({ teamsLog: stampAndAppend(s.teamsLog, [buildEditTeam(teamId, patch)]) }))
       },
 
       archiveTeam(teamId) {
-        set(s => ({ teamsLog: appendTeamEvents(s.teamsLog, [buildArchiveTeam(teamId)]) }))
+        set(s => ({ teamsLog: stampAndAppend(s.teamsLog, [buildArchiveTeam(teamId)]) }))
       },
 
       addPlayer(teamId, name, gender, extras) {
         const id = nextGlobalPlayerId(get().teamsLog)
         set(s => ({
-          teamsLog: appendTeamEvents(s.teamsLog, [buildAddPlayer(id, teamId, name, gender, extras ?? {})]),
+          teamsLog: stampAndAppend(s.teamsLog, [buildAddPlayer(id, teamId, name, gender, extras ?? {})]),
         }))
         return id
       },
 
       editPlayer(playerId, patch) {
-        set(s => ({ teamsLog: appendTeamEvents(s.teamsLog, [buildEditPlayer(playerId, patch)]) }))
+        set(s => ({ teamsLog: stampAndAppend(s.teamsLog, [buildEditPlayer(playerId, patch)]) }))
       },
 
       removePlayer(playerId) {
-        set(s => ({ teamsLog: appendTeamEvents(s.teamsLog, [buildRemovePlayer(playerId)]) }))
+        set(s => ({ teamsLog: stampAndAppend(s.teamsLog, [buildRemovePlayer(playerId)]) }))
       },
 
       // ── Scheduled-games CRUD ───────────────────────────────────────────────
@@ -915,7 +749,7 @@ export const useGameStore = create<GameStore>()(
       addScheduledGame(args) {
         const id = nextGameId(get().scheduledGamesLog)
         set(s => ({
-          scheduledGamesLog: appendScheduledGameEvents(s.scheduledGamesLog, [
+          scheduledGamesLog: stampAndAppend(s.scheduledGamesLog, [
             buildAddScheduledGame({ gameId: id, ...args }),
           ]),
         }))
@@ -924,7 +758,7 @@ export const useGameStore = create<GameStore>()(
 
       editScheduledGame(gameId, patch) {
         set(s => ({
-          scheduledGamesLog: appendScheduledGameEvents(s.scheduledGamesLog, [
+          scheduledGamesLog: stampAndAppend(s.scheduledGamesLog, [
             buildEditScheduledGame(gameId, patch),
           ]),
         }))
@@ -932,7 +766,7 @@ export const useGameStore = create<GameStore>()(
 
       cancelScheduledGame(gameId) {
         set(s => ({
-          scheduledGamesLog: appendScheduledGameEvents(s.scheduledGamesLog, [
+          scheduledGamesLog: stampAndAppend(s.scheduledGamesLog, [
             buildCancelScheduledGame(gameId),
           ]),
         }))
@@ -959,117 +793,19 @@ export const useGameStore = create<GameStore>()(
           teamsLog:          fresh.teamEvents,
           scheduledGamesLog: fresh.gameEvents,
           screen:            'game-setup',
-          isInjurySub:       false,
-          uiMode:            'idle',
-          selPuller:         null,
-          showEventMenu:     false,
-          truncateCursor:    null,
+          ...RESET_TRANSIENT_UI,
         })
       },
     }),
     {
+      // Versioned migrations, the defensive merge overlay, and hydration
+      // logging all live in core/persistence.ts.
       name:    STORAGE_KEY,
       version: STORAGE_VERSION,
       storage: createJSONStorage(() => localStorage),
-      migrate: (persisted, fromVersion) => {
-        const obj = persisted as {
-          recordingOptions?:   Partial<RecordingOptions>
-          session?:            ({ rawLog?: Array<{ type: string }>; segment?: { deviceId?: DeviceId } & Record<string, unknown> } & Record<string, unknown>) | null
-          scorerId?:           ScorerId
-          deviceId?:           DeviceId
-          screen?:             AppScreen
-          teamsLog?:           TeamEvent[]
-          scheduledGamesLog?:  ScheduledGameEvent[]
-        }
-        // v5 was the breaking point for the event log: anything older is
-        // dropped on hydration. v5 → v10 history is preserved in git; the
-        // notable later step is v10 → v11 below.
-        const dropping = fromVersion < 5
-        const teamsLogMissing = !Array.isArray(obj.teamsLog) || obj.teamsLog.length === 0
-        const gamesLogMissing = !Array.isArray(obj.scheduledGamesLog) || obj.scheduledGamesLog.length === 0
-        const needsSeed = fromVersion < 10 || teamsLogMissing || gamesLogMissing
-        const seed = needsSeed ? seedTeamsAndGames() : null
-
-        // v10 → v11: `reorder-line` was dropped from the event-type union.
-        // Strip any legacy entries from the persisted rawLog so the live
-        // engine never sees a now-unknown event type.
-        const session = dropping ? null : (obj.session ?? null)
-        const cleanedSession = (session && Array.isArray(session.rawLog) && fromVersion < 11)
-          ? { ...session, rawLog: session.rawLog.filter(e => e.type !== 'reorder-line') }
-          : session
-
-        // v12 → v13: `passArrowsShown` was removed from RecordingOptions
-        // (the visible-passes count is now hardcoded to 2 in the notation
-        // component). Strip it from any persisted recordingOptions blob so
-        // the type and the in-memory state stay aligned.
-        const rawRecOpts = (obj.recordingOptions ?? {}) as Record<string, unknown>
-        const { passArrowsShown: _passArrowsShown, ...recOptsNoLegacy } = rawRecOpts
-        void _passArrowsShown
-
-        // v14 → v15: `lineSize` moved onto RecordingOptions (the competition-
-        // config layer). Derive it from the existing lineRatio sum for any
-        // persisted blob that predates the field so the line target matches
-        // what the user previously configured. `scorerInfo` rides the default
-        // merge below (missing → '').
-        const mergedRecOpts = { ...DEFAULT_RECORDING_OPTIONS, ...recOptsNoLegacy } as RecordingOptions
-        if (fromVersion < 15 && typeof recOptsNoLegacy.lineSize !== 'number') {
-          mergedRecOpts.lineSize = mergedRecOpts.lineRatio.M + mergedRecOpts.lineRatio.F
-        }
-
-        // v15 → v16: segment identity. Every device gets a stable `scorerId`,
-        // and any in-progress session is backfilled with a `segment` so the
-        // engine and sync layer always see the new shape. A backfilled segment
-        // has no anchor — it's treated as a from-the-start recording. (Both
-        // guards are structural, so this is safe regardless of fromVersion.)
-        const scorerId = obj.scorerId ?? newScorerId()
-        const sessionWithSegment = (cleanedSession && !cleanedSession.segment)
-          ? { ...cleanedSession, segment: { segmentId: newSegmentId(), scorerId, createdAt: Date.now() } }
-          : cleanedSession
-
-        // v16 → v17: device identity joins the writer key. Mint a stable
-        // `deviceId` for this device and backfill any existing segment that
-        // predates the field (a v16 segment has no `deviceId`). Structural —
-        // safe regardless of fromVersion.
-        const deviceId = obj.deviceId ?? newDeviceId()
-        const sessionWithDevice = (sessionWithSegment && sessionWithSegment.segment && !sessionWithSegment.segment.deviceId)
-          ? { ...sessionWithSegment, segment: { ...sessionWithSegment.segment, deviceId } }
-          : sessionWithSegment
-
-        // v17 → v18: `amend` / `splice-block` / `system` left the event-type
-        // union when the copy/paste/edit-log feature was removed (phase-
-        // boundary cleanup). Strip any legacy entries from the persisted
-        // rawLog so the live engine never sees a now-unknown event type.
-        const deadTypes = ['amend', 'splice-block', 'system']
-        const sessionV18 = (sessionWithDevice && Array.isArray(sessionWithDevice.rawLog) && fromVersion < 18)
-          ? { ...sessionWithDevice, rawLog: sessionWithDevice.rawLog.filter(e => !deadTypes.includes(e.type)) }
-          : sessionWithDevice
-
-        console.info('[ugt-game] migrate', {
-          build: BUILD_MARKER,
-          fromVersion,
-          teamsLogMissing,
-          gamesLogMissing,
-          reseeded: needsSeed,
-          strippedReorderLine: cleanedSession !== session,
-          strippedPassArrowsShown: 'passArrowsShown' in rawRecOpts,
-          derivedLineSize: mergedRecOpts.lineSize,
-          backfilledSegment: sessionWithSegment !== cleanedSession,
-          backfilledDeviceId: sessionWithDevice !== sessionWithSegment,
-          strippedDeadEventTypes: sessionV18 !== sessionWithDevice,
-          mintedScorerId: !obj.scorerId,
-          mintedDeviceId: !obj.deviceId,
-        })
-        return {
-          ...obj,
-          session:           sessionV18,
-          scorerId,
-          deviceId,
-          screen:            dropping ? 'game-setup'    : (obj.screen ?? 'game-setup'),
-          teamsLog:          seed ? seed.teamEvents : obj.teamsLog!,
-          scheduledGamesLog: seed ? seed.gameEvents : obj.scheduledGamesLog!,
-          recordingOptions:  mergedRecOpts,
-        }
-      },
+      migrate: (persisted, fromVersion) => migrateGameStore(persisted, fromVersion),
+      merge:   (persisted, current) => mergeGameStore(persisted, current),
+      onRehydrateStorage: () => (state, error) => logRehydrate(state, error),
       partialize: (state) => ({
         session:           state.session,
         scorerId:          state.scorerId,
@@ -1082,59 +818,6 @@ export const useGameStore = create<GameStore>()(
         selPuller:         state.selPuller,
         recordingOptions:  state.recordingOptions,
       }),
-      // Defensive overlay. The default merge lets `{ teamsLog: [] }` from a
-      // corrupted localStorage clobber the seeded initial state — which is
-      // exactly what manifested as "no teams, no games" after the v8 build.
-      // Treat empty / missing / malformed logs in the persisted payload as
-      // "fall back to INITIAL_SEED directly" so the user can never boot into
-      // an empty list, no matter what's in localStorage.
-      //
-      // Falls back to INITIAL_SEED rather than `current.teamsLog` because
-      // some bundlers can pass a stale `current` here under HMR; reading the
-      // module-level seed constant short-circuits that whole class of bug.
-      merge: (persisted, current) => {
-        const c = current as GameStore
-        if (!persisted || typeof persisted !== 'object' || Array.isArray(persisted)) {
-          console.warn('[ugt-game] merge: persisted state is missing/invalid — falling back to seed')
-          return { ...c, teamsLog: INITIAL_SEED.teamEvents, scheduledGamesLog: INITIAL_SEED.gameEvents }
-        }
-        const p = persisted as Partial<GameStore>
-        const teamsLog = (Array.isArray(p.teamsLog) && p.teamsLog.length > 0)
-          ? p.teamsLog
-          : INITIAL_SEED.teamEvents
-        const scheduledGamesLog = (Array.isArray(p.scheduledGamesLog) && p.scheduledGamesLog.length > 0)
-          ? p.scheduledGamesLog
-          : INITIAL_SEED.gameEvents
-        console.info('[ugt-game] merge', {
-          build: BUILD_MARKER,
-          persistedTeamsLogLen:  Array.isArray(p.teamsLog) ? p.teamsLog.length : 'n/a',
-          persistedGamesLogLen:  Array.isArray(p.scheduledGamesLog) ? p.scheduledGamesLog.length : 'n/a',
-          resultTeamsLogLen:     teamsLog.length,
-          resultGamesLogLen:     scheduledGamesLog.length,
-        })
-        // Shallow-merge recordingOptions so new fields added to
-        // DEFAULT_RECORDING_OPTIONS post-launch are always present even
-        // when the persisted snapshot predates them. (Without this, a
-        // raw `...p` spread overwrites the seeded defaults with the
-        // older partial.)
-        const recordingOptions = {
-          ...DEFAULT_RECORDING_OPTIONS,
-          ...(p.recordingOptions ?? {}),
-        }
-        return { ...c, ...p, teamsLog, scheduledGamesLog, recordingOptions }
-      },
-      onRehydrateStorage: () => (state, error) => {
-        if (error) {
-          console.error('[ugt-game] hydration error', { build: BUILD_MARKER, error })
-          return
-        }
-        console.info('[ugt-game] hydrated', {
-          build:           BUILD_MARKER,
-          teamsLogLen:     state?.teamsLog?.length ?? 0,
-          gamesLogLen:     state?.scheduledGamesLog?.length ?? 0,
-          hasSession:      !!state?.session,
-        })
-      },
     },
   ),
 )

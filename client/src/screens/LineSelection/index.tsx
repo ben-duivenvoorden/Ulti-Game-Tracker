@@ -4,14 +4,27 @@ import { Chip } from '@/components/ui/Chip'
 import { IconBtn, SettingsIcon, TeamsIcon, BackIcon, CheckIcon } from '@/components/ui/Icons'
 import { ScorerInfoButton } from '@/components/ScorerInfoButton'
 import { useSession, useDerivedState, useRecordingOptions } from '@/core/selectors'
-import { useGameStore, seedDefaultLine } from '@/core/store'
+import { useGameStore } from '@/core/store'
 import { inkOn } from '@/core/contrast'
 import { pickDisplayNames } from '@/core/teams/shortName'
 import { firstNameKey } from '@/core/teams/shortName'
-import type { Player, GameMode, TeamId } from '@/core/types'
+import type { Player, GameMode, RecordingOptions, TeamId } from '@/core/types'
 
 // See Header.tsx — same convention. Score header is the tight context.
 const SCORE_NAME_FIT_THRESHOLD = 10
+
+/** Default seed for the line selection on a *fresh* point. In mixed mode seeds
+ *  `lineRatio.M` males + `lineRatio.F` females; in open mode seeds the first
+ *  `lineSize` players regardless of matching division. Capped to what the
+ *  roster actually has. */
+function seedDefaultLine(roster: Player[], opts: RecordingOptions): Player[] {
+  if (opts.gameMode === 'open') {
+    return roster.slice(0, opts.lineSize)
+  }
+  const males   = roster.filter(p => p.gender === 'M').slice(0, opts.lineRatio.M)
+  const females = roster.filter(p => p.gender === 'F').slice(0, opts.lineRatio.F)
+  return [...males, ...females]
+}
 
 export default function LineSelection() {
   const session        = useSession()
