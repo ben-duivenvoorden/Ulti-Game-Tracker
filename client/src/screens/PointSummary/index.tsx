@@ -29,8 +29,8 @@ export default function PointSummary() {
   // re-reads the session and routes correctly (line-selection after half-time,
   // game-over banner after end-game).
   const confirmSuggestion = () => {
-    if (suggestion === 'half-time') actions.triggerHalfTime()
-    else actions.triggerEndGame()
+    if (suggestion === 'half-time') actions.recordHalfTime()
+    else actions.recordEndGame()
     actions.dismissPointSummary()
   }
 

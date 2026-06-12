@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { useGameStore, effectiveSession } from './store'
-import { computeVisLog, deriveGameState, deriveEndsSwapped } from './engine'
+import { useGameStore } from './store'
+import { computeVisLog, deriveGameState, deriveEndsSwapped, effectiveSession } from './engine'
 import { deriveTeamsState } from './teams/engine'
 import { deriveScheduledGamesState, resolveGameConfig } from './games/engine'
 import type { DerivedGameState, VisLogEntry, GameSession, RecordingOptions, EventId } from './types'
@@ -108,14 +108,7 @@ export function useRecordingOptions(): RecordingOptions {
   const stored = useGameStore(s => s.recordingOptions)
   // Merge with defaults so newly-added option fields don't crash callers when the
   // in-memory state is stale (e.g. across HMR reloads before storage rehydrate).
-  return {
-    ...DEFAULT_RECORDING_OPTIONS,
-    ...(stored ?? {}),
-    gameMode:   stored?.gameMode   ?? DEFAULT_RECORDING_OPTIONS.gameMode,
-    lineRatio:  stored?.lineRatio  ?? DEFAULT_RECORDING_OPTIONS.lineRatio,
-    lineSize:   stored?.lineSize   ?? DEFAULT_RECORDING_OPTIONS.lineSize,
-    scorerInfo: stored?.scorerInfo ?? DEFAULT_RECORDING_OPTIONS.scorerInfo,
-  }
+  return { ...DEFAULT_RECORDING_OPTIONS, ...(stored ?? {}) }
 }
 
 export function useUiState() {

@@ -4,10 +4,12 @@ import type {
   VisLogEntry,
   GameSession,
   DerivedGameState,
+  EventId,
   PlayerId,
   Player,
 } from './types'
 import { otherTeam } from './types'
+import { stampAndAppend } from './log'
 
 // ─── Append-only event log ────────────────────────────────────────────────────
 // The rawLog is *only* appended to. EventIds are monotonic per game, assigned
@@ -18,11 +20,6 @@ import { otherTeam } from './types'
  *  The `T extends T` distributes over the union so each member retains its
  *  discriminating `type` field rather than collapsing into a single object. */
 export type RawEventInput = RawEvent extends infer T ? (T extends RawEvent ? Omit<T, 'id' | 'timestamp'> : never) : never
-
-export function nextEventId(session: GameSession): number {
-  if (session.rawLog.length === 0) return 1
-  return session.rawLog[session.rawLog.length - 1].id + 1
-}
 
 // ─── Raw-log resolution ───────────────────────────────────────────────────────
 // One walker, two consumers: the visible event log (`computeVisLog`) and
@@ -378,8 +375,12 @@ export function canRecord(state: DerivedGameState, eventType: RawEventType): boo
 /** Append-only writer. Stamps each input event with the next monotonic id and a
     shared timestamp, then appends to the rawLog. The only mutation path. */
 export function appendEvents(session: GameSession, events: RawEventInput[]): GameSession {
-  const startId = nextEventId(session)
-  const ts = Date.now()
-  const stamped: RawEvent[] = events.map((e, i) => ({ ...e, id: startId + i, timestamp: ts } as RawEvent))
-  return { ...session, rawLog: [...session.rawLog, ...stamped] }
+  return { ...session, rawLog: stampAndAppend<RawEvent, RawEventInput>(session.rawLog, events) }
+}
+
+/** A session that looks as if it ended at the cursor (null = live). Drives both
+ *  the record decision (`recordVia`) and the on-screen state (`useDerivedState`)
+ *  so the tap-to-truncate preview and recording agree on what "now" is. */
+export function effectiveSession(session: GameSession, cursor: EventId | null): GameSession {
+  return cursor === null ? session : { ...session, rawLog: session.rawLog.filter(e => e.id <= cursor) }
 }

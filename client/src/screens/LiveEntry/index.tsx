@@ -259,7 +259,7 @@ export default function LiveEntry() {
                 isPicking={pickMode !== null}
                 onGoal={actions.recordGoal}
                 onThrowaway={actions.recordThrowAway}
-                onReceiverError={actions.triggerReceiverError}
+                onReceiverError={actions.recordReceiverError}
                 onBlock={() => actions.triggerDefBlock('block')}
                 onIntercept={() => actions.triggerDefBlock('intercept')}
                 onStall={actions.recordStall}
