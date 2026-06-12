@@ -134,7 +134,7 @@ export function useDisplayEndsSwapped(): boolean {
 // Half-time / end-game are no longer auto-emitted on goal — instead, the app
 // surfaces a suggestion when the current score crosses the configured
 // threshold and no corresponding event is already in the log. The recorder
-// confirms or dismisses via banner controls on LineSelection (see F7).
+// confirms or dismisses via the banner controls on PointSummary.
 //
 // Returns null when there's nothing to suggest. End-game wins over half-time
 // when both apply (a game-ending goal at the cap shouldn't propose half-time).
