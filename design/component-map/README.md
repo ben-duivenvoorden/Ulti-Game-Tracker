@@ -18,9 +18,12 @@ file → what it is). Live screenshots accompany this in PR #8.
 | `Chip` | `components/ui/Chip.tsx` | Pill badge. `soft` (alpha fill) or `solid` (team-colour + luminance-aware ink). |
 | `Label` | `components/ui/Label.tsx` | Mono-caps, wide-tracked system label. |
 | `Icons` | `components/ui/Icons.tsx` | SVG icon set: `BackIcon` `CloseIcon` `UndoIcon` `WarnIcon` `CheckIcon` `CursorIcon` `SettingsIcon` `InfoIcon` `TeamsIcon` `SwapEndsIcon`, plus `IconBtn` (44px tap target). |
+| form kit | `components/ui/form.tsx` | `TextField` · `ColorField` · `Stepper` · `Section` · `GenderSelect` — the shared form controls (one implementation; used by NewGame, GameSettings, TeamsManager, LineSelection). |
+| `ScreenHeader` | `components/ScreenHeader.tsx` | The shared h-16 top strip: kicker/title block **or** centred content, optional back arrow, right action. Used by every simple screen; the two score headers stay bespoke. |
+| `ModalScrim` | `components/ModalScrim.tsx` | Scrim + panel scaffold behind every modal (backdrop-dismiss + propagation stop built in). `dialog` = centred card; `bare` = caller-styled panel (e.g. bottom sheets). |
 | `MomentBackdrop` | `components/MomentBackdrop.tsx` | Atmospheric layer (tinted glow + endzone lines + vignette + grain) behind the "moment" screens. |
-| `PromptSheet` | `components/PromptSheet.tsx` | In-app text-input dialog (replaces `window.prompt`). |
-| `ConfirmSheet` | `components/ConfirmSheet.tsx` | In-app yes/no dialog (replaces `window.confirm`). |
+| `PromptSheet` | `components/PromptSheet.tsx` | In-app text-input dialog (replaces `window.prompt`). Built on `ModalScrim`. |
+| `ConfirmSheet` | `components/ConfirmSheet.tsx` | In-app yes/no dialog (replaces `window.confirm`). Built on `ModalScrim`. |
 
 ---
 
@@ -44,7 +47,7 @@ file → what it is). Live screenshots accompany this in PR #8.
 
 | Region | Component / name | Notes |
 |---|---|---|
-| Top bar | Header (local) | Title `Label` + `IconBtn`(`TeamsIcon`) + `IconBtn`(`SettingsIcon`). |
+| Top bar | `ScreenHeader` | kicker + title, `IconBtn`(`TeamsIcon`) + `IconBtn`(`SettingsIcon`) on the right. |
 | Each game | game row (local `button`) | `Chip` status (LIVE/DONE/SCHED), team `Chip`s, high-water score (mono). |
 | Inline expand | pull-first picker (local) | team buttons + `Start Recording` `Btn`; LIVE games skip straight into Live Entry. |
 | Bottom-right | FAB (local `button`) | opens `NewGameForm`. |
@@ -53,8 +56,8 @@ file → what it is). Live screenshots accompany this in PR #8.
 
 | Region | Component | Notes |
 |---|---|---|
-| Header | `BackIcon` · `Label` "NEW GAME" · Save `Btn` | |
-| Body | `Section`, `TextField`, `Stepper`, `TeamPicker` (local) | |
+| Header | `ScreenHeader` | back · centred `Label` "NEW GAME" · Save `Btn`. |
+| Body | `Section` / `TextField` / `Stepper` (shared, `ui/form`) + `TeamPicker` (local) | |
 | New-team flow | **`PromptSheet`** | "+ Add new team…" opens it (no native prompt). |
 
 ## Line Selection — `screens/LineSelection/index.tsx`
@@ -104,11 +107,11 @@ file → what it is). Live screenshots accompany this in PR #8.
 | Region | Component | File | Notes |
 |---|---|---|---|
 | Top strip | `Header` | `Header.tsx` | `BackIcon`, team `Chip`s, score (`font-display`, **pulses on goal**), `SwapEndsIcon`, `ScorerInfoButton`. |
-| Mode strips | **`ModeBanner`** | `index.tsx` | pick-mode / rewind-preview; label + `TAP TO CANCEL` on its own line. (The dormant `notification` toast is separate.) |
+| Mode strips | **`ModeBanner`** | `index.tsx` | pick-mode / rewind-preview; label + `TAP TO CANCEL` on its own line. |
 | Status strip | `LogPeek` | `LogPeek.tsx` | last event (point-start shows the short `— Point Started —`); `LOG ▾`; `UndoIcon` UNDO. |
 | Players | `PlayerColumn` | `PlayerColumn.tsx` | player tiles (active = transparent over the wash); **dull tiles** (`+` add-slot, Unknown Player) = *discouraged*; remove badge (`CloseIcon`). |
 | Actions | `EventColumn` → `EventBtn` | `EventColumn.tsx` | Goal / Throw away / Receiver Error / Blocked / Intercepted / Stall / Unknown turnover (*discouraged*) / Pull·Bonus·Brick / More. **Disabled vs discouraged** are now visually distinct. |
-| Ribbon | `SankeyBridge` | `index.tsx` (+ `useTween.ts`) | animated team-colour ribbon from the active player to the action stack. |
+| Ribbon | `SankeyBridge` | `SankeyBridge.tsx` (+ `useTween.ts`) | animated team-colour ribbon from the active player to the action stack. |
 | Pass arrows | `PassNotation` | `PassNotation.tsx` | overlay arrows over the player column. |
 | Sheet | `BottomSheet` | `BottomSheet.tsx` | LOG tab (entries, `CursorIcon` rewind marker) · MORE tab (stoppages, manual triggers, Resume-from-score `ScoreSpinner`); `CloseIcon`. |
 | Backfill | `BackfillPicker` | `index.tsx` | mid-point "add player to line". |
@@ -140,14 +143,15 @@ file → what it is). Live screenshots accompany this in PR #8.
 
 | View | Components | Notes |
 |---|---|---|
-| List | team rows (`Chip`), `+ New Team`, Reset (`WarnIcon`) → **`ConfirmSheet`** | |
-| New team | `NewTeamView` (`BackIcon`, `TextField`, `ColorField`) | |
-| Detail | `TeamDetailView` → `PlayerRow` (`CloseIcon` remove) · `AddPlayerInline`; Archive → **`ConfirmSheet`** | |
+| List | `ScreenHeader` · team rows (`Chip`) · `+ New Team` · Reset (`WarnIcon`) → **`ConfirmSheet`** | |
+| New team | `NewTeamView` (`ScreenHeader`, shared `TextField` / `ColorField`) | |
+| Detail | `TeamDetailView` (`ScreenHeader`) → `PlayerRow` (`GenderSelect`, `CloseIcon` remove) · `AddPlayerInline`; Archive → **`ConfirmSheet`** | |
 
 ## Game Settings — `screens/GameSettings/index.tsx`
 
-Header (`BackIcon`, `Label` "RECORDING SETTINGS", Done `Btn`) + toggle/stepper rows
-for the optional recording events (Stall, Foul, Pick, Pull Bonus, Brick, passes, …).
+`ScreenHeader` (kicker "RECORDING SETTINGS", Done `Btn`) + shared `Section` /
+`Stepper` rows and local `CompactToggle`s for the optional recording events
+(Stall, Foul, Pick, Pull Bonus, Brick, passes, …).
 
 ---
 
