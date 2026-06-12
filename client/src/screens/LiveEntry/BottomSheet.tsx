@@ -5,6 +5,7 @@ import { detectLogPatterns } from '@/core/patterns'
 import { canRecord } from '@/core/engine'
 import { Btn } from '@/components/ui/Btn'
 import { Label } from '@/components/ui/Label'
+import { ModalScrim } from '@/components/ModalScrim'
 import { CloseIcon, CursorIcon } from '@/components/ui/Icons'
 
 export type SheetTab = 'log' | 'more'
@@ -228,16 +229,7 @@ function ResumeFromScoreDialog({
   const [offence, setOffence] = useState<TeamId>('A')
 
   return (
-    <div
-      className="absolute inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.7)' }}
-      onClick={onCancel}
-    >
-      <div
-        className="rounded-xl p-5 w-full max-w-sm flex flex-col gap-4"
-        style={{ background: 'var(--color-surf)', border: '1px solid var(--color-border-2)' }}
-        onClick={e => e.stopPropagation()}
-      >
+    <ModalScrim onDismiss={onCancel} panelClassName="gap-4">
         <div className="text-sm font-bold text-content">Resume from score</div>
         <div className="text-[12px]" style={{ color: 'var(--color-muted)' }}>
           Set the current score and which team is on offence. If the score is past half-time, half time is recorded automatically.
@@ -273,8 +265,7 @@ function ResumeFromScoreDialog({
           <Btn variant="ghost"   size="md" full onClick={onCancel}>Cancel</Btn>
           <Btn variant="primary" size="md" full onClick={() => onConfirm(a, b, offence)}>Resume</Btn>
         </div>
-      </div>
-    </div>
+    </ModalScrim>
   )
 }
 

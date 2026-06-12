@@ -2,8 +2,10 @@ import { useState } from 'react'
 import { Btn } from '@/components/ui/Btn'
 import { Chip } from '@/components/ui/Chip'
 import { IconBtn, SettingsIcon, TeamsIcon, BackIcon, CheckIcon } from '@/components/ui/Icons'
+import { GenderSelect } from '@/components/ui/form'
+import { ModalScrim } from '@/components/ModalScrim'
 import { ScorerInfoButton } from '@/components/ScorerInfoButton'
-import { useSession, useDerivedState, useRecordingOptions } from '@/core/selectors'
+import { useGameActions, useSession, useDerivedState, useRecordingOptions } from '@/core/selectors'
 import { useGameStore } from '@/core/store'
 import { inkOn } from '@/core/contrast'
 import { pickDisplayNames } from '@/core/teams/shortName'
@@ -27,15 +29,11 @@ function seedDefaultLine(roster: Player[], opts: RecordingOptions): Player[] {
 }
 
 export default function LineSelection() {
-  const session        = useSession()
-  const state          = useDerivedState()
-  const isInjurySub    = useGameStore(s => s.isInjurySub)
-  const confirmLine    = useGameStore(s => s.confirmLine)
-  const backToGameList = useGameStore(s => s.backToGameList)
-  const openTeamsManager = useGameStore(s => s.openTeamsManager)
-  const openGameSettings = useGameStore(s => s.openGameSettings)
-  const addPlayer      = useGameStore(s => s.addPlayer)
-  const options        = useRecordingOptions()
+  const session     = useSession()
+  const state       = useDerivedState()
+  const isInjurySub = useGameStore(s => s.isInjurySub)
+  const { confirmLine, backToGameList, openTeamsManager, openGameSettings, addPlayer } = useGameActions()
+  const options     = useRecordingOptions()
   const { lineRatio, gameMode, lineSize } = options
 
   const rosters = session?.gameConfig.rosters
@@ -497,16 +495,12 @@ function AddPlayerRow({ color, onAdd, fixedGender }: {
       />
       <div className="flex items-center gap-2">
         {!fixedGender && (
-          <select
+          <GenderSelect
             value={gender}
-            onChange={e => setGender(e.target.value as 'M' | 'F')}
-            className="h-9 px-2 rounded-md border text-sm font-mono text-content cursor-pointer"
-            style={{ background: 'var(--color-surf)', borderColor: 'var(--color-border-2)' }}
+            onChange={setGender}
+            labels={{ M: 'MMP', F: 'FMP' }}
             title="MMP = Male Matching Player · FMP = Female Matching Player"
-          >
-            <option value="M">MMP</option>
-            <option value="F">FMP</option>
-          </select>
+          />
         )}
         <input
           type="number"
@@ -538,43 +532,33 @@ interface OverrideDialogProps {
 
 function OverrideDialog({ teamAName, teamBName, validateA, validateB, onCancel, onConfirm }: OverrideDialogProps) {
   return (
-    <div
-      className="absolute inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.65)' }}
-      onClick={onCancel}
-    >
-      <div
-        className="rounded-xl p-5 w-full max-w-sm flex flex-col gap-3"
-        style={{ background: 'var(--color-surf)', border: '1px solid var(--color-border-2)' }}
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="text-sm font-bold text-content">Confirm with mismatch?</div>
-        <div className="text-[12px]" style={{ color: 'var(--color-muted)' }}>
-          The line(s) below don't match the configured composition. You can override and continue, or cancel and adjust.
-        </div>
-
-        {!validateA.ok && (
-          <div
-            className="px-3 py-2 rounded-md text-[11px] font-mono"
-            style={{ background: 'var(--color-warn-bg)', color: 'var(--color-warn)', border: '1px solid var(--color-warn)' }}
-          >
-            <span className="font-bold mr-1.5">{teamAName}:</span>{validateA.warnings.join(' · ')}
-          </div>
-        )}
-        {!validateB.ok && (
-          <div
-            className="px-3 py-2 rounded-md text-[11px] font-mono"
-            style={{ background: 'var(--color-warn-bg)', color: 'var(--color-warn)', border: '1px solid var(--color-warn)' }}
-          >
-            <span className="font-bold mr-1.5">{teamBName}:</span>{validateB.warnings.join(' · ')}
-          </div>
-        )}
-
-        <div className="flex gap-2 mt-1">
-          <Btn variant="ghost"   size="md" full onClick={onCancel}>Cancel</Btn>
-          <Btn variant="primary" size="md" full onClick={onConfirm}>Override &amp; Continue</Btn>
-        </div>
+    <ModalScrim onDismiss={onCancel} panelClassName="gap-3">
+      <div className="text-sm font-bold text-content">Confirm with mismatch?</div>
+      <div className="text-[12px]" style={{ color: 'var(--color-muted)' }}>
+        The line(s) below don't match the configured composition. You can override and continue, or cancel and adjust.
       </div>
-    </div>
+
+      {!validateA.ok && (
+        <div
+          className="px-3 py-2 rounded-md text-[11px] font-mono"
+          style={{ background: 'var(--color-warn-bg)', color: 'var(--color-warn)', border: '1px solid var(--color-warn)' }}
+        >
+          <span className="font-bold mr-1.5">{teamAName}:</span>{validateA.warnings.join(' · ')}
+        </div>
+      )}
+      {!validateB.ok && (
+        <div
+          className="px-3 py-2 rounded-md text-[11px] font-mono"
+          style={{ background: 'var(--color-warn-bg)', color: 'var(--color-warn)', border: '1px solid var(--color-warn)' }}
+        >
+          <span className="font-bold mr-1.5">{teamBName}:</span>{validateB.warnings.join(' · ')}
+        </div>
+      )}
+
+      <div className="flex gap-2 mt-1">
+        <Btn variant="ghost"   size="md" full onClick={onCancel}>Cancel</Btn>
+        <Btn variant="primary" size="md" full onClick={onConfirm}>Override &amp; Continue</Btn>
+      </div>
+    </ModalScrim>
   )
 }

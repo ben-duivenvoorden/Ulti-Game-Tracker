@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { Btn } from '@/components/ui/Btn'
 import { Label } from '@/components/ui/Label'
-import { BackIcon } from '@/components/ui/Icons'
+import { Section, TextField, Stepper } from '@/components/ui/form'
+import { ScreenHeader } from '@/components/ScreenHeader'
 import { PromptSheet } from '@/components/PromptSheet'
-import { useGameStore } from '@/core/store'
-import { useTeamsState } from '@/core/selectors'
+import { useGameActions, useTeamsState } from '@/core/selectors'
 import type { GlobalTeamId } from '@/core/teams/types'
 import { suggestShortName } from '@/core/teams/shortName'
 
@@ -16,9 +16,8 @@ interface NewGameFormProps {
 const DEFAULT_TEAM_COLOR = '#1f4788'
 
 export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
-  const teamsState     = useTeamsState()
-  const addScheduled   = useGameStore(s => s.addScheduledGame)
-  const addTeam        = useGameStore(s => s.addTeam)
+  const teamsState = useTeamsState()
+  const actions    = useGameActions()
 
   const [name, setName] = useState('')
   const [scheduledTime, setScheduledTime] = useState('12:00')
@@ -33,7 +32,7 @@ export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
 
   const handleSave = () => {
     if (!canSave || teamA === null || teamB === null) return
-    const gameId = addScheduled({
+    const gameId = actions.addScheduledGame({
       name:          name.trim(),
       scheduledTime,
       teamAGlobalId: teamA,
@@ -47,7 +46,7 @@ export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
   // Create-team from the picker — the "+ Add new team…" choice opens an in-app
   // prompt (remembering which slot asked); the fresh id drops into that slot.
   const submitNewTeam = (proposed: string) => {
-    const id = addTeam(proposed, suggestShortName(proposed), DEFAULT_TEAM_COLOR)
+    const id = actions.addTeam(proposed, suggestShortName(proposed), DEFAULT_TEAM_COLOR)
     if (createSlot === 'A') setTeamA(id)
     else if (createSlot === 'B') setTeamB(id)
     setCreateSlot(null)
@@ -55,23 +54,12 @@ export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
 
   return (
     <div className="h-full flex flex-col bg-bg text-content relative">
-      {/* Header */}
-      <div
-        className="flex-shrink-0 flex items-center justify-between px-3 h-16"
-        style={{ borderBottom: '1px solid var(--color-border)' }}
-      >
-        <button
-          onClick={onCancel}
-          className="text-muted hover:text-content transition-colors cursor-pointer flex items-center leading-none"
-          title="Cancel"
-        >
-          <BackIcon size={20} />
-        </button>
-        <div className="flex-1 text-center">
-          <Label block>NEW GAME</Label>
-        </div>
-        <Btn variant="primary" size="md" disabled={!canSave} onClick={handleSave}>Save</Btn>
-      </div>
+      <ScreenHeader
+        onBack={onCancel}
+        backTitle="Cancel"
+        center={<Label block>NEW GAME</Label>}
+        right={<Btn variant="primary" size="md" disabled={!canSave} onClick={handleSave}>Save</Btn>}
+      />
 
       {/* Scrollable form body */}
       <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
@@ -132,84 +120,7 @@ export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
   )
 }
 
-// ─── Building blocks ─────────────────────────────────────────────────────────
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div
-      className="rounded-lg border p-3 flex flex-col gap-2"
-      style={{ background: 'var(--color-surf)', borderColor: 'var(--color-border)' }}
-    >
-      <Label className="text-[9px]">{title}</Label>
-      {children}
-    </div>
-  )
-}
-
-function TextField({ label, value, onChange, placeholder, autoFocus }: {
-  label: string
-  value: string
-  onChange: (v: string) => void
-  placeholder?: string
-  autoFocus?: boolean
-}) {
-  return (
-    <label className="flex flex-col gap-1">
-      <span className="text-[10px] font-mono tracking-widest" style={{ color: 'var(--color-muted)' }}>{label.toUpperCase()}</span>
-      <input
-        type="text"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        autoFocus={autoFocus}
-        className="h-10 px-3 rounded-md border text-sm font-medium text-content"
-        style={{ background: 'var(--color-surf-2)', borderColor: 'var(--color-border-2)' }}
-      />
-    </label>
-  )
-}
-
-function Stepper({ label, value, min, max, onChange }: {
-  label: string
-  value: number
-  min:   number
-  max:   number
-  onChange: (v: number) => void
-}) {
-  return (
-    <div
-      className="flex items-center justify-between gap-3 px-3 h-10 rounded-md border"
-      style={{ background: 'var(--color-surf-2)', borderColor: 'var(--color-border-2)' }}
-    >
-      <span className="text-sm font-semibold text-content">{label}</span>
-      <div className="flex items-center gap-1.5 flex-shrink-0">
-        <button
-          type="button"
-          onClick={() => onChange(Math.max(min, value - 1))}
-          disabled={value <= min}
-          className="w-7 h-7 rounded-md border text-base font-bold cursor-pointer transition-colors disabled:opacity-30 disabled:cursor-default"
-          style={{
-            background:  'var(--color-surf-3)',
-            borderColor: 'var(--color-border-2)',
-            color:       'var(--color-content)',
-          }}
-        >−</button>
-        <span className="w-6 text-center text-base font-bold tabular-nums">{value}</span>
-        <button
-          type="button"
-          onClick={() => onChange(Math.min(max, value + 1))}
-          disabled={value >= max}
-          className="w-7 h-7 rounded-md border text-base font-bold cursor-pointer transition-colors disabled:opacity-30 disabled:cursor-default"
-          style={{
-            background:  'var(--color-surf-3)',
-            borderColor: 'var(--color-border-2)',
-            color:       'var(--color-content)',
-          }}
-        >+</button>
-      </div>
-    </div>
-  )
-}
+// ─── Team picker ─────────────────────────────────────────────────────────────
 
 function TeamPicker({ slot, value, onChange, onCreate, excludeId, teams }: {
   slot: 'A' | 'B'

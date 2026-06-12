@@ -2,10 +2,11 @@ import { useState } from 'react'
 import { Btn } from '@/components/ui/Btn'
 import { Chip } from '@/components/ui/Chip'
 import { Label } from '@/components/ui/Label'
-import { BackIcon, CloseIcon, WarnIcon } from '@/components/ui/Icons'
+import { CloseIcon, WarnIcon } from '@/components/ui/Icons'
+import { TextField, ColorField, GenderSelect } from '@/components/ui/form'
+import { ScreenHeader } from '@/components/ScreenHeader'
 import { ConfirmSheet } from '@/components/ConfirmSheet'
-import { useGameStore } from '@/core/store'
-import { useTeamsState } from '@/core/selectors'
+import { useGameActions, useTeamsState } from '@/core/selectors'
 import type { GlobalTeam, GlobalPlayer, GlobalTeamId } from '@/core/teams/types'
 import { suggestShortName, SHORT_NAME_MAX } from '@/core/teams/shortName'
 
@@ -17,15 +18,9 @@ type View =
   | { kind: 'team'; id: GlobalTeamId }
 
 export default function TeamsManager() {
-  const teamsState        = useTeamsState()
-  const closeTeamsManager = useGameStore(s => s.closeTeamsManager)
-  const addTeam           = useGameStore(s => s.addTeam)
-  const editTeam          = useGameStore(s => s.editTeam)
-  const archiveTeam       = useGameStore(s => s.archiveTeam)
-  const addPlayer         = useGameStore(s => s.addPlayer)
-  const editPlayer        = useGameStore(s => s.editPlayer)
-  const removePlayer      = useGameStore(s => s.removePlayer)
-  const resetAllData      = useGameStore(s => s.resetAllData)
+  const teamsState = useTeamsState()
+  const { closeTeamsManager, addTeam, editTeam, archiveTeam,
+          addPlayer, editPlayer, removePlayer, resetAllData } = useGameActions()
 
   const [view, setView] = useState<View>({ kind: 'list' })
   const [resetConfirm, setResetConfirm] = useState(false)
@@ -64,13 +59,11 @@ export default function TeamsManager() {
   // ─── List view (default) ──────────────────────────────────────────────────
   return (
     <div className="h-full flex flex-col bg-bg text-content relative">
-      <div className="flex-shrink-0 h-16 border-b border-border flex items-center justify-between px-4">
-        <div>
-          <Label block className="mb-0.5">TEAMS MANAGER</Label>
-          <div className="text-base font-bold leading-tight">Roster</div>
-        </div>
-        <Btn variant="primary" size="md" onClick={closeTeamsManager}>Done</Btn>
-      </div>
+      <ScreenHeader
+        kicker="TEAMS MANAGER"
+        title="Roster"
+        right={<Btn variant="primary" size="md" onClick={closeTeamsManager}>Done</Btn>}
+      />
 
       <div className="flex-1 overflow-y-auto">
         <button
@@ -155,19 +148,16 @@ function NewTeamView({ onCreate, onCancel }: {
 
   return (
     <div className="h-full flex flex-col bg-bg text-content">
-      <div className="flex-shrink-0 flex items-center justify-between px-3 h-16 border-b border-border">
-        <button
-          onClick={onCancel}
-          className="text-muted hover:text-content transition-colors cursor-pointer flex items-center leading-none"
-        >
-          <BackIcon size={20} />
-        </button>
-        <Label>NEW TEAM</Label>
-        <Btn variant="primary" size="md" disabled={!canSave}
-          onClick={() => onCreate(name.trim(), short.trim(), color)}>
-          Save
-        </Btn>
-      </div>
+      <ScreenHeader
+        onBack={onCancel}
+        center={<Label>NEW TEAM</Label>}
+        right={
+          <Btn variant="primary" size="md" disabled={!canSave}
+            onClick={() => onCreate(name.trim(), short.trim(), color)}>
+            Save
+          </Btn>
+        }
+      />
       <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
         <TextField label="Name"  value={name}  onChange={onNameChange}  placeholder="Lounge Lizards Eastside" autoFocus />
         <TextField label={`Short (max ${SHORT_NAME_MAX})`} value={short} onChange={onShortChange} placeholder="LLE" />
@@ -194,30 +184,29 @@ function TeamDetailView({ team, roster, onBack, onEditTeam, onArchive, onAddPlay
   >(null)
   return (
     <div className="h-full flex flex-col bg-bg text-content relative">
-      <div className="flex-shrink-0 flex items-center justify-between px-3 h-16 border-b border-border">
-        <button
-          onClick={onBack}
-          className="text-muted hover:text-content transition-colors cursor-pointer flex items-center leading-none"
-        >
-          <BackIcon size={20} />
-        </button>
-        <div className="flex-1 flex items-center justify-center gap-2 min-w-0 px-2">
-          <Chip color={team.color} variant="solid">{team.short}</Chip>
-          <span className="text-sm font-bold truncate">{team.name}</span>
-        </div>
-        <Btn
-          variant="ghost"
-          size="md"
-          onClick={() => setConfirm({
-            title: `Archive ${team.name}?`,
-            message: 'Historical games will still resolve their rosters.',
-            confirmLabel: 'Archive',
-            onConfirm: onArchive,
-          })}
-        >
-          Archive
-        </Btn>
-      </div>
+      <ScreenHeader
+        onBack={onBack}
+        center={
+          <>
+            <Chip color={team.color} variant="solid">{team.short}</Chip>
+            <span className="text-sm font-bold truncate">{team.name}</span>
+          </>
+        }
+        right={
+          <Btn
+            variant="ghost"
+            size="md"
+            onClick={() => setConfirm({
+              title: `Archive ${team.name}?`,
+              message: 'Historical games will still resolve their rosters.',
+              confirmLabel: 'Archive',
+              onConfirm: onArchive,
+            })}
+          >
+            Archive
+          </Btn>
+        }
+      />
 
       {/* Team identity editor */}
       <div className="flex-shrink-0 p-3 flex flex-col gap-2 border-b border-border">
@@ -280,15 +269,7 @@ function PlayerRow({ player, onEdit, onRemove }: {
     <div className="flex items-center gap-2 p-2 rounded-md border"
       style={{ background: 'var(--color-surf)', borderColor: 'var(--color-border)' }}
     >
-      <select
-        value={player.gender}
-        onChange={e => onEdit({ gender: e.target.value as 'M' | 'F' })}
-        className="h-9 px-2 rounded-md border text-sm font-mono text-content cursor-pointer flex-shrink-0"
-        style={{ background: 'var(--color-surf-2)', borderColor: 'var(--color-border-2)' }}
-      >
-        <option value="M">M</option>
-        <option value="F">F</option>
-      </select>
+      <GenderSelect value={player.gender} onChange={gender => onEdit({ gender })} />
       <input
         type="text"
         value={player.name}
@@ -340,15 +321,7 @@ function AddPlayerInline({ onAdd }: {
       className="flex items-center gap-2 p-2 rounded-md border border-dashed"
       style={{ background: 'var(--color-surf)', borderColor: 'var(--color-border-2)' }}
     >
-      <select
-        value={gender}
-        onChange={e => setGender(e.target.value as 'M' | 'F')}
-        className="h-9 px-2 rounded-md border text-sm font-mono text-content cursor-pointer flex-shrink-0"
-        style={{ background: 'var(--color-surf-2)', borderColor: 'var(--color-border-2)' }}
-      >
-        <option value="M">M</option>
-        <option value="F">F</option>
-      </select>
+      <GenderSelect value={gender} onChange={setGender} />
       <input
         type="text"
         value={name}
@@ -371,48 +344,3 @@ function AddPlayerInline({ onAdd }: {
   )
 }
 
-// ─── Shared form bits ────────────────────────────────────────────────────────
-
-function TextField({ label, value, onChange, placeholder, autoFocus }: {
-  label: string
-  value: string
-  onChange: (v: string) => void
-  placeholder?: string
-  autoFocus?: boolean
-}) {
-  return (
-    <label className="flex flex-col gap-1">
-      <span className="text-[10px] font-mono tracking-widest" style={{ color: 'var(--color-muted)' }}>
-        {label.toUpperCase()}
-      </span>
-      <input
-        type="text"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        autoFocus={autoFocus}
-        className="h-10 px-3 rounded-md border text-sm font-medium text-content"
-        style={{ background: 'var(--color-surf-2)', borderColor: 'var(--color-border-2)' }}
-      />
-    </label>
-  )
-}
-
-function ColorField({ label, value, onChange }: {
-  label: string
-  value: string
-  onChange: (v: string) => void
-}) {
-  return (
-    <label className="flex items-center justify-between gap-3 px-3 h-10 rounded-md border"
-      style={{ background: 'var(--color-surf-2)', borderColor: 'var(--color-border-2)' }}>
-      <span className="text-sm font-semibold text-content">{label}</span>
-      <input
-        type="color"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        className="w-10 h-7 rounded cursor-pointer"
-      />
-    </label>
-  )
-}
