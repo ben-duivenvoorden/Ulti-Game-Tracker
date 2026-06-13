@@ -164,17 +164,6 @@ export default function LineSelection() {
         </div>
       )}
 
-      {/* Info + Teams + Settings icons — large tap targets, sibling affordances. */}
-      <div className="flex-shrink-0 px-2 py-1 flex justify-end items-center gap-1 border-b border-border">
-        <ScorerInfoButton />
-        <IconBtn onClick={openTeamsManager} title="Manage teams">
-          <TeamsIcon />
-        </IconBtn>
-        <IconBtn onClick={openGameSettings} title="Recording settings">
-          <SettingsIcon />
-        </IconBtn>
-      </div>
-
       {/* Active team's roster */}
       <div className="flex-1 overflow-hidden">
         {(() => {
@@ -195,6 +184,17 @@ export default function LineSelection() {
               onAddPlayer={(name, gender, jersey) =>
                 addPlayer(globalIdFor(slot), name, gender,
                   jersey !== undefined ? { jerseyNumber: jersey } : undefined)
+              }
+              trailing={
+                <>
+                  <ScorerInfoButton />
+                  <IconBtn onClick={openTeamsManager} title="Manage teams">
+                    <TeamsIcon />
+                  </IconBtn>
+                  <IconBtn onClick={openGameSettings} title="Recording settings">
+                    <SettingsIcon />
+                  </IconBtn>
+                </>
               }
             />
           )
@@ -296,6 +296,8 @@ interface TeamPanelProps {
   targetF: number
   lineSize: number
   onAddPlayer: (name: string, gender: 'M' | 'F', jerseyNumber?: number) => void
+  /** Right-aligned header-row affordances (info / teams / settings icons). */
+  trailing?: React.ReactNode
 }
 
 const chipColor = (count: number, t: number) =>
@@ -308,7 +310,7 @@ const byFirstName = (a: Player, b: Player) => firstNameKey(a.name).localeCompare
 
 function TeamPanel({
   players, selected, color, onToggle, onSetAll,
-  gameMode, targetM, targetF, lineSize, onAddPlayer,
+  gameMode, targetM, targetF, lineSize, onAddPlayer, trailing,
 }: TeamPanelProps) {
   const total  = selected.length
   const countM = selected.filter(p => p.gender === 'M').length
@@ -336,11 +338,12 @@ function TeamPanel({
     const males   = players.filter(p => p.gender === 'M').sort(byFirstName)
     return (
       <div className="h-full flex flex-col">
-        <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 border-b border-border">
+        <div className="flex-shrink-0 flex items-center gap-2 pl-3 pr-2 py-1 border-b border-border">
           {allButton}
-          <span className="text-[10px] font-mono tracking-wide ml-auto" style={{ color: 'var(--color-dim)' }} title="FMP = Female Matching Player · MMP = Male Matching Player">
+          <span className="text-[10px] font-mono tracking-wide min-w-0 truncate" style={{ color: 'var(--color-dim)' }} title="FMP = Female Matching Player · MMP = Male Matching Player">
             FMP = Female · MMP = Male matching
           </span>
+          {trailing && <div className="flex items-center gap-1 ml-auto flex-shrink-0">{trailing}</div>}
         </div>
         <div className="flex-1 overflow-y-auto p-2 grid grid-cols-2 gap-2 items-start">
           <GenderColumn
@@ -361,9 +364,10 @@ function TeamPanel({
   // ── Open: single column, no gender split.
   return (
     <div className="h-full flex flex-col">
-      <div className="flex-shrink-0 flex items-center gap-2 px-3 py-2 border-b border-border">
+      <div className="flex-shrink-0 flex items-center gap-2 pl-3 pr-2 py-1 border-b border-border">
         {allButton}
         <Chip color={chipColor(total, lineSize)}>{total}/{lineSize}</Chip>
+        {trailing && <div className="flex items-center gap-1 ml-auto flex-shrink-0">{trailing}</div>}
       </div>
       <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-1.5">
         {[...players].sort(byFirstName).map(p => (
