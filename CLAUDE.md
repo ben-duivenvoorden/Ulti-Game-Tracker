@@ -16,11 +16,15 @@ client/src/
                  contrast.ts · sync.ts (write half) · serverLog.ts (read half)
   core/teams/    append-only teams+players log — types · engine · actions · shortName
   core/games/    append-only scheduled-games log — types · engine · actions
+  core/voice/    on-device voice input — match (phonetic roster matcher) ·
+                 parse (narration → RawEvents) · plugin (Capacitor VoicePlugin bridge + dev mock)
   screens/       GameSetup · NewGame · GameSettings · LineSelection · LiveEntry ·
                  PointSummary · TeamsManager
   components/    ScreenHeader · ModalScrim · ConfirmSheet · PromptSheet ·
-                 MomentBackdrop · ScorerInfoButton
+                 MomentBackdrop · ScorerInfoButton · VoicePTT
   components/ui/ Btn · Chip · Label · Icons · form (TextField/ColorField/Stepper/Section/GenderSelect)
+client/android/  Capacitor Android shell — VoicePlugin.java + WhisperBridge (JNI) +
+                 cpp/whisper_jni.cpp (whisper.cpp via CMake FetchContent, arm64-v8a)
 api/src/         Azure Functions — functions/post-events · functions/get-game · shared/{blob,csv}
 ```
 
