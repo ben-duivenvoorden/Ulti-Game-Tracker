@@ -1,11 +1,13 @@
 // Pure event builders for scheduled-games log. See core/teams/actions.ts for
 // the rationale of keeping these separate from store wiring.
 
-import type { GameId } from '../types'
+import type { GameId, RecordingOptions } from '../types'
 import type { GlobalTeamId } from '../teams/types'
 import type {
   CompetitionAddEvent,
+  CompetitionEditEvent,
   CompetitionId,
+  CompetitionOptionKey,
   GameAddEvent,
   GameCancelEvent,
   GameEditEvent,
@@ -14,9 +16,21 @@ import type {
 export function addCompetition(args: {
   competitionId: CompetitionId
   name:          string
-  pullBonus:     boolean
+  defaults:      Partial<RecordingOptions>
+  locked:        CompetitionOptionKey[]
 }): Omit<CompetitionAddEvent, 'id' | 'timestamp'> {
   return { type: 'competition-add', ...args }
+}
+
+export function editCompetition(
+  competitionId: CompetitionId,
+  patch: {
+    name?:     string
+    defaults?: Partial<RecordingOptions>
+    locked?:   CompetitionOptionKey[]
+  },
+): Omit<CompetitionEditEvent, 'id' | 'timestamp'> {
+  return { type: 'competition-edit', competitionId, ...patch }
 }
 
 export function addScheduledGame(args: {

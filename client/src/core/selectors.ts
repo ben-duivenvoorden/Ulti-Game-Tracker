@@ -3,7 +3,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useGameStore } from './store'
 import { computeVisLog, deriveGameState, deriveEndsSwapped, effectiveSession } from './engine'
 import { deriveTeamsState } from './teams/engine'
-import { deriveScheduledGamesState, resolveGameConfig } from './games/engine'
+import { competitionForGame, deriveScheduledGamesState, resolveGameConfig } from './games/engine'
 import type { DerivedGameState, VisLogEntry, GameSession, RecordingOptions, EventId } from './types'
 import type { TeamsState } from './teams/types'
 import type { Competition, ScheduledGame, ScheduledGameEvent } from './games/types'
@@ -33,6 +33,27 @@ export function useScheduledGames(): ScheduledGame[] {
 export function useCompetitions(): Competition[] {
   const log = useScheduledGamesLog()
   return useMemo(() => deriveScheduledGamesState(log).competitions, [log])
+}
+
+/** The competition open in the competition-settings screen (null = none). */
+export function useEditingCompetition(): Competition | null {
+  const log = useScheduledGamesLog()
+  const id  = useGameStore(s => s.editingCompetitionId)
+  return useMemo(() => {
+    if (id === null) return null
+    return deriveScheduledGamesState(log).competitionsById.get(id) ?? null
+  }, [log, id])
+}
+
+/** The competition governing the current session's game — GameSettings uses
+ *  it to grey out locked options. Null when no session / no competition. */
+export function useActiveCompetition(): Competition | null {
+  const log     = useScheduledGamesLog()
+  const session = useGameStore(s => s.session)
+  return useMemo(() => {
+    if (!session) return null
+    return competitionForGame(deriveScheduledGamesState(log), session.gameConfig.id)
+  }, [log, session])
 }
 
 // ─── Session resolution ──────────────────────────────────────────────────────

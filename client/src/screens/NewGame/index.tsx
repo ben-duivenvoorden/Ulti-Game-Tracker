@@ -30,6 +30,7 @@ export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
   const [scoreCapAt, setScoreCapAt] = useState(15)
   // Which slot triggered the new-team prompt (null = closed).
   const [createSlot, setCreateSlot] = useState<'A' | 'B' | null>(null)
+  const [createCompOpen, setCreateCompOpen] = useState(false)
 
   const canSave = name.trim().length > 0 && teamA !== null && teamB !== null && teamA !== teamB
 
@@ -81,24 +82,27 @@ export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
           onChange={setScheduledTime}
           placeholder="09:00"
         />
-        {competitions.length > 0 && (
-          <label className="flex flex-col gap-1">
-            <span className="text-[10px] font-mono tracking-widest" style={{ color: 'var(--color-muted)' }}>
-              COMPETITION
-            </span>
-            <select
-              value={competitionId ?? ''}
-              onChange={e => setCompetitionId(e.target.value === '' ? null : Number(e.target.value))}
-              className="h-10 px-3 rounded-md border text-sm font-medium text-content cursor-pointer"
-              style={{ background: 'var(--color-surf-2)', borderColor: 'var(--color-border-2)' }}
-            >
-              <option value="">None</option>
-              {competitions.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          </label>
-        )}
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] font-mono tracking-widest" style={{ color: 'var(--color-muted)' }}>
+            COMPETITION
+          </span>
+          <select
+            value={competitionId ?? ''}
+            onChange={e => {
+              const raw = e.target.value
+              if (raw === 'new') { setCreateCompOpen(true); return }
+              setCompetitionId(raw === '' ? null : Number(raw))
+            }}
+            className="h-10 px-3 rounded-md border text-sm font-medium text-content cursor-pointer"
+            style={{ background: 'var(--color-surf-2)', borderColor: 'var(--color-border-2)' }}
+          >
+            <option value="">None</option>
+            {competitions.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+            <option value="new">+ New competition…</option>
+          </select>
+        </label>
       </Section>
 
       <Section title="TEAMS">
@@ -137,6 +141,20 @@ export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
         confirmLabel="Add"
         onSubmit={submitNewTeam}
         onCancel={() => setCreateSlot(null)}
+      />
+
+      <PromptSheet
+        open={createCompOpen}
+        title="New competition"
+        label="Competition name"
+        placeholder="e.g. Brisbane Parity League"
+        confirmLabel="Add"
+        onSubmit={name => {
+          const id = actions.addCompetition(name)
+          setCompetitionId(id)
+          setCreateCompOpen(false)
+        }}
+        onCancel={() => setCreateCompOpen(false)}
       />
     </div>
   )

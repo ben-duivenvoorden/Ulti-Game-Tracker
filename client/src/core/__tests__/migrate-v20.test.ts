@@ -74,9 +74,56 @@ describe('migrateGameStore v19 → v20', () => {
     expect(migrated.recordingOptions.abba).toBe(false)
   })
 
-  it('is idempotent — re-running on a v20 world changes nothing', () => {
+  it('competitions land in the v21 shape (defaults + locked)', () => {
+    expect(games.competitions.map(c => c.defaults.pullBonus)).toEqual([false, true])
+    expect(games.competitions.every(c => c.locked.includes('pullBonus'))).toBe(true)
+  })
+
+  it('is idempotent — re-running on a migrated world changes nothing', () => {
     const again = migrateGameStore(migrated, 20)
     expect(again.scheduledGamesLog).toEqual(migrated.scheduledGamesLog)
     expect(again.teamsLog).toEqual(migrated.teamsLog)
+  })
+})
+
+// v20 shipped competition events with a single `pullBonus` flag; v21 replaced
+// that with defaults + locked. Only the two seeded competitions can exist in
+// a v20 world (no creation UI shipped), so the migration strips the old-shape
+// events and reseeds the same ids.
+describe('migrateGameStore v20 → v21', () => {
+  const oldShape = (id: number, competitionId: number, name: string, pullBonus: boolean) =>
+    ({ id, timestamp: 0, type: 'competition-add', competitionId, name, pullBonus }) as unknown as ScheduledGameEvent
+
+  const v20World = {
+    teamsLog: [
+      { id: 1, timestamp: 0, type: 'team-add', teamId: 3, name: 'Lizards Eastside', short: 'LIZ', color: '#ffffff' },
+    ] as TeamEvent[],
+    scheduledGamesLog: [
+      oldShape(1, 1, 'Brisbane Ultimate Mixed League', false),
+      oldShape(2, 2, 'Brisbane Parity League', true),
+      { id: 3, timestamp: 0, type: 'game-add', gameId: 5, name: 'BUML 2026-05-11', scheduledTime: '19:00',
+        teamAGlobalId: 3, teamBGlobalId: 4, halfTimeAt: 9, scoreCapAt: 17 },
+      { id: 4, timestamp: 0, type: 'game-edit', gameId: 5, competitionId: 1 },
+      { id: 5, timestamp: 0, type: 'game-add', gameId: 7, name: 'BPL 2026-07-08', scheduledTime: '18:30',
+        teamAGlobalId: 8, teamBGlobalId: 9, halfTimeAt: 8, scoreCapAt: 15, competitionId: 2 },
+    ] as ScheduledGameEvent[],
+    recordingOptions: { pullBonus: false },
+    scorerId: 'scorer-x',
+    deviceId: 'device-x',
+    session: null,
+  }
+  const migrated = migrateGameStore(v20World, 20)
+  const games = deriveScheduledGamesState(migrated.scheduledGamesLog)
+
+  it('rewrites competitions to the defaults+locked shape, same ids, no duplicates', () => {
+    expect(games.competitions.map(c => c.id)).toEqual([1, 2])
+    expect(games.competitions.map(c => c.defaults.pullBonus)).toEqual([false, true])
+    expect(migrated.scheduledGamesLog.filter(e => e.type === 'competition-add')).toHaveLength(2)
+    expect(migrated.scheduledGamesLog.some(e => e.type === 'competition-add' && !('defaults' in e))).toBe(false)
+  })
+
+  it('keeps game↔competition tags intact', () => {
+    expect(games.gamesById.get(5)?.competitionId).toBe(1)
+    expect(games.gamesById.get(7)?.competitionId).toBe(2)
   })
 })

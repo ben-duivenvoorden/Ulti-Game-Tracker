@@ -67,13 +67,16 @@ describe('seedTeamsAndGames', () => {
     expect(names).not.toContain('Empire vs Breeze')
   })
 
-  it('seeds BUML + Brisbane Parity League competitions (pull bonus only on Parity)', () => {
+  it('seeds BUML + Brisbane Parity League competitions (pull bonus only on Parity, locked)', () => {
     const state = deriveScheduledGamesState(seedTeamsAndGames().gameEvents)
     expect(state.competitions.map(c => c.name)).toEqual([
       'Brisbane Ultimate Mixed League',
       'Brisbane Parity League',
     ])
-    expect(state.competitions.map(c => c.pullBonus)).toEqual([false, true])
+    expect(state.competitions.map(c => c.defaults.pullBonus)).toEqual([false, true])
+    expect(state.competitions.every(c => c.locked.includes('pullBonus'))).toBe(true)
+    // BUML is the ABBA league; Parity is not.
+    expect(state.competitions.map(c => c.defaults.abba)).toEqual([true, false])
   })
 
   it('every seeded game belongs to a seeded competition', () => {

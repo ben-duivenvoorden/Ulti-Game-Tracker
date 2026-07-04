@@ -178,7 +178,7 @@ export type UiMode =
   | 'block-pick'         // recorder tapped "Blocked by Defence", picking blocker
   | 'intercept-pick'     // recorder tapped "Intercepted by Defence", picking interceptor
 
-export type AppScreen = 'game-setup' | 'game-settings' | 'line-selection' | 'live-entry' | 'teams-manager' | 'point-summary'
+export type AppScreen = 'game-setup' | 'game-settings' | 'competition-settings' | 'line-selection' | 'live-entry' | 'teams-manager' | 'point-summary'
 
 // ─── Recording options ────────────────────────────────────────────────────────
 

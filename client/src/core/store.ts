@@ -31,9 +31,9 @@ import {
 import { PICK_MODES, isPickMode } from './pickModes'
 import { seedTeamsAndGames } from './data'
 import type { TeamEvent, GlobalTeamId } from './teams/types'
-import type { CompetitionId, ScheduledGameEvent } from './games/types'
+import type { CompetitionId, CompetitionOptionKey, ScheduledGameEvent } from './games/types'
 import { deriveTeamsState } from './teams/engine'
-import { competitionOverrides, deriveScheduledGamesState, resolveGameConfig } from './games/engine'
+import { competitionForGame, competitionOverrides, deriveScheduledGamesState, resolveGameConfig } from './games/engine'
 import {
   addTeam as buildAddTeam,
   editTeam as buildEditTeam,
@@ -43,6 +43,8 @@ import {
   removePlayer as buildRemovePlayer,
 } from './teams/actions'
 import {
+  addCompetition as buildAddCompetition,
+  editCompetition as buildEditCompetition,
   addScheduledGame as buildAddScheduledGame,
   editScheduledGame as buildEditScheduledGame,
   cancelScheduledGame as buildCancelScheduledGame,
@@ -76,6 +78,8 @@ interface GameStore {
   uiMode: UiMode
   selPuller: PlayerId | null
   recordingOptions: RecordingOptions
+  /** Competition open in the competition-settings screen (null = none). */
+  editingCompetitionId: CompetitionId | null
 
   // Transient (not persisted)
   showEventMenu: boolean
@@ -146,6 +150,16 @@ interface GameStore {
   openGameSettings:      () => void
   closeGameSettings:     () => void
   updateRecordingOption: <K extends keyof RecordingOptions>(key: K, value: RecordingOptions[K]) => void
+
+  // Competition level — defaults + enforcement live on the competition.
+  openCompetitionSettings:  (competitionId: CompetitionId) => void
+  closeCompetitionSettings: () => void
+  addCompetition:           (name: string) => CompetitionId
+  editCompetition:          (competitionId: CompetitionId, patch: {
+    name?:     string
+    defaults?: Partial<RecordingOptions>
+    locked?:   CompetitionOptionKey[]
+  }) => void
 
   // Pure UI
   setShowEventMenu:    (show: boolean) => void
@@ -339,6 +353,7 @@ export const useGameStore = create<GameStore>()(
       truncateCursor:    null,
       endsSwappedBaseline: false,
       recordingOptions:  DEFAULT_RECORDING_OPTIONS,
+      editingCompetitionId: null,
 
       // ── selectGame ──────────────────────────────────────────────────────────
       // Start a fresh game session (overwrites any existing one). Resolves
@@ -754,7 +769,42 @@ export const useGameStore = create<GameStore>()(
       },
 
       updateRecordingOption(key, value) {
+        // Enforcement: while a competition game is live, its locked keys
+        // can't be changed here (the UI greys them out; this is the guard).
+        const { session, scheduledGamesLog } = get()
+        if (session) {
+          const comp = competitionForGame(deriveScheduledGamesState(scheduledGamesLog), session.gameConfig.id)
+          if (comp && (comp.locked as string[]).includes(key)) return
+        }
         set(s => ({ recordingOptions: { ...s.recordingOptions, [key]: value } }))
+      },
+
+      // ── Competition level ────────────────────────────────────────────────────
+      openCompetitionSettings(competitionId) {
+        set({ screen: 'competition-settings', editingCompetitionId: competitionId, showEventMenu: false })
+      },
+
+      closeCompetitionSettings() {
+        set({ screen: 'game-setup', editingCompetitionId: null })
+      },
+
+      addCompetition(name) {
+        const log = get().scheduledGamesLog
+        const id = nextIdFrom(log, e => (e.type === 'competition-add' ? e.competitionId : null))
+        set(s => ({
+          scheduledGamesLog: stampAndAppend(s.scheduledGamesLog, [
+            buildAddCompetition({ competitionId: id, name, defaults: {}, locked: [] }),
+          ]),
+        }))
+        return id
+      },
+
+      editCompetition(competitionId, patch) {
+        set(s => ({
+          scheduledGamesLog: stampAndAppend(s.scheduledGamesLog, [
+            buildEditCompetition(competitionId, patch),
+          ]),
+        }))
       },
 
       // ── setShowEventMenu ─────────────────────────────────────────────────────
@@ -884,6 +934,7 @@ export const useGameStore = create<GameStore>()(
         uiMode:            state.uiMode,
         selPuller:         state.selPuller,
         recordingOptions:  state.recordingOptions,
+        editingCompetitionId: state.editingCompetitionId,
       }),
     },
   ),

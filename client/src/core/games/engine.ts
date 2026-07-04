@@ -28,12 +28,22 @@ export function deriveScheduledGamesState(log: ScheduledGameEvent[]): ScheduledG
       case 'competition-add': {
         if (competitionsById.has(event.competitionId)) break
         const c: Competition = {
-          id:        event.competitionId,
-          name:      event.name,
-          pullBonus: event.pullBonus,
+          id:       event.competitionId,
+          name:     event.name,
+          defaults: event.defaults ?? {},
+          locked:   event.locked ?? [],
         }
         competitionsById.set(event.competitionId, c)
         competitions.push(c)
+        break
+      }
+
+      case 'competition-edit': {
+        const c = competitionsById.get(event.competitionId)
+        if (!c) break
+        if (event.name     !== undefined) c.name     = event.name
+        if (event.defaults !== undefined) c.defaults = event.defaults
+        if (event.locked   !== undefined) c.locked   = event.locked
         break
       }
 
@@ -81,17 +91,23 @@ export function deriveScheduledGamesState(log: ScheduledGameEvent[]): ScheduledG
   return { games, gamesById, competitions, competitionsById }
 }
 
-/** RecordingOptions overrides implied by a game's competition — applied when
- *  the game is selected for recording. Empty when the game has no competition
- *  (the current options stand). Currently just the pull-bonus modification. */
+/** The competition governing a game, or null (no competition / dangling id). */
+export function competitionForGame(
+  state: ScheduledGamesState, gameId: GameId,
+): Competition | null {
+  const game = state.gamesById.get(gameId)
+  return (game?.competitionId !== undefined
+    ? state.competitionsById.get(game.competitionId)
+    : undefined) ?? null
+}
+
+/** RecordingOptions overrides implied by a game's competition — its
+ *  `defaults`, applied over the recorder's options when the game is selected.
+ *  Empty when the game has no competition (the current options stand). */
 export function competitionOverrides(
   state: ScheduledGamesState, gameId: GameId,
 ): Partial<RecordingOptions> {
-  const game = state.gamesById.get(gameId)
-  const comp = game?.competitionId !== undefined
-    ? state.competitionsById.get(game.competitionId)
-    : undefined
-  return comp ? { pullBonus: comp.pullBonus } : {}
+  return competitionForGame(state, gameId)?.defaults ?? {}
 }
 
 /** Convenience for `deriveScheduledGames(...)` style call sites that only

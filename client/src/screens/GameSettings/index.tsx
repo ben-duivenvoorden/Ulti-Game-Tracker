@@ -1,13 +1,22 @@
-import { useGameActions, useRecordingOptions, useSession } from '@/core/selectors'
+import { useActiveCompetition, useGameActions, useRecordingOptions, useSession } from '@/core/selectors'
 import { Btn } from '@/components/ui/Btn'
 import { Section, Stepper } from '@/components/ui/form'
 import { ScreenHeader } from '@/components/ScreenHeader'
 import { abbaRatioLabel } from '@/core/format'
+import type { RecordingOptions } from '@/core/types'
 
 export default function GameSettings() {
   const { closeGameSettings, updateRecordingOption, setAbbaStartMajority } = useGameActions()
   const options = useRecordingOptions()
   const session = useSession()
+
+  // While a competition game is live, its locked settings are enforced —
+  // shown greyed out here (the store guard backs this up).
+  const competition = useActiveCompetition()
+  const isLocked = (key: keyof RecordingOptions) =>
+    !!competition && (competition.locked as readonly string[]).includes(key)
+  const lockHint  = competition ? `Locked by ${competition.name}` : ''
+  const lineLocked = isLocked('gameMode') || isLocked('lineRatio') || isLocked('lineSize')
 
   return (
     <div className="h-full flex flex-col bg-bg text-content">
@@ -23,6 +32,12 @@ export default function GameSettings() {
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
 
         <Section title="GAME MODE & LINE COMPOSITION">
+          {lineLocked && (
+            <div className="text-[10px] mb-1" style={{ color: 'var(--color-warn)' }}>
+              {lockHint}
+            </div>
+          )}
+          <div style={lineLocked ? { opacity: 0.5, pointerEvents: 'none' } : undefined} className="flex flex-col gap-2">
           <div className="flex gap-2">
             <ModeButton
               selected={options.gameMode === 'mixed'}
@@ -76,6 +91,7 @@ export default function GameSettings() {
               </div>
             </div>
           )}
+          </div>
         </Section>
 
         {options.abba && options.gameMode === 'mixed' && session && options.lineRatio.M !== options.lineRatio.F && (
@@ -104,38 +120,44 @@ export default function GameSettings() {
           <div className="flex flex-col gap-2">
             <CompactToggle
               label="Passes"
-              hint="Default player-tap action; records each receive"
+              hint={isLocked('passes') ? lockHint : 'Default player-tap action; records each receive'}
               checked={options.passes}
+              locked={isLocked('passes')}
               onChange={v => updateRecordingOption('passes', v)}
             />
             <CompactToggle
               label="Brick"
-              hint="Pull lands OB / fouls"
+              hint={isLocked('brick') ? lockHint : 'Pull lands OB / fouls'}
               checked={options.brick}
+              locked={isLocked('brick')}
               onChange={v => updateRecordingOption('brick', v)}
             />
             <CompactToggle
               label="Foul"
-              hint="Foul calls during play"
+              hint={isLocked('foul') ? lockHint : 'Foul calls during play'}
               checked={options.foul}
+              locked={isLocked('foul')}
               onChange={v => updateRecordingOption('foul', v)}
             />
             <CompactToggle
               label="Pick"
-              hint="Pick violations"
+              hint={isLocked('pick') ? lockHint : 'Pick violations'}
               checked={options.pick}
+              locked={isLocked('pick')}
               onChange={v => updateRecordingOption('pick', v)}
             />
             <CompactToggle
               label="Stall"
-              hint="Stall as turnover"
+              hint={isLocked('stall') ? lockHint : 'Stall as turnover'}
               checked={options.stall}
+              locked={isLocked('stall')}
               onChange={v => updateRecordingOption('stall', v)}
             />
             <CompactToggle
               label="ABBA Ratio (Rule A)"
-              hint="Per-point gender-ratio line advice (mixed)"
+              hint={isLocked('abba') ? lockHint : 'Per-point gender-ratio line advice (mixed)'}
               checked={options.abba}
+              locked={isLocked('abba')}
               onChange={v => updateRecordingOption('abba', v)}
             />
           </div>
@@ -145,8 +167,9 @@ export default function GameSettings() {
           <div className="flex flex-col gap-2">
             <CompactToggle
               label="Pull Distance Bonus"
-              hint="House rule — end-zone pulls score a bonus"
+              hint={isLocked('pullBonus') ? lockHint : 'House rule — end-zone pulls score a bonus'}
               checked={options.pullBonus}
+              locked={isLocked('pullBonus')}
               onChange={v => updateRecordingOption('pullBonus', v)}
             />
           </div>
@@ -191,26 +214,30 @@ function ModeButton({ children, selected, onClick }: { children: string; selecte
 }
 
 function CompactToggle({
-  label, hint, checked, onChange,
+  label, hint, checked, onChange, locked = false,
 }: {
   label:    string
   hint:     string
   checked:  boolean
   onChange: (v: boolean) => void
+  /** Enforced by the active game's competition — display-only. */
+  locked?:  boolean
 }) {
   return (
     <button
       type="button"
-      onClick={() => onChange(!checked)}
-      className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border cursor-pointer text-left"
+      onClick={() => { if (!locked) onChange(!checked) }}
+      disabled={locked}
+      className={`flex items-center justify-between gap-2 px-3 py-2 rounded-md border text-left ${locked ? 'cursor-not-allowed' : 'cursor-pointer'}`}
       style={{
         background:  checked ? 'var(--color-surf-2)' : 'transparent',
         borderColor: checked ? 'var(--color-border-2)' : 'var(--color-border)',
+        opacity:     locked ? 0.55 : 1,
       }}
     >
       <div className="flex-1 min-w-0">
         <div className="text-sm font-semibold text-content leading-none mb-0.5">{label}</div>
-        <div className="text-[10px] truncate" style={{ color: 'var(--color-muted)' }}>{hint}</div>
+        <div className="text-[10px] truncate" style={{ color: locked ? 'var(--color-warn)' : 'var(--color-muted)' }}>{hint}</div>
       </div>
       <Toggle checked={checked} />
     </button>

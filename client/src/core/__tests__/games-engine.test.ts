@@ -63,8 +63,8 @@ describe('deriveScheduledGames', () => {
 
   it('competition-add materialises competitions in insertion order; game-add/edit attach games', () => {
     const log: ScheduledGameEvent[] = [
-      ev({ type: 'competition-add', competitionId: 1, name: 'BUML',   pullBonus: false }),
-      ev({ type: 'competition-add', competitionId: 2, name: 'Parity', pullBonus: true }),
+      ev({ type: 'competition-add', competitionId: 1, name: 'BUML',   defaults: { pullBonus: false }, locked: [] }),
+      ev({ type: 'competition-add', competitionId: 2, name: 'Parity', defaults: { pullBonus: true },  locked: ['pullBonus'] }),
       ev({ type: 'game-add', gameId: 1, name: 'A', scheduledTime: '09:00',
         teamAGlobalId: 1, teamBGlobalId: 2, halfTimeAt: 8, scoreCapAt: 15, competitionId: 2 }),
       ev({ type: 'game-add', gameId: 2, name: 'B', scheduledTime: '11:00',
@@ -76,12 +76,28 @@ describe('deriveScheduledGames', () => {
     expect(s.gamesById.get(1)?.competitionId).toBe(2)
     expect(s.gamesById.get(2)?.competitionId).toBe(1)
   })
+
+  it('competition-edit renames and replaces defaults/locked wholesale', () => {
+    const log: ScheduledGameEvent[] = [
+      ev({ type: 'competition-add', competitionId: 1, name: 'BUML',
+        defaults: { pullBonus: false, abba: true }, locked: ['pullBonus'] }),
+      ev({ type: 'competition-edit', competitionId: 1, name: 'BUML 2026' }),
+      ev({ type: 'competition-edit', competitionId: 1, defaults: { stall: true }, locked: [] }),
+      ev({ type: 'competition-edit', competitionId: 999, name: 'ghost' }),
+    ]
+    const c = deriveScheduledGamesState(log).competitionsById.get(1)!
+    expect(c.name).toBe('BUML 2026')
+    expect(c.defaults).toEqual({ stall: true })
+    expect(c.locked).toEqual([])
+  })
 })
 
 describe('competitionOverrides', () => {
   const log: ScheduledGameEvent[] = [
-    { id: 1, timestamp: 0, type: 'competition-add', competitionId: 1, name: 'BUML',   pullBonus: false },
-    { id: 2, timestamp: 0, type: 'competition-add', competitionId: 2, name: 'Parity', pullBonus: true },
+    { id: 1, timestamp: 0, type: 'competition-add', competitionId: 1, name: 'BUML',
+      defaults: { pullBonus: false, abba: true }, locked: [] },
+    { id: 2, timestamp: 0, type: 'competition-add', competitionId: 2, name: 'Parity',
+      defaults: { pullBonus: true }, locked: ['pullBonus'] },
     { id: 3, timestamp: 0, type: 'game-add', gameId: 10, name: 'Plain', scheduledTime: '09:00',
       teamAGlobalId: 1, teamBGlobalId: 2, halfTimeAt: 8, scoreCapAt: 15 },
     { id: 4, timestamp: 0, type: 'game-add', gameId: 11, name: 'Parity R1', scheduledTime: '18:30',
@@ -95,9 +111,9 @@ describe('competitionOverrides', () => {
     expect(competitionOverrides(state, 10)).toEqual({})
   })
 
-  it('competition modification flows through (on and off)', () => {
+  it('the competition defaults flow through as overrides', () => {
     expect(competitionOverrides(state, 11)).toEqual({ pullBonus: true })
-    expect(competitionOverrides(state, 12)).toEqual({ pullBonus: false })
+    expect(competitionOverrides(state, 12)).toEqual({ pullBonus: false, abba: true })
   })
 
   it('unknown game / dangling competition yields no overrides', () => {

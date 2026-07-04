@@ -17,7 +17,7 @@ import NewGameForm from '@/screens/NewGame'
 const NEW_GAME_SENTINEL = -1
 
 export default function GameSetup() {
-  const { selectGame, resumeGame, startSegmentFromScore, openGameSettings, openTeamsManager } = useGameActions()
+  const { selectGame, resumeGame, startSegmentFromScore, openGameSettings, openTeamsManager, openCompetitionSettings } = useGameActions()
   const deviceId     = useGameStore(s => s.deviceId)
   const session      = useSession()
   const games        = useScheduledGames()
@@ -25,17 +25,17 @@ export default function GameSetup() {
   const teamsState   = useTeamsState()
 
   // Group by competition (insertion order); games without one — or whose
-  // competition is unknown — land under OTHER. Headers are dropped entirely
-  // when everything is ungrouped: nothing to distinguish.
+  // competition is unknown — land under OTHER. Competitions always show,
+  // even with no games yet: the header is the way into their settings.
   const knownComps = new Set(competitions.map(c => c.id))
   const groups = [
     ...competitions
-      .map(c => ({ key: `c${c.id}`, title: c.name, games: games.filter(g => g.competitionId === c.id) })),
+      .map(c => ({ key: `c${c.id}`, competitionId: c.id as number | null, title: c.name, games: games.filter(g => g.competitionId === c.id) })),
     {
-      key: 'other', title: 'Other',
+      key: 'other', competitionId: null, title: 'Other',
       games: games.filter(g => g.competitionId === undefined || !knownComps.has(g.competitionId)),
     },
-  ].filter(group => group.games.length > 0)
+  ].filter(group => group.competitionId !== null || group.games.length > 0)
   const showHeaders = groups.some(group => group.key !== 'other')
 
   const options = useRecordingOptions()
@@ -118,7 +118,7 @@ export default function GameSetup() {
 
       {/* Game list */}
       <div className="flex-1 overflow-y-auto">
-        {games.length === 0 ? (
+        {games.length === 0 && groups.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full px-6 text-center">
             <div className="text-5xl mb-4 opacity-30">🥏</div>
             <Label className="mb-3">No games scheduled yet</Label>
@@ -129,9 +129,20 @@ export default function GameSetup() {
         ) : groups.map(group => (
           <div key={group.key}>
             {showHeaders && (
-              <div className="px-4 pt-4 pb-1.5">
-                <Label>{group.title}</Label>
-              </div>
+              group.competitionId !== null ? (
+                <button
+                  onClick={() => openCompetitionSettings(group.competitionId!)}
+                  className="w-full flex items-center justify-between gap-2 px-4 pt-4 pb-1.5 cursor-pointer text-left"
+                  title={`${group.title} — competition settings`}
+                >
+                  <Label>{group.title}</Label>
+                  <span style={{ color: 'var(--color-muted)' }}><SettingsIcon size={15} /></span>
+                </button>
+              ) : (
+                <div className="px-4 pt-4 pb-1.5">
+                  <Label>{group.title}</Label>
+                </div>
+              )
             )}
             {group.games.map(g => {
           const resolved = resolveGameConfig(g, teamsState)
@@ -283,7 +294,7 @@ export default function GameSetup() {
       </div>
 
       {/* FAB: + New Game (hidden when the empty state already shows the CTA). */}
-      {games.length > 0 && (
+      {(games.length > 0 || groups.length > 0) && (
         <button
           onClick={() => { setExpandedId(NEW_GAME_SENTINEL); setPullingTeam(null); setAbbaMajority(null) }}
           className="absolute bottom-6 right-5 w-14 h-14 rounded-full flex items-center justify-center cursor-pointer text-2xl font-bold"

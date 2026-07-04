@@ -118,19 +118,31 @@ const LIZARDS    = team('A', 'Lizards Eastside', 'LIZ', '#ffffff')
 const GOOSELINGS = team('B', 'Gooselings',       'GSL', '#6e1a1a')
 
 // ─── Competitions ─────────────────────────────────────────────────────────────
-// BUML plays straight WFDF (no pull bonus); the Parity League runs the
-// pull-distance-bonus modification. `competitionOverrides` applies these to
-// RecordingOptions whenever one of their games is selected.
+// The competition level owns rule defaults + enforcement: `defaults` are laid
+// over the recorder's RecordingOptions when one of its games is selected;
+// `locked` keys are enforced (greyed out in GameSettings while the game is
+// live). BUML plays straight WFDF mixed with ABBA advice on and no pull
+// bonus; the Parity League runs the pull-distance-bonus modification.
 
 export const BUML_COMPETITION_ID   = 1
 export const PARITY_COMPETITION_ID = 2
 
-/** Competition-add inputs — shared by the seed and the v19→v20 migration so
+/** Competition-add inputs — shared by the seed and the log migrations so
  *  already-populated persisted logs inherit the same competitions. */
 export function competitionInputs(): ScheduledGameEventInput[] {
   return [
-    addCompetition({ competitionId: BUML_COMPETITION_ID,   name: 'Brisbane Ultimate Mixed League', pullBonus: false }),
-    addCompetition({ competitionId: PARITY_COMPETITION_ID, name: 'Brisbane Parity League',         pullBonus: true  }),
+    addCompetition({
+      competitionId: BUML_COMPETITION_ID,
+      name: 'Brisbane Ultimate Mixed League',
+      defaults: { gameMode: 'mixed', lineRatio: { M: 4, F: 3 }, lineSize: 7, abba: true, pullBonus: false },
+      locked:   ['pullBonus'],
+    }),
+    addCompetition({
+      competitionId: PARITY_COMPETITION_ID,
+      name: 'Brisbane Parity League',
+      defaults: { gameMode: 'mixed', lineRatio: { M: 4, F: 3 }, lineSize: 7, abba: false, pullBonus: true },
+      locked:   ['pullBonus'],
+    }),
   ]
 }
 

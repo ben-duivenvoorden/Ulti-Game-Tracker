@@ -5,10 +5,14 @@
 // same log: a competition groups games on GameSetup and carries the rule
 // modifications applied when one of its games is selected.
 
-import type { GameId } from '../types'
+import type { GameId, RecordingOptions } from '../types'
 import type { GlobalTeamId } from '../teams/types'
 
 export type CompetitionId = number
+
+/** RecordingOptions keys a competition can govern — everything except the
+ *  free-text scorer briefing, which stays per-recorder. */
+export type CompetitionOptionKey = Exclude<keyof RecordingOptions, 'scorerInfo'>
 
 export interface BaseScheduledGameEvent {
   id: number
@@ -19,10 +23,23 @@ export interface CompetitionAddEvent extends BaseScheduledGameEvent {
   type:          'competition-add'
   competitionId: CompetitionId
   name:          string
-  /** Modification: end-zone pulls score a bonus. House rule — off in plain
-   *  WFDF play; applied to RecordingOptions when a game of this competition
-   *  is selected. */
-  pullBonus:     boolean
+  /** The settings this competition specifies. Applied over the recorder's
+   *  RecordingOptions whenever one of its games is selected; keys absent here
+   *  are left to the recorder. */
+  defaults:      Partial<RecordingOptions>
+  /** Subset of `defaults` keys that are ENFORCED — GameSettings greys them
+   *  out while one of this competition's games is live. */
+  locked:        CompetitionOptionKey[]
+}
+
+/** Rename / retune a competition. `defaults` and `locked` replace the whole
+ *  previous object when present (the editor always writes full state). */
+export interface CompetitionEditEvent extends BaseScheduledGameEvent {
+  type:          'competition-edit'
+  competitionId: CompetitionId
+  name?:         string
+  defaults?:     Partial<RecordingOptions>
+  locked?:       CompetitionOptionKey[]
 }
 
 export interface GameAddEvent extends BaseScheduledGameEvent {
@@ -55,7 +72,8 @@ export interface GameCancelEvent extends BaseScheduledGameEvent {
   gameId: GameId
 }
 
-export type ScheduledGameEvent = CompetitionAddEvent | GameAddEvent | GameEditEvent | GameCancelEvent
+export type ScheduledGameEvent =
+  CompetitionAddEvent | CompetitionEditEvent | GameAddEvent | GameEditEvent | GameCancelEvent
 
 export type ScheduledGameEventInput =
   ScheduledGameEvent extends infer T
@@ -65,9 +83,10 @@ export type ScheduledGameEventInput =
 // ─── Derived shape ────────────────────────────────────────────────────────────
 
 export interface Competition {
-  id:        CompetitionId
-  name:      string
-  pullBonus: boolean
+  id:       CompetitionId
+  name:     string
+  defaults: Partial<RecordingOptions>
+  locked:   CompetitionOptionKey[]
 }
 
 export interface ScheduledGame {
