@@ -12,18 +12,15 @@ import type { VoicePlugin, VoiceCaptureResult } from '@/core/voice/plugin'
 
 type PttState = 'checking' | 'setup' | 'preparing' | 'idle' | 'listening' | 'busy'
 
-export function VoicePTT({ voice, bias, onResult, title = 'Hold to speak', disabled = false, sizeClassName = 'w-14 h-14' }: {
+export function VoicePTT({ voice, bias, onResult, title = 'Hold to speak', disabled = false }: {
   voice:    VoicePlugin
   bias?:    string
   onResult: (result: VoiceCaptureResult) => void
   title?:   string
-  /** Capture unavailable right now (e.g. not in play) — dimmed, hold does
-   *  nothing. The first-run setup tap still works so model download and the
-   *  mic permission aren't gated on game phase. */
+  /** Capture unavailable right now (e.g. previewing history) — dimmed, hold
+   *  does nothing. The first-run setup tap still works so model download and
+   *  the mic permission aren't gated on game state. */
   disabled?: boolean
-  /** Dimension classes — LineSelection keeps the 56 px FAB default; the
-   *  event-column dock sizes it to its row. */
-  sizeClassName?: string
 }) {
   const [state, setState] = useState<PttState>('checking')
   const [progress, setProgress] = useState(0)
@@ -117,7 +114,7 @@ export function VoicePTT({ voice, bias, onResult, title = 'Hold to speak', disab
       onPointerLeave={() => { void cancel() }}
       onPointerCancel={() => { void cancel() }}
       onContextMenu={e => e.preventDefault()}
-      className={`${sizeClassName} rounded-full flex items-center justify-center cursor-pointer select-none relative`}
+      className="w-14 h-14 rounded-full flex items-center justify-center cursor-pointer select-none relative"
       style={{
         background: listening ? 'var(--color-danger)' : 'var(--color-team-a)',
         color:      '#fff',

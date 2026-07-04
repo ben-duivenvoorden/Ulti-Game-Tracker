@@ -21,6 +21,13 @@ const EVENT_LABEL: Record<string, string> = {
   'turnover-stall':          'Stall',
   'block':                   'Block',
   'intercept':               'Intercept',
+  'pull':                    'Pull',
+  'pull-bonus':              'Pull Distance Bonus',
+  'brick':                   'Brick',
+  'foul':                    'Foul',
+  'pick':                    'Pick',
+  'timeout':                 'Timeout',
+  'undo':                    'Undo',
 }
 
 export function VoiceReviewSheet({ parsed, onApply, onClose }: {
@@ -91,7 +98,13 @@ export function VoiceReviewSheet({ parsed, onApply, onClose }: {
             >
               <span
                 className="flex-shrink-0 w-2 h-2 rounded-full"
-                style={{ background: getVisLogColor(e.input.type as Parameters<typeof getVisLogColor>[0]) }}
+                style={{
+                  // `undo` never reaches the visible log, so it has no vis-log
+                  // colour — mark it warn-yellow here.
+                  background: e.input.type === 'undo'
+                    ? 'var(--color-warn)'
+                    : getVisLogColor(e.input.type as Parameters<typeof getVisLogColor>[0]),
+                }}
               />
               <span className="flex-1 min-w-0 text-sm text-content truncate">
                 <span className="font-semibold">{EVENT_LABEL[e.input.type] ?? e.input.type}</span>

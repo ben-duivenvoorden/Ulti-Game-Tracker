@@ -202,14 +202,27 @@ export default function LiveEntry() {
       possession: state.possession,
       discHolder: state.discHolder,
       teamOf,
-      passes: recordingOptions.passes,
-      stall:  recordingOptions.stall,
+      passes:    recordingOptions.passes,
+      stall:     recordingOptions.stall,
+      pullBonus: recordingOptions.pullBonus,
+      brick:     recordingOptions.brick,
+      awaitingPull: phase === 'awaiting-pull',
+      selPuller:    ui.selPuller,
     })
+    // A pure "injury" call has nothing to record — jump straight to the
+    // injury line editor instead of showing an empty review sheet.
+    if (parsed.followUp === 'injury-sub' && parsed.events.length === 0 && parsed.issues.length === 0) {
+      actions.triggerInjurySub()
+      return
+    }
     setVoiceParsed(parsed)
   }
   const voiceBias = state.activeLine.A.concat(state.activeLine.B)
     .flatMap(p => [p.name.split(/\s+/)[0], ...(teamsState.playersById.get(p.id)?.spokenAliases ?? [])])
-    .concat(['to', 'score', 'goal', 'drop', 'throwaway', 'stall', 'block', 'intercept', 'callahan'])
+    .concat([
+      'to', 'score', 'goal', 'drop', 'throwaway', 'stall', 'block', 'intercept', 'callahan',
+      'pull', 'bonus', 'brick', 'foul', 'pick', 'timeout', 'undo', 'injury',
+    ])
     .join(', ')
   // Shared tile count: players (or the running-start lineSize) plus
   // the always-present Unknown-Player tile. Drives the event-column
@@ -244,11 +257,10 @@ export default function LiveEntry() {
     </div>
   )
   const centreSpacer = <div className="w-4 h-full" />  // 16 px — halved again from 32 px
-  // Narration applies mid-point only (the parser speaks the in-play grammar);
-  // outside that the docked PTT stays visible but dimmed, so the control is
-  // discoverable in every phase. First-run setup (permission + model) works
-  // regardless.
-  const narrationReady = phase === 'in-play' && !previewing && pickMode === null
+  // Narration covers the whole live grammar (pulls, passes, outcomes, calls,
+  // undo); only history preview and pick-mode suspend it. First-run setup
+  // (permission + model) works regardless.
+  const narrationReady = (phase === 'in-play' || phase === 'awaiting-pull') && !previewing && pickMode === null
   const eventColumn = (
     <EventColumn
       state={state}
@@ -269,18 +281,6 @@ export default function LiveEntry() {
       onPullBonus={() => actions.recordPull(true)}
       onBrick={actions.recordBrick}
       onMore={() => openSheet('more')}
-      voiceSlot={voice ? (
-        <VoicePTT
-          voice={voice}
-          bias={voiceBias}
-          onResult={onVoiceResult}
-          disabled={!narrationReady}
-          sizeClassName="w-12 h-12"
-          title={narrationReady
-            ? 'Hold and narrate the point'
-            : 'Narration runs in play — record the pull first'}
-        />
-      ) : undefined}
     />
   )
   const activePlayerId = state.discHolder ?? ui.selPuller
@@ -389,7 +389,13 @@ export default function LiveEntry() {
         {voiceParsed && (
           <VoiceReviewSheet
             parsed={voiceParsed}
-            onApply={events => actions.recordVoiceEvents(events.map(e => e.input))}
+            onApply={events => {
+              const ok = actions.recordVoiceEvents(events.map(e => e.input))
+              // "injury" spoken alongside events: apply them, then open the
+              // injury line editor (the part no event can express).
+              if (ok && voiceParsed.followUp === 'injury-sub') actions.triggerInjurySub()
+              return ok
+            }}
             onClose={() => setVoiceParsed(null)}
           />
         )}
@@ -408,6 +414,25 @@ export default function LiveEntry() {
           />
         )}
       </div>
+
+      {/* Voice footer — the narration PTT gets its own centred row so it
+          never fights the columns for space. Hidden once the game is over. */}
+      {voice && !isGameOver && (
+        <div
+          className="flex-shrink-0 flex items-center justify-center py-2"
+          style={{ borderTop: '1px solid var(--color-border)' }}
+        >
+          <VoicePTT
+            voice={voice}
+            bias={voiceBias}
+            onResult={onVoiceResult}
+            disabled={!narrationReady}
+            title={narrationReady
+              ? 'Hold and narrate — pulls, passes, calls, undo'
+              : 'Narration paused while previewing / picking'}
+          />
+        </div>
+      )}
     </div>
   )
 }

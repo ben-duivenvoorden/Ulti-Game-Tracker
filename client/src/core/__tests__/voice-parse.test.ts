@@ -21,6 +21,10 @@ const ctx = (over: Partial<ParseContext> = {}): ParseContext => ({
   teamOf: id => TEAM_OF[id] ?? null,
   passes: true,
   stall: false,
+  pullBonus: true,
+  brick: true,
+  awaitingPull: false,
+  selPuller: null,
   ...over,
 })
 
@@ -145,6 +149,88 @@ describe('parseNarration — unknown tokens', () => {
     expect(r.issues.some(i => i.includes('Zorblax'))).toBe(true)
     // Sam still chains; the goal lands on the last *matched* player.
     expect(types(r)).toEqual(['possession', 'goal'])
+  })
+})
+
+// Team A receives (possession 'A'); Kim + Dana (team B) are pulling.
+describe('parseNarration — pull phase', () => {
+  it('"Kim pull" → pull(Kim) for the pulling team', () => {
+    const r = parseNarration(['Kim', 'pull'], matcher, ctx({ awaitingPull: true }))
+    expect(types(r)).toEqual(['pull'])
+    expect(players(r)).toEqual([4])
+    expect((r.events[0].input as { teamId: string }).teamId).toBe('B')
+    expect(r.issues).toEqual([])
+  })
+
+  it('"Kim pull, Sam to Ben, score" — pull to goal in one breath', () => {
+    const r = parseNarration(['Kim', 'pull', 'Sam', 'to', 'Ben', 'score'], matcher, ctx({ awaitingPull: true }))
+    expect(types(r)).toEqual(['pull', 'possession', 'possession', 'goal'])
+    expect(players(r)).toEqual([4, 2, 1, 1])
+  })
+
+  it('bare "pull" uses the UI-selected puller', () => {
+    const r = parseNarration(['pull'], matcher, ctx({ awaitingPull: true, selPuller: 5 }))
+    expect(types(r)).toEqual(['pull'])
+    expect(players(r)).toEqual([5])
+  })
+
+  it('"Kim pull bonus" folds the bigram → pull-bonus', () => {
+    const r = parseNarration(['Kim', 'pull', 'bonus'], matcher, ctx({ awaitingPull: true }))
+    expect(types(r)).toEqual(['pull-bonus'])
+  })
+
+  it('"Kim bonus" with pull bonus off downgrades to a plain pull + issue', () => {
+    const r = parseNarration(['Kim', 'bonus'], matcher, ctx({ awaitingPull: true, pullBonus: false }))
+    expect(types(r)).toEqual(['pull'])
+    expect(r.issues.some(i => i.includes('Pull bonus'))).toBe(true)
+  })
+
+  it('a receiving-team player cannot pull', () => {
+    const r = parseNarration(['Sam', 'pull'], matcher, ctx({ awaitingPull: true }))
+    expect(r.events).toEqual([])
+    expect(r.issues.some(i => i.includes('pulling team'))).toBe(true)
+  })
+
+  it('in-play narration before the pull is an issue, not events', () => {
+    const r = parseNarration(['Sam', 'to', 'Ben', 'score'], matcher, ctx({ awaitingPull: true }))
+    expect(r.events).toEqual([])
+    expect(r.issues.length).toBeGreaterThan(0)
+  })
+
+  it('pull words mid-play are an issue, not an event', () => {
+    const r = parseNarration(['Kim', 'pull'], matcher, ctx())
+    expect(r.events).toEqual([])
+    expect(r.issues.some(i => i.includes('already recorded'))).toBe(true)
+  })
+})
+
+describe('parseNarration — commands', () => {
+  it('"undo" emits an undo event', () => {
+    const r = parseNarration(['undo'], matcher, ctx())
+    expect(types(r)).toEqual(['undo'])
+    expect(r.issues).toEqual([])
+  })
+
+  it('"Sam foul" → possession(Sam) + bare foul', () => {
+    const r = parseNarration(['Sam', 'foul'], matcher, ctx())
+    expect(types(r)).toEqual(['possession', 'foul'])
+  })
+
+  it('"time out" folds → timeout; "pick" is bare', () => {
+    expect(types(parseNarration(['time', 'out'], matcher, ctx()))).toEqual(['timeout'])
+    expect(types(parseNarration(['pick'], matcher, ctx()))).toEqual(['pick'])
+  })
+
+  it('commands work during awaiting-pull too', () => {
+    const r = parseNarration(['timeout'], matcher, ctx({ awaitingPull: true }))
+    expect(types(r)).toEqual(['timeout'])
+    expect(r.issues).toEqual([])
+  })
+
+  it('"injury sub" sets the follow-up, no events', () => {
+    const r = parseNarration(['injury', 'sub'], matcher, ctx())
+    expect(r.events).toEqual([])
+    expect(r.followUp).toBe('injury-sub')
   })
 })
 

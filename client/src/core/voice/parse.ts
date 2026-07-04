@@ -1,13 +1,16 @@
-// ─── In-play narration → RawEvents ────────────────────────────────────────────
-// Grammar: `player (to player)* outcome?`, repeated. A pass chain is exactly a
-// sequence of `possession` events; outcomes attach to the last named player:
+// ─── Live narration → RawEvents ───────────────────────────────────────────────
+// Grammar: `player (to player)* outcome?`, repeated, plus standalone words for
+// everything else in the log:
 //
+//   "Kim pull"                    → pull(Kim)          (awaiting-pull only)
+//   "Kim bonus" / "Kim brick"     → pull-bonus / brick (option-gated → plain pull)
+//   "Kim pull, Sam to Ben, score" → pull, possession ×2, goal — one breath
 //   "Sam to Ben to Alice, score"  → possession ×3, goal(Alice)
 //   "Alice drop"                  → possession(Alice), receiver-error(Alice)
 //   "Sam to Ben, Alice D"         → possession(Sam), possession(Ben), block(Alice)
-//                                    (the D is on the LAST chain player's throw;
-//                                     the defender is the player named before
-//                                     the outcome word)
+//   "foul" / "pick" / "timeout"   → the bare stoppage event
+//   "undo"                        → an undo event (pops the last visible entry)
+//   "injury" / "injury sub"       → opens the injury line editor after applying
 //
 // No new RawEvent types — voice emits the existing union. The parser tracks a
 // logical holder/possession so structural problems surface here; the store
@@ -31,6 +34,26 @@ const OUTCOME_WORDS: Record<string, OutcomeKind> = {
   intercept: 'intercept', intercepted: 'intercept', interception: 'intercept', callahan: 'intercept',
 }
 
+/** Pull-family words — attributed to the last named player (the puller),
+ *  meaningful only while the point awaits its pull. */
+const PULL_WORDS: Record<string, 'pull' | 'pull-bonus' | 'brick'> = {
+  pull: 'pull', pulls: 'pull', pulled: 'pull',
+  bonus: 'pull-bonus',
+  brick: 'brick', bricked: 'brick',
+}
+
+/** Standalone commands — bare events with no player attribution. */
+const COMMAND_WORDS: Record<string, 'undo' | 'foul' | 'pick' | 'timeout'> = {
+  undo: 'undo',
+  foul: 'foul', fouls: 'foul', fouled: 'foul',
+  pick: 'pick',
+  timeout: 'timeout',
+}
+
+/** Injury words — no event to emit (an injury sub needs the line editor); the
+ *  parse result carries a follow-up so the UI opens it after applying. */
+const INJURY_WORDS = new Set(['injury', 'injured'])
+
 const CONNECTORS = new Set(['to', 'too'])
 const NOISE      = new Set(['the', 'a', 'an', 'and', 'then', 'uh', 'um'])
 
@@ -45,8 +68,17 @@ export interface ParseContext {
   /** Positional team of a roster player (null = not in this game). */
   teamOf: (playerId: number) => TeamId | null
   /** RecordingOptions gates. */
-  passes: boolean
-  stall:  boolean
+  passes:    boolean
+  stall:     boolean
+  pullBonus: boolean
+  brick:     boolean
+  /** True when narration starts before the pull — the pull-family words
+   *  apply, and nothing else can land until one of them does. The parser
+   *  walks itself into in-play after the pull, so "Kim pull, Sam to Ben,
+   *  score" works in one breath. */
+  awaitingPull: boolean
+  /** Puller pre-selected in the UI — lets a bare "pull" attribute. */
+  selPuller: number | null
 }
 
 export interface VoiceEvent {
@@ -63,18 +95,24 @@ export interface ParsedNarration {
   issues:    string[]
   /** Spoken words that matched no roster player — shown, never dropped. */
   unmatched: string[]
+  /** UI action to run after the events apply — no event can express it
+   *  (an injury sub needs the line editor). */
+  followUp?: 'injury-sub'
 }
 
-/** Fold the bigram "throw away" into the single outcome token. */
+/** Fold two-word phrases into their single-token forms. */
 function foldBigrams(words: string[]): string[] {
   const out: string[] = []
   for (let i = 0; i < words.length; i++) {
-    if (normalize(words[i]) === 'throw' && i + 1 < words.length && normalize(words[i + 1]) === 'away') {
-      out.push('throwaway')
-      i++
-    } else {
-      out.push(words[i])
+    const a = normalize(words[i])
+    const b = i + 1 < words.length ? normalize(words[i + 1]) : ''
+    if (a === 'throw' && b === 'away')  { out.push('throwaway'); i++; continue }
+    if (a === 'pull'  && b === 'bonus') { out.push('bonus');     i++; continue }
+    if (a === 'time'  && b === 'out')   { out.push('timeout');   i++; continue }
+    if (a === 'injury' && (b === 'sub' || b === 'substitution' || b === 'timeout' || b === 'stoppage')) {
+      out.push('injury'); i++; continue
     }
+    out.push(words[i])
   }
   return out
 }
@@ -138,9 +176,50 @@ export function parseNarration(words: string[], matcher: PlayerMatcher, ctx: Par
   let possession = ctx.possession
   let holder: { id: number; conf: number } | null =
     ctx.discHolder !== null ? { id: ctx.discHolder, conf: 1 } : null
+  let awaitingPull = ctx.awaitingPull
+  let followUp: 'injury-sub' | undefined
 
   const push = (input: RawEventInput, playerName: string | null, confidence: number) =>
     events.push({ input, playerName, confidence })
+
+  /** Pull-family event — puller = last named player (or the UI-selected
+   *  puller for a bare "pull"), recorded for the pulling team. */
+  const emitPull = (kindIn: 'pull' | 'pull-bonus' | 'brick', token: TokenMatch | null) => {
+    if (!awaitingPull) {
+      issues.push(`The pull is already recorded — "${kindIn}" skipped`)
+      return
+    }
+    // Option gates downgrade to a plain pull rather than dropping the point's
+    // opening event.
+    let kind = kindIn
+    if (kind === 'pull-bonus' && !ctx.pullBonus) {
+      issues.push('Pull bonus is off in settings — recorded as a plain pull')
+      kind = 'pull'
+    }
+    if (kind === 'brick' && !ctx.brick) {
+      issues.push('Brick is off in settings — recorded as a plain pull')
+      kind = 'pull'
+    }
+    const pullingTeam = otherTeam(possession)
+    let playerId   = token?.playerId ?? null
+    let confidence = token?.confidence ?? 1
+    const playerName = token?.playerName ?? null
+    if (playerId === null && ctx.selPuller !== null) { playerId = ctx.selPuller; confidence = 1 }
+    if (playerId === null) {
+      issues.push(`"${kindIn}" needs the puller's name`)
+      return
+    }
+    const team = ctx.teamOf(playerId)
+    if (team !== null && team !== pullingTeam) {
+      issues.push(`${playerName ?? 'That player'} isn't on the pulling team — "${kindIn}" skipped`)
+      return
+    }
+    push({ pointIndex: ctx.pointIndex, type: kind, playerId, teamId: pullingTeam }, playerName, confidence)
+    // Play continues from here: receiving team already holds `possession`,
+    // the disc is dead until someone picks it up.
+    awaitingPull = false
+    holder = null
+  }
 
   /** Named player catches / picks up for the possessing team. */
   const emitPossession = (m: TokenMatch) => {
@@ -235,6 +314,17 @@ export function parseNarration(words: string[], matcher: PlayerMatcher, ctx: Par
   let chain: TokenMatch[] = []
 
   const flushChain = (outcome: OutcomeKind | null) => {
+    // Before the pull nothing in the in-play grammar can land — surface what
+    // was heard instead of emitting an invalid batch.
+    if (awaitingPull) {
+      if (outcome) {
+        issues.push(`Point starts with the pull — "${outcome}" skipped (say "<puller> pull" first)`)
+      } else if (chain.length > 0) {
+        issues.push(`Heard ${chain.map(m => m.playerName).join(', ')} before the pull — say "<name> pull"`)
+      }
+      chain = []
+      return
+    }
     if (outcome === 'block' || outcome === 'intercept') {
       // Last named player is the defender; everyone before them is the chain.
       const defender = chain.pop() ?? null
@@ -267,6 +357,37 @@ export function parseNarration(words: string[], matcher: PlayerMatcher, ctx: Par
     const w = normalize(raw)
     if (w.length === 0 || NOISE.has(w) || CONNECTORS.has(w)) continue
 
+    const pullKind = PULL_WORDS[w]
+    if (pullKind) {
+      const puller = chain.pop() ?? null
+      if (chain.length > 0) {
+        issues.push(`Ignored before the pull: ${chain.map(m => m.playerName).join(', ')}`)
+        chain = []
+      }
+      emitPull(pullKind, puller)
+      continue
+    }
+
+    const command = COMMAND_WORDS[w]
+    if (command) {
+      flushChain(null)
+      if (command === 'undo') {
+        // The rewound state is unknowable here — recordVoiceEvents re-derives
+        // and re-validates the whole batch, so later words stay guarded.
+        push({ pointIndex: ctx.pointIndex, type: 'undo' }, null, 1)
+        holder = null
+      } else {
+        push({ pointIndex: ctx.pointIndex, type: command }, null, 1)
+      }
+      continue
+    }
+
+    if (INJURY_WORDS.has(w)) {
+      flushChain(null)
+      followUp = 'injury-sub'
+      continue
+    }
+
     const outcome = OUTCOME_WORDS[w]
     if (outcome) {
       flushChain(outcome)
@@ -285,5 +406,5 @@ export function parseNarration(words: string[], matcher: PlayerMatcher, ctx: Par
   if (unmatched.length > 0) {
     issues.push(`Unrecognised: ${unmatched.join(', ')}`)
   }
-  return { events, issues, unmatched }
+  return { events, issues, unmatched, ...(followUp ? { followUp } : {}) }
 }
