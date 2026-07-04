@@ -185,11 +185,18 @@ export type AppScreen = 'game-setup' | 'game-settings' | 'line-selection' | 'liv
 export type GameMode = 'mixed' | 'open'
 
 export interface RecordingOptions {
+  /** Modification (house rule): end-zone pulls score a bonus. Off by default;
+   *  a game's competition can flip it on selection (`competitionOverrides`). */
   pullBonus: boolean
   brick:     boolean
   foul:      boolean
   pick:      boolean
   stall:     boolean
+  /** WFDF Ratio Rule A (ABBA) per-point gender-ratio advice, mixed only. Off
+   *  by default — not every mixed competition runs ABBA balancing. When on,
+   *  the point-1 majority is still chosen per game at the second flip
+   *  (`GameSession.abbaStartMajority`). */
+  abba:      boolean
   /** Default player-tap action: record a possession (pass) event. When
    *  disabled, taps on players in `in-play` are no-ops, no `possession`
    *  events land in the log, and the pass notation draws nothing. The
@@ -208,11 +215,12 @@ export interface RecordingOptions {
 }
 
 export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
-  pullBonus:  true,
+  pullBonus:  false,
   brick:      true,
   foul:       false,
   pick:       false,
   stall:      false,
+  abba:       false,
   passes:     true,
   gameMode:   'mixed',
   lineRatio:  { M: 4, F: 3 },

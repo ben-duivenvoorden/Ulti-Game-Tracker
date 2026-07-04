@@ -4,8 +4,9 @@ import { Label } from '@/components/ui/Label'
 import { Section, TextField, Stepper } from '@/components/ui/form'
 import { ScreenHeader } from '@/components/ScreenHeader'
 import { PromptSheet } from '@/components/PromptSheet'
-import { useGameActions, useTeamsState } from '@/core/selectors'
+import { useCompetitions, useGameActions, useTeamsState } from '@/core/selectors'
 import type { GlobalTeamId } from '@/core/teams/types'
+import type { CompetitionId } from '@/core/games/types'
 import { suggestShortName } from '@/core/teams/shortName'
 
 interface NewGameFormProps {
@@ -16,11 +17,13 @@ interface NewGameFormProps {
 const DEFAULT_TEAM_COLOR = '#1f4788'
 
 export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
-  const teamsState = useTeamsState()
-  const actions    = useGameActions()
+  const teamsState   = useTeamsState()
+  const competitions = useCompetitions()
+  const actions      = useGameActions()
 
   const [name, setName] = useState('')
   const [scheduledTime, setScheduledTime] = useState('12:00')
+  const [competitionId, setCompetitionId] = useState<CompetitionId | null>(null)
   const [teamA, setTeamA] = useState<GlobalTeamId | null>(null)
   const [teamB, setTeamB] = useState<GlobalTeamId | null>(null)
   const [halfTimeAt, setHalfTimeAt] = useState(8)
@@ -39,6 +42,7 @@ export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
       teamBGlobalId: teamB,
       halfTimeAt,
       scoreCapAt,
+      ...(competitionId !== null ? { competitionId } : {}),
     })
     onCreated(gameId)
   }
@@ -77,6 +81,24 @@ export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
           onChange={setScheduledTime}
           placeholder="09:00"
         />
+        {competitions.length > 0 && (
+          <label className="flex flex-col gap-1">
+            <span className="text-[10px] font-mono tracking-widest" style={{ color: 'var(--color-muted)' }}>
+              COMPETITION
+            </span>
+            <select
+              value={competitionId ?? ''}
+              onChange={e => setCompetitionId(e.target.value === '' ? null : Number(e.target.value))}
+              className="h-10 px-3 rounded-md border text-sm font-medium text-content cursor-pointer"
+              style={{ background: 'var(--color-surf-2)', borderColor: 'var(--color-border-2)' }}
+            >
+              <option value="">None</option>
+              {competitions.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
       </Section>
 
       <Section title="TEAMS">

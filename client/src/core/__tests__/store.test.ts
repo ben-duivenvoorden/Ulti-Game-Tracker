@@ -1,7 +1,16 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useGameStore } from '../store'
 import { computeVisLog, deriveGameState } from '../engine'
-import { MOCK_GAMES } from './fixtures'
+import { EMPIRE_VS_BREEZE_GAME_ADD, MOCK_GAMES } from './fixtures'
+
+// The fixture game is no longer part of the production seed — install it in
+// the store's scheduledGamesLog so selectGame can resolve it.
+beforeEach(() => {
+  const { scheduledGamesLog } = useGameStore.getState()
+  if (!scheduledGamesLog.some(e => e.type === 'game-add' && e.gameId === MOCK_GAMES[0].id)) {
+    useGameStore.setState({ scheduledGamesLog: [...scheduledGamesLog, EMPIRE_VS_BREEZE_GAME_ADD] })
+  }
+})
 
 // The store is a singleton; reset to a known fresh state before each case.
 function resetAndStartGame() {

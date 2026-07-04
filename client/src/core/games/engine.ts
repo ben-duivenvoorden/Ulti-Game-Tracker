@@ -2,24 +2,41 @@
 // `deriveScheduledGames` preserves insertion order; the UI sorts by
 // scheduledTime when rendering.
 
-import type { GameConfig, GameId, Player, Team } from '../types'
+import type { GameConfig, GameId, Player, RecordingOptions, Team } from '../types'
 import type { GlobalTeam, GlobalTeamId, TeamsState } from '../teams/types'
 import { fullRosterFor } from '../teams/engine'
-import type { ScheduledGame, ScheduledGameEvent } from './types'
+import type { Competition, CompetitionId, ScheduledGame, ScheduledGameEvent } from './types'
 
 export interface ScheduledGamesState {
   /** Active (non-cancelled) games in insertion order. */
-  games:     ScheduledGame[]
+  games:            ScheduledGame[]
   /** Lookup including cancelled games — historical resolution. */
-  gamesById: Map<GameId, ScheduledGame>
+  gamesById:        Map<GameId, ScheduledGame>
+  /** Competitions in insertion order — drives the GameSetup group order. */
+  competitions:     Competition[]
+  competitionsById: Map<CompetitionId, Competition>
 }
 
 export function deriveScheduledGamesState(log: ScheduledGameEvent[]): ScheduledGamesState {
   const gamesById: Map<GameId, ScheduledGame> = new Map()
   const order: GameId[] = []
+  const competitionsById: Map<CompetitionId, Competition> = new Map()
+  const competitions: Competition[] = []
 
   for (const event of log) {
     switch (event.type) {
+      case 'competition-add': {
+        if (competitionsById.has(event.competitionId)) break
+        const c: Competition = {
+          id:        event.competitionId,
+          name:      event.name,
+          pullBonus: event.pullBonus,
+        }
+        competitionsById.set(event.competitionId, c)
+        competitions.push(c)
+        break
+      }
+
       case 'game-add': {
         if (gamesById.has(event.gameId)) break
         const g: ScheduledGame = {
@@ -30,6 +47,7 @@ export function deriveScheduledGamesState(log: ScheduledGameEvent[]): ScheduledG
           teamBGlobalId: event.teamBGlobalId,
           halfTimeAt:    event.halfTimeAt,
           scoreCapAt:    event.scoreCapAt,
+          ...(event.competitionId !== undefined ? { competitionId: event.competitionId } : {}),
           cancelled:     false,
         }
         gamesById.set(event.gameId, g)
@@ -46,6 +64,7 @@ export function deriveScheduledGamesState(log: ScheduledGameEvent[]): ScheduledG
         if (event.teamBGlobalId !== undefined) g.teamBGlobalId = event.teamBGlobalId
         if (event.halfTimeAt    !== undefined) g.halfTimeAt    = event.halfTimeAt
         if (event.scoreCapAt    !== undefined) g.scoreCapAt    = event.scoreCapAt
+        if (event.competitionId !== undefined) g.competitionId = event.competitionId
         break
       }
 
@@ -59,7 +78,20 @@ export function deriveScheduledGamesState(log: ScheduledGameEvent[]): ScheduledG
   }
 
   const games = order.map(id => gamesById.get(id)!).filter(g => !g.cancelled)
-  return { games, gamesById }
+  return { games, gamesById, competitions, competitionsById }
+}
+
+/** RecordingOptions overrides implied by a game's competition — applied when
+ *  the game is selected for recording. Empty when the game has no competition
+ *  (the current options stand). Currently just the pull-bonus modification. */
+export function competitionOverrides(
+  state: ScheduledGamesState, gameId: GameId,
+): Partial<RecordingOptions> {
+  const game = state.gamesById.get(gameId)
+  const comp = game?.competitionId !== undefined
+    ? state.competitionsById.get(game.competitionId)
+    : undefined
+  return comp ? { pullBonus: comp.pullBonus } : {}
 }
 
 /** Convenience for `deriveScheduledGames(...)` style call sites that only

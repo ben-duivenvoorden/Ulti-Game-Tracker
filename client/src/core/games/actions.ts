@@ -4,19 +4,30 @@
 import type { GameId } from '../types'
 import type { GlobalTeamId } from '../teams/types'
 import type {
+  CompetitionAddEvent,
+  CompetitionId,
   GameAddEvent,
   GameCancelEvent,
   GameEditEvent,
 } from './types'
 
-export function addScheduledGame(args: {
-  gameId:        GameId
+export function addCompetition(args: {
+  competitionId: CompetitionId
   name:          string
-  scheduledTime: string
-  teamAGlobalId: GlobalTeamId
-  teamBGlobalId: GlobalTeamId
-  halfTimeAt:    number
-  scoreCapAt:    number
+  pullBonus:     boolean
+}): Omit<CompetitionAddEvent, 'id' | 'timestamp'> {
+  return { type: 'competition-add', ...args }
+}
+
+export function addScheduledGame(args: {
+  gameId:         GameId
+  name:           string
+  scheduledTime:  string
+  teamAGlobalId:  GlobalTeamId
+  teamBGlobalId:  GlobalTeamId
+  halfTimeAt:     number
+  scoreCapAt:     number
+  competitionId?: CompetitionId
 }): Omit<GameAddEvent, 'id' | 'timestamp'> {
   return { type: 'game-add', ...args }
 }
@@ -30,6 +41,7 @@ export function editScheduledGame(
     teamBGlobalId?: GlobalTeamId
     halfTimeAt?:    number
     scoreCapAt?:    number
+    competitionId?: CompetitionId
   },
 ): Omit<GameEditEvent, 'id' | 'timestamp'> {
   return { type: 'game-edit', gameId, ...patch }

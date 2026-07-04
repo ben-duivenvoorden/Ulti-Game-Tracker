@@ -6,7 +6,7 @@ import { deriveTeamsState } from './teams/engine'
 import { deriveScheduledGamesState, resolveGameConfig } from './games/engine'
 import type { DerivedGameState, VisLogEntry, GameSession, RecordingOptions, EventId } from './types'
 import type { TeamsState } from './teams/types'
-import type { ScheduledGame, ScheduledGameEvent } from './games/types'
+import type { Competition, ScheduledGame, ScheduledGameEvent } from './games/types'
 import type { TeamEvent } from './teams/types'
 import { DEFAULT_RECORDING_OPTIONS } from './types'
 
@@ -28,6 +28,11 @@ export function useTeamsState(): TeamsState {
 export function useScheduledGames(): ScheduledGame[] {
   const log = useScheduledGamesLog()
   return useMemo(() => deriveScheduledGamesState(log).games, [log])
+}
+
+export function useCompetitions(): Competition[] {
+  const log = useScheduledGamesLog()
+  return useMemo(() => deriveScheduledGamesState(log).competitions, [log])
 }
 
 // ─── Session resolution ──────────────────────────────────────────────────────

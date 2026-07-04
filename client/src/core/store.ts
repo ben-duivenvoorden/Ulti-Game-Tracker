@@ -31,9 +31,9 @@ import {
 import { PICK_MODES, isPickMode } from './pickModes'
 import { seedTeamsAndGames } from './data'
 import type { TeamEvent, GlobalTeamId } from './teams/types'
-import type { ScheduledGameEvent } from './games/types'
+import type { CompetitionId, ScheduledGameEvent } from './games/types'
 import { deriveTeamsState } from './teams/engine'
-import { deriveScheduledGamesState, resolveGameConfig } from './games/engine'
+import { competitionOverrides, deriveScheduledGamesState, resolveGameConfig } from './games/engine'
 import {
   addTeam as buildAddTeam,
   editTeam as buildEditTeam,
@@ -178,6 +178,7 @@ interface GameStore {
     teamBGlobalId: GlobalTeamId
     halfTimeAt: number
     scoreCapAt: number
+    competitionId?: CompetitionId
   }) => number
   editScheduledGame:   (gameId: number, patch: {
     name?: string
@@ -186,6 +187,7 @@ interface GameStore {
     teamBGlobalId?: GlobalTeamId
     halfTimeAt?: number
     scoreCapAt?: number
+    competitionId?: CompetitionId
   }) => void
   cancelScheduledGame: (gameId: number) => void
 
@@ -343,13 +345,19 @@ export const useGameStore = create<GameStore>()(
       // teams + rosters from the live teamsLog at the moment of creation —
       // subsequent reads via `resolveSession` re-resolve on every render.
       selectGame(gameId, pullingTeam, abbaStartMajority) {
-        const { teamsLog, scheduledGamesLog, scorerId, deviceId } = get()
+        const { teamsLog, scheduledGamesLog, scorerId, deviceId, recordingOptions } = get()
         const session = freshSession(
           gameId, pullingTeam, scorerId, deviceId, teamsLog, scheduledGamesLog,
           undefined, abbaStartMajority,
         )
         if (!session) return
-        set({ session, screen: 'line-selection', ...RESET_TRANSIENT_UI })
+        // The game's competition decides the rule modifications for this
+        // recording (currently pullBonus). No competition → options stand.
+        const overrides = competitionOverrides(deriveScheduledGamesState(scheduledGamesLog), gameId)
+        set({
+          session, screen: 'line-selection', ...RESET_TRANSIENT_UI,
+          recordingOptions: { ...recordingOptions, ...overrides },
+        })
       },
 
       // ── setAbbaStartMajority ─────────────────────────────────────────────────
@@ -371,13 +379,17 @@ export const useGameStore = create<GameStore>()(
       // point index. The non-offence team pulls the resumed point — hence
       // `gameStartPullingTeam = otherTeam(offence)`.
       startSegmentFromScore(gameId, scoreA, scoreB, offence) {
-        const { teamsLog, scheduledGamesLog, scorerId, deviceId } = get()
+        const { teamsLog, scheduledGamesLog, scorerId, deviceId, recordingOptions } = get()
         const session = freshSession(
           gameId, otherTeam(offence), scorerId, deviceId, teamsLog, scheduledGamesLog,
           { scoreA, scoreB, offence },
         )
         if (!session) return
-        set({ session, screen: 'line-selection', ...RESET_TRANSIENT_UI })
+        const overrides = competitionOverrides(deriveScheduledGamesState(scheduledGamesLog), gameId)
+        set({
+          session, screen: 'line-selection', ...RESET_TRANSIENT_UI,
+          recordingOptions: { ...recordingOptions, ...overrides },
+        })
       },
 
       // ── forkSegment ───────────────────────────────────────────────────────────

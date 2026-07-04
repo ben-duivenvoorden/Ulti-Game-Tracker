@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/Label'
 import { IconBtn, SettingsIcon, TeamsIcon } from '@/components/ui/Icons'
 import { ScreenHeader } from '@/components/ScreenHeader'
 import { useGameStore } from '@/core/store'
-import { useGameActions, useRecordingOptions, useScheduledGames, useSession, useTeamsState } from '@/core/selectors'
+import { useCompetitions, useGameActions, useRecordingOptions, useScheduledGames, useSession, useTeamsState } from '@/core/selectors'
 import { deriveGameState, deriveGameStatus } from '@/core/engine'
 import { resolveGameConfig } from '@/core/games/engine'
 import { fetchGameSummary, decideResume, type GameSummary } from '@/core/serverLog'
@@ -18,10 +18,25 @@ const NEW_GAME_SENTINEL = -1
 
 export default function GameSetup() {
   const { selectGame, resumeGame, startSegmentFromScore, openGameSettings, openTeamsManager } = useGameActions()
-  const deviceId   = useGameStore(s => s.deviceId)
-  const session    = useSession()
-  const games      = useScheduledGames()
-  const teamsState = useTeamsState()
+  const deviceId     = useGameStore(s => s.deviceId)
+  const session      = useSession()
+  const games        = useScheduledGames()
+  const competitions = useCompetitions()
+  const teamsState   = useTeamsState()
+
+  // Group by competition (insertion order); games without one — or whose
+  // competition is unknown — land under OTHER. Headers are dropped entirely
+  // when everything is ungrouped: nothing to distinguish.
+  const knownComps = new Set(competitions.map(c => c.id))
+  const groups = [
+    ...competitions
+      .map(c => ({ key: `c${c.id}`, title: c.name, games: games.filter(g => g.competitionId === c.id) })),
+    {
+      key: 'other', title: 'Other',
+      games: games.filter(g => g.competitionId === undefined || !knownComps.has(g.competitionId)),
+    },
+  ].filter(group => group.games.length > 0)
+  const showHeaders = groups.some(group => group.key !== 'other')
 
   const options = useRecordingOptions()
 
@@ -111,7 +126,14 @@ export default function GameSetup() {
               + New Game
             </Btn>
           </div>
-        ) : games.map(g => {
+        ) : groups.map(group => (
+          <div key={group.key}>
+            {showHeaders && (
+              <div className="px-4 pt-4 pb-1.5">
+                <Label>{group.title}</Label>
+              </div>
+            )}
+            {group.games.map(g => {
           const resolved = resolveGameConfig(g, teamsState)
           const liveSession = (session && sessionGameId === g.id) ? session : null
           const status = deriveGameStatus(liveSession)
@@ -233,7 +255,7 @@ export default function GameSetup() {
                           )
                         })}
                       </div>
-                      {options.gameMode === 'mixed' && options.lineRatio.M !== options.lineRatio.F && (
+                      {options.abba && options.gameMode === 'mixed' && options.lineRatio.M !== options.lineRatio.F && (
                         <AbbaRatioPicker
                           lineRatio={options.lineRatio}
                           value={abbaMajority}
@@ -255,7 +277,9 @@ export default function GameSetup() {
               )}
             </div>
           )
-        })}
+            })}
+          </div>
+        ))}
       </div>
 
       {/* FAB: + New Game (hidden when the empty state already shows the CTA). */}

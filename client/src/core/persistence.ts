@@ -7,14 +7,17 @@
 import type { AppScreen, RecordingOptions, ScorerId, DeviceId } from './types'
 import { DEFAULT_RECORDING_OPTIONS } from './types'
 import { newSegmentId, newScorerId, newDeviceId } from './ids'
-import { seedTeamsAndGames } from './data'
+import {
+  seedTeamsAndGames, competitionInputs, parityTeamInputs, parityGameInput,
+  BUML_COMPETITION_ID, PARITY_COMPETITION_ID,
+} from './data'
 import type { TeamEvent } from './teams/types'
 import type { ScheduledGameEvent } from './games/types'
 
-export const STORAGE_VERSION = 19
+export const STORAGE_VERSION = 20
 export const STORAGE_KEY     = 'ugt-game'
 /** Tagged at build time so hydration logs identify which bundle is running. */
-export const BUILD_MARKER    = 'ugt-build-2026-07-04-v19'
+export const BUILD_MARKER    = 'ugt-build-2026-07-04-v20'
 
 // `seedTeamsAndGames()` produces deterministic id 1.. events; the same seed
 // is consumed by the migration so old upgrades inherit the same world.
@@ -99,6 +102,58 @@ export function migrateGameStore(persisted: unknown, fromVersion: number) {
   // (teams log) and the derived GlobalPlayer defaults it to []. No rewrite
   // needed; old events simply lack the optional field.
 
+  // v19 → v20: competitions joined the scheduled-games log, the Empire vs
+  // Breeze demo fixture left the seed, the Brisbane Parity League demo
+  // arrived, and pull-distance-bonus flipped to a default-off modification.
+  // Already-populated logs are patched append-only: drop the seeded Empire
+  // vs Breeze events, add the two competitions, tag the seeded BUML fixture,
+  // and add the parity teams + fixture. Seed events are identifiable by
+  // their stamp (timestamp 0); user-created games can never have taken the
+  // seeded ids (allocation is max+1 past the seed).
+  let teamsLogV20 = seed ? seed.teamEvents : obj.teamsLog!
+  let gamesLogV20 = seed ? seed.gameEvents : obj.scheduledGamesLog!
+  let patchedV20 = false
+  if (fromVersion < 20 && !seed) {
+    const seededEmpire = gamesLogV20.some(e => e.type === 'game-add' && e.gameId === 1 && e.timestamp === 0)
+    const gamesLog = seededEmpire
+      ? gamesLogV20.filter(e => e.type === 'competition-add' || e.gameId !== 1)
+      : [...gamesLogV20]
+    let nextGameEvId = gamesLog.reduce((m, e) => Math.max(m, e.id), 0) + 1
+
+    if (!gamesLog.some(e => e.type === 'competition-add')) {
+      for (const input of competitionInputs()) {
+        gamesLog.push({ ...input, id: nextGameEvId++, timestamp: 0 } as ScheduledGameEvent)
+      }
+    }
+
+    const bumlSeeded = gamesLog.some(e => e.type === 'game-add' && e.gameId === 5 && e.timestamp === 0)
+    const bumlTagged = gamesLog.some(e =>
+      (e.type === 'game-add' || e.type === 'game-edit') && e.gameId === 5 && e.competitionId !== undefined)
+    if (bumlSeeded && !bumlTagged) {
+      gamesLog.push({ type: 'game-edit', gameId: 5, competitionId: BUML_COMPETITION_ID, id: nextGameEvId++, timestamp: 0 })
+    }
+
+    if (!gamesLog.some(e => e.type === 'game-add' && e.competitionId === PARITY_COMPETITION_ID)) {
+      const teamsLog = [...teamsLogV20]
+      const baldGid  = teamsLog.reduce((m, e) => Math.max(m, e.type === 'team-add' ? e.teamId : 0), 0) + 1
+      const youngGid = baldGid + 1
+      const firstPid = teamsLog.reduce((m, e) => Math.max(m, e.type === 'player-add' ? e.playerId : 0), 0) + 1
+      let nextTeamEvId = teamsLog.reduce((m, e) => Math.max(m, e.id), 0) + 1
+      for (const input of parityTeamInputs(baldGid, youngGid, firstPid)) {
+        teamsLog.push({ ...input, id: nextTeamEvId++, timestamp: 0 } as TeamEvent)
+      }
+      const parityGameId = gamesLog.reduce((m, e) => Math.max(m, e.type === 'game-add' ? e.gameId : 0), 0) + 1
+      gamesLog.push({ ...parityGameInput(parityGameId, baldGid, youngGid), id: nextGameEvId++, timestamp: 0 } as ScheduledGameEvent)
+      teamsLogV20 = teamsLog
+    }
+
+    gamesLogV20 = gamesLog
+    patchedV20 = true
+  }
+  // The default flipped to off; competitions now decide it per game on
+  // selection, so any persisted `true` is stale competition config.
+  if (fromVersion < 20) mergedRecOpts.pullBonus = false
+
   console.info('[ugt-game] migrate', {
     build: BUILD_MARKER,
     fromVersion,
@@ -111,6 +166,7 @@ export function migrateGameStore(persisted: unknown, fromVersion: number) {
     backfilledSegment: sessionWithSegment !== cleanedSession,
     backfilledDeviceId: sessionWithDevice !== sessionWithSegment,
     strippedDeadEventTypes: sessionV18 !== sessionWithDevice,
+    patchedCompetitionsV20: patchedV20,
     mintedScorerId: !obj.scorerId,
     mintedDeviceId: !obj.deviceId,
   })
@@ -120,8 +176,8 @@ export function migrateGameStore(persisted: unknown, fromVersion: number) {
     scorerId,
     deviceId,
     screen:            dropping ? 'game-setup'    : (obj.screen ?? 'game-setup'),
-    teamsLog:          seed ? seed.teamEvents : obj.teamsLog!,
-    scheduledGamesLog: seed ? seed.gameEvents : obj.scheduledGamesLog!,
+    teamsLog:          teamsLogV20,
+    scheduledGamesLog: gamesLogV20,
     recordingOptions:  mergedRecOpts,
   }
 }

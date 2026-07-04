@@ -44,11 +44,12 @@ export default function LineSelection() {
   const rosters = session?.gameConfig.rosters
   const teams   = session?.gameConfig.teams
 
-  // ABBA (WFDF Ratio Rule A): when the point-1 majority is set on a mixed game,
-  // the MMP/FMP target for THIS point comes from the alternating prescription —
-  // seed, validation, chips, and the advisory banner all follow it. Unset (or
-  // open mode) falls back to the fixed configured ratio.
-  const abbaMajority  = gameMode === 'mixed' ? session?.abbaStartMajority : undefined
+  // ABBA (WFDF Ratio Rule A): when the option is on and the point-1 majority
+  // is set on a mixed game, the MMP/FMP target for THIS point comes from the
+  // alternating prescription — seed, validation, chips, and the advisory
+  // banner all follow it. Option off / majority unset / open mode falls back
+  // to the fixed configured ratio.
+  const abbaMajority  = options.abba && gameMode === 'mixed' ? session?.abbaStartMajority : undefined
   const pointIndex    = state?.pointIndex ?? 0
   const effectiveRatio = abbaMajority ? ratioForPoint(pointIndex, abbaMajority, lineRatio) : lineRatio
   const effectiveOptions = abbaMajority ? { ...options, lineRatio: effectiveRatio } : options

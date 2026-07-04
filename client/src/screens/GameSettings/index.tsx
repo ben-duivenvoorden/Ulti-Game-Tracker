@@ -78,7 +78,7 @@ export default function GameSettings() {
           )}
         </Section>
 
-        {options.gameMode === 'mixed' && session && options.lineRatio.M !== options.lineRatio.F && (
+        {options.abba && options.gameMode === 'mixed' && session && options.lineRatio.M !== options.lineRatio.F && (
           <Section title="ABBA RATIO (RULE A)">
             <div className="text-[10px] mb-1" style={{ color: 'var(--color-muted)' }}>
               Point 1 ratio from the second flip — line advice then alternates
@@ -100,19 +100,13 @@ export default function GameSettings() {
           </Section>
         )}
 
-        <Section title="EVENTS">
+        <Section title="WFDF">
           <div className="flex flex-col gap-2">
             <CompactToggle
               label="Passes"
               hint="Default player-tap action; records each receive"
               checked={options.passes}
               onChange={v => updateRecordingOption('passes', v)}
-            />
-            <CompactToggle
-              label="Pull Distance Bonus"
-              hint="End-zone pulls"
-              checked={options.pullBonus}
-              onChange={v => updateRecordingOption('pullBonus', v)}
             />
             <CompactToggle
               label="Brick"
@@ -137,6 +131,23 @@ export default function GameSettings() {
               hint="Stall as turnover"
               checked={options.stall}
               onChange={v => updateRecordingOption('stall', v)}
+            />
+            <CompactToggle
+              label="ABBA Ratio (Rule A)"
+              hint="Per-point gender-ratio line advice (mixed)"
+              checked={options.abba}
+              onChange={v => updateRecordingOption('abba', v)}
+            />
+          </div>
+        </Section>
+
+        <Section title="MODIFICATIONS">
+          <div className="flex flex-col gap-2">
+            <CompactToggle
+              label="Pull Distance Bonus"
+              hint="House rule — end-zone pulls score a bonus"
+              checked={options.pullBonus}
+              onChange={v => updateRecordingOption('pullBonus', v)}
             />
           </div>
         </Section>

@@ -1,5 +1,5 @@
 import { beforeEach, describe, it, expect } from 'vitest'
-import { deriveScheduledGames, deriveScheduledGamesState, resolveGameConfig } from '../games/engine'
+import { competitionOverrides, deriveScheduledGames, deriveScheduledGamesState, resolveGameConfig } from '../games/engine'
 import { deriveTeamsState } from '../teams/engine'
 import type { ScheduledGameEvent } from '../games/types'
 import type { TeamEvent } from '../teams/types'
@@ -59,6 +59,49 @@ describe('deriveScheduledGames', () => {
       ev({ type: 'game-cancel', gameId: 999 }),
     ]
     expect(deriveScheduledGames(log)).toEqual([])
+  })
+
+  it('competition-add materialises competitions in insertion order; game-add/edit attach games', () => {
+    const log: ScheduledGameEvent[] = [
+      ev({ type: 'competition-add', competitionId: 1, name: 'BUML',   pullBonus: false }),
+      ev({ type: 'competition-add', competitionId: 2, name: 'Parity', pullBonus: true }),
+      ev({ type: 'game-add', gameId: 1, name: 'A', scheduledTime: '09:00',
+        teamAGlobalId: 1, teamBGlobalId: 2, halfTimeAt: 8, scoreCapAt: 15, competitionId: 2 }),
+      ev({ type: 'game-add', gameId: 2, name: 'B', scheduledTime: '11:00',
+        teamAGlobalId: 1, teamBGlobalId: 2, halfTimeAt: 8, scoreCapAt: 15 }),
+      ev({ type: 'game-edit', gameId: 2, competitionId: 1 }),
+    ]
+    const s = deriveScheduledGamesState(log)
+    expect(s.competitions.map(c => c.name)).toEqual(['BUML', 'Parity'])
+    expect(s.gamesById.get(1)?.competitionId).toBe(2)
+    expect(s.gamesById.get(2)?.competitionId).toBe(1)
+  })
+})
+
+describe('competitionOverrides', () => {
+  const log: ScheduledGameEvent[] = [
+    { id: 1, timestamp: 0, type: 'competition-add', competitionId: 1, name: 'BUML',   pullBonus: false },
+    { id: 2, timestamp: 0, type: 'competition-add', competitionId: 2, name: 'Parity', pullBonus: true },
+    { id: 3, timestamp: 0, type: 'game-add', gameId: 10, name: 'Plain', scheduledTime: '09:00',
+      teamAGlobalId: 1, teamBGlobalId: 2, halfTimeAt: 8, scoreCapAt: 15 },
+    { id: 4, timestamp: 0, type: 'game-add', gameId: 11, name: 'Parity R1', scheduledTime: '18:30',
+      teamAGlobalId: 1, teamBGlobalId: 2, halfTimeAt: 8, scoreCapAt: 15, competitionId: 2 },
+    { id: 5, timestamp: 0, type: 'game-add', gameId: 12, name: 'BUML R1', scheduledTime: '19:00',
+      teamAGlobalId: 1, teamBGlobalId: 2, halfTimeAt: 8, scoreCapAt: 15, competitionId: 1 },
+  ]
+  const state = deriveScheduledGamesState(log)
+
+  it('game without a competition yields no overrides', () => {
+    expect(competitionOverrides(state, 10)).toEqual({})
+  })
+
+  it('competition modification flows through (on and off)', () => {
+    expect(competitionOverrides(state, 11)).toEqual({ pullBonus: true })
+    expect(competitionOverrides(state, 12)).toEqual({ pullBonus: false })
+  })
+
+  it('unknown game / dangling competition yields no overrides', () => {
+    expect(competitionOverrides(state, 999)).toEqual({})
   })
 })
 

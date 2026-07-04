@@ -4,6 +4,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest'
 import { seedTeamsAndGames } from '../data'
+import { deriveScheduledGamesState } from '../games/engine'
 
 describe('seedTeamsAndGames', () => {
   it('produces non-empty teams + games events', () => {
@@ -56,13 +57,44 @@ describe('seedTeamsAndGames', () => {
     expect(adds[0].name).toBe('BUML 2026-05-11')
   })
 
-  it('AUDL Summer Series and Championship are NOT in the seed', () => {
+  it('AUDL Summer Series, Championship and Empire vs Breeze are NOT in the seed', () => {
     const seed = seedTeamsAndGames()
     const names = seed.gameEvents
       .filter(e => e.type === 'game-add')
       .map(e => (e as { name: string }).name)
     expect(names).not.toContain('AUDL Summer Series')
     expect(names).not.toContain('Championship')
+    expect(names).not.toContain('Empire vs Breeze')
+  })
+
+  it('seeds BUML + Brisbane Parity League competitions (pull bonus only on Parity)', () => {
+    const state = deriveScheduledGamesState(seedTeamsAndGames().gameEvents)
+    expect(state.competitions.map(c => c.name)).toEqual([
+      'Brisbane Ultimate Mixed League',
+      'Brisbane Parity League',
+    ])
+    expect(state.competitions.map(c => c.pullBonus)).toEqual([false, true])
+  })
+
+  it('every seeded game belongs to a seeded competition', () => {
+    const state = deriveScheduledGamesState(seedTeamsAndGames().gameEvents)
+    expect(state.games.length).toBeGreaterThan(0)
+    for (const g of state.games) {
+      expect(g.competitionId).toBeDefined()
+      expect(state.competitionsById.has(g.competitionId!)).toBe(true)
+    }
+  })
+
+  it('the Parity League fixture features The Bald and the Beautiful', () => {
+    const seed = seedTeamsAndGames()
+    const state = deriveScheduledGamesState(seed.gameEvents)
+    const parity = state.competitions.find(c => c.name === 'Brisbane Parity League')!
+    const game = state.games.find(g => g.competitionId === parity.id)!
+    const teamNames = seed.teamEvents
+      .filter(e => e.type === 'team-add')
+      .map(e => (e as { teamId: number; name: string }))
+    const teamA = teamNames.find(t => t.teamId === game.teamAGlobalId)
+    expect(teamA?.name).toBe('The Bald and the Beautiful')
   })
 })
 
