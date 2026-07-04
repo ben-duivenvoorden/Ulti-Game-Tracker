@@ -244,6 +244,11 @@ export default function LiveEntry() {
     </div>
   )
   const centreSpacer = <div className="w-4 h-full" />  // 16 px — halved again from 32 px
+  // Narration applies mid-point only (the parser speaks the in-play grammar);
+  // outside that the docked PTT stays visible but dimmed, so the control is
+  // discoverable in every phase. First-run setup (permission + model) works
+  // regardless.
+  const narrationReady = phase === 'in-play' && !previewing && pickMode === null
   const eventColumn = (
     <EventColumn
       state={state}
@@ -264,6 +269,18 @@ export default function LiveEntry() {
       onPullBonus={() => actions.recordPull(true)}
       onBrick={actions.recordBrick}
       onMore={() => openSheet('more')}
+      voiceSlot={voice ? (
+        <VoicePTT
+          voice={voice}
+          bias={voiceBias}
+          onResult={onVoiceResult}
+          disabled={!narrationReady}
+          sizeClassName="w-12 h-12"
+          title={narrationReady
+            ? 'Hold and narrate the point'
+            : 'Narration runs in play — record the pull first'}
+        />
+      ) : undefined}
     />
   )
   const activePlayerId = state.discHolder ?? ui.selPuller
@@ -368,19 +385,6 @@ export default function LiveEntry() {
           onPick={actions.recordPick}
           onResumeFromScore={actions.resumeFromScore}
         />
-
-        {/* Push-to-talk — in-play, live view only. Bottom-centre so it clears
-            both the player and event columns. */}
-        {voice && phase === 'in-play' && !previewing && !pickMode && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20">
-            <VoicePTT
-              voice={voice}
-              bias={voiceBias}
-              onResult={onVoiceResult}
-              title="Hold and narrate the point"
-            />
-          </div>
-        )}
 
         {voiceParsed && (
           <VoiceReviewSheet

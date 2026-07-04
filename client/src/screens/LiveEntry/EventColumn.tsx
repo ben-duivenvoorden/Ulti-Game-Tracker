@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import type { DerivedGameState, RecordingOptions } from '@/core/types'
 import { canRecord } from '@/core/engine'
 
@@ -32,6 +33,10 @@ interface EventColumnProps {
   onBrick:     () => void
 
   onMore: () => void
+
+  /** Voice PTT docked next to the More button (bottom corner of the column) —
+   *  provided by LiveEntry only when a voice engine is present. */
+  voiceSlot?: ReactNode
 }
 
 interface EventBtnDef {
@@ -188,13 +193,30 @@ export function EventColumn(props: EventColumnProps) {
         // row alignment with the player column (visible as Goal vs its player row).
         <div key={`f${i}`} className="flex-1 min-h-0 border-2 border-transparent" aria-hidden />
       ))}
-      <EventBtn
-        label="More"
-        fg="var(--color-muted)"
-        ink="var(--color-content)"
-        enabled
-        onTap={props.onMore}
-      />
+      {props.voiceSlot ? (
+        // Voice dock: the PTT takes room from the More row, sitting in the
+        // column's bottom corner — the same corner language as LineSelection.
+        <div className="flex-1 min-h-0 flex gap-3 items-stretch">
+          <EventBtn
+            label="More"
+            fg="var(--color-muted)"
+            ink="var(--color-content)"
+            enabled
+            onTap={props.onMore}
+          />
+          <div className="flex items-center justify-center flex-shrink-0">
+            {props.voiceSlot}
+          </div>
+        </div>
+      ) : (
+        <EventBtn
+          label="More"
+          fg="var(--color-muted)"
+          ink="var(--color-content)"
+          enabled
+          onTap={props.onMore}
+        />
+      )}
     </div>
   )
 }

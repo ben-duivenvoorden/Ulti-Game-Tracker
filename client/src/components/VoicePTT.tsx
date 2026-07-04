@@ -12,11 +12,18 @@ import type { VoicePlugin, VoiceCaptureResult } from '@/core/voice/plugin'
 
 type PttState = 'checking' | 'setup' | 'preparing' | 'idle' | 'listening' | 'busy'
 
-export function VoicePTT({ voice, bias, onResult, title = 'Hold to speak' }: {
+export function VoicePTT({ voice, bias, onResult, title = 'Hold to speak', disabled = false, sizeClassName = 'w-14 h-14' }: {
   voice:    VoicePlugin
   bias?:    string
   onResult: (result: VoiceCaptureResult) => void
   title?:   string
+  /** Capture unavailable right now (e.g. not in play) — dimmed, hold does
+   *  nothing. The first-run setup tap still works so model download and the
+   *  mic permission aren't gated on game phase. */
+  disabled?: boolean
+  /** Dimension classes — LineSelection keeps the 56 px FAB default; the
+   *  event-column dock sizes it to its row. */
+  sizeClassName?: string
 }) {
   const [state, setState] = useState<PttState>('checking')
   const [progress, setProgress] = useState(0)
@@ -54,6 +61,7 @@ export function VoicePTT({ voice, bias, onResult, title = 'Hold to speak' }: {
 
   const start = async () => {
     if (state === 'setup') { void setup(); return }
+    if (disabled) return
     if (state !== 'idle') return
     releasedRef.current = false
     try {
@@ -109,14 +117,14 @@ export function VoicePTT({ voice, bias, onResult, title = 'Hold to speak' }: {
       onPointerLeave={() => { void cancel() }}
       onPointerCancel={() => { void cancel() }}
       onContextMenu={e => e.preventDefault()}
-      className="w-14 h-14 rounded-full flex items-center justify-center cursor-pointer select-none relative"
+      className={`${sizeClassName} rounded-full flex items-center justify-center cursor-pointer select-none relative`}
       style={{
         background: listening ? 'var(--color-danger)' : 'var(--color-team-a)',
         color:      '#fff',
         boxShadow:  listening
           ? '0 0 0 6px color-mix(in srgb, var(--color-danger) 30%, transparent), 0 6px 18px rgba(0,0,0,0.4)'
           : '0 6px 18px rgba(0,0,0,0.4)',
-        opacity:    state === 'busy' || state === 'checking' ? 0.6 : 1,
+        opacity:    state === 'busy' || state === 'checking' ? 0.6 : disabled && state !== 'setup' ? 0.45 : 1,
         touchAction: 'none',
       }}
       title={hint}
