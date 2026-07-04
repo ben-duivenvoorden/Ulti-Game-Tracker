@@ -13,7 +13,7 @@ import type { ParsedNarration, VoiceEvent } from '@/core/voice/parse'
 // with canRecord before anything commits. Source-agnostic: a future cloud
 // transcript feeds the same sheet.
 
-const EVENT_LABEL: Record<string, string> = {
+export const EVENT_LABEL: Record<string, string> = {
   'possession':              'Pass',
   'goal':                    'Goal',
   'turnover-receiver-error': 'Receiver Error',
@@ -28,6 +28,54 @@ const EVENT_LABEL: Record<string, string> = {
   'pick':                    'Pick',
   'timeout':                 'Timeout',
   'undo':                    'Undo',
+}
+
+/** Live caption strip shown WHILE the scorer holds the PTT: the pause-
+ *  segmented transcript as it lands, plus the events it currently parses to.
+ *  Preview only — the review sheet stays the single gate to the log. */
+export function VoiceLiveCaption({ caption, parsed }: {
+  caption: string
+  parsed:  ParsedNarration | null
+}) {
+  return (
+    <div
+      className="absolute bottom-0 left-0 right-0 z-20 px-3 py-2 flex flex-col gap-1.5 pointer-events-none"
+      style={{
+        background: 'color-mix(in srgb, var(--color-bg) 92%, transparent)',
+        borderTop:  '1px solid var(--color-border)',
+      }}
+    >
+      {parsed && parsed.events.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {parsed.events.map((e, i) => (
+            <span
+              key={i}
+              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold"
+              style={{
+                background: 'var(--color-surf-2)',
+                border:     `1px solid ${e.confidence < AUTO_CONFIDENCE ? 'var(--color-warn)' : 'var(--color-border-2)'}`,
+                color:      'var(--color-content)',
+              }}
+            >
+              <span
+                className="w-1.5 h-1.5 rounded-full"
+                style={{
+                  background: e.input.type === 'undo'
+                    ? 'var(--color-warn)'
+                    : getVisLogColor(e.input.type as Parameters<typeof getVisLogColor>[0]),
+                }}
+              />
+              {EVENT_LABEL[e.input.type] ?? e.input.type}{e.playerName ? ` — ${e.playerName}` : ''}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-2 text-[11px] font-mono" style={{ color: 'var(--color-muted)' }}>
+        <MicIcon size={12} />
+        <span className="truncate">{caption.length > 0 ? caption : 'Listening…'}</span>
+      </div>
+    </div>
+  )
 }
 
 export function VoiceReviewSheet({ parsed, onApply, onClose }: {

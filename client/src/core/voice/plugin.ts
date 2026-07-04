@@ -24,6 +24,14 @@ export interface VoiceCaptureResult {
   tokens:     VoiceCaptureToken[]
 }
 
+/** One pause-closed segment transcribed mid-capture. `aggregate` is the full
+ *  transcript so far — the UI can render it directly. */
+export interface VoicePartial {
+  seq:        number
+  transcript: string
+  aggregate:  string
+}
+
 export interface VoicePlugin {
   isModelReady(): Promise<{ ready: boolean; sizeMb: number }>
   /** One-time model fetch; emits `downloadProgress` events natively. */
@@ -45,6 +53,12 @@ export interface VoicePlugin {
     eventName: 'downloadProgress',
     listener: (event: { progress: number }) => void,
   ): Promise<PluginListenerHandle>
+  /** Long holds are pause-segmented natively; each closed segment fires one
+   *  of these while capture keeps rolling. */
+  addListener(
+    eventName: 'partialTranscript',
+    listener: (event: VoicePartial) => void,
+  ): Promise<PluginListenerHandle>
 }
 
 const native = registerPlugin<VoicePlugin>('Voice')
@@ -52,18 +66,52 @@ const native = registerPlugin<VoicePlugin>('Voice')
 const MOCK_FLAG       = 'ugt-voice-mock'
 const MOCK_TRANSCRIPT = 'ugt-voice-mock-transcript'
 
+// Mock partials: the mock transcript splits on commas/full stops and "speaks"
+// one clause every 800 ms, so the live caption strip can be driven end-to-end
+// in a plain browser.
+const mockPartialListeners = new Set<(e: VoicePartial) => void>()
+let mockTimers: ReturnType<typeof setTimeout>[] = []
+
+function mockClearTimers() {
+  for (const t of mockTimers) clearTimeout(t)
+  mockTimers = []
+}
+
 const mockVoice: VoicePlugin = {
   isModelReady: () => Promise.resolve({ ready: true, sizeMb: 0 }),
   downloadModel: () => Promise.resolve(),
-  startCapture: () => Promise.resolve(),
+  startCapture: () => {
+    mockClearTimers()
+    const transcript = localStorage.getItem(MOCK_TRANSCRIPT) ?? ''
+    const clauses = transcript.split(/[,.]+/).map(c => c.trim()).filter(c => c.length > 0)
+    // The final clause arrives with stopCapture, like the native tail.
+    clauses.slice(0, -1).forEach((clause, i) => {
+      mockTimers.push(setTimeout(() => {
+        const aggregate = clauses.slice(0, i + 1).join(' ')
+        for (const l of mockPartialListeners) l({ seq: i, transcript: clause, aggregate })
+      }, (i + 1) * 800))
+    })
+    return Promise.resolve()
+  },
   stopCapture: () => {
+    mockClearTimers()
     const transcript = localStorage.getItem(MOCK_TRANSCRIPT) ?? ''
     return Promise.resolve({ transcript, tokens: [] })
   },
-  cancelCapture: () => Promise.resolve(),
+  cancelCapture: () => {
+    mockClearTimers()
+    return Promise.resolve()
+  },
   checkPermissions: () => Promise.resolve({ microphone: 'granted' as PermissionState }),
   requestPermissions: () => Promise.resolve({ microphone: 'granted' as PermissionState }),
-  addListener: () => Promise.resolve({ remove: () => Promise.resolve() }),
+  addListener: ((eventName: string, listener: (e: never) => void) => {
+    if (eventName === 'partialTranscript') {
+      const l = listener as (e: VoicePartial) => void
+      mockPartialListeners.add(l)
+      return Promise.resolve({ remove: () => { mockPartialListeners.delete(l); return Promise.resolve() } })
+    }
+    return Promise.resolve({ remove: () => Promise.resolve() })
+  }) as VoicePlugin['addListener'],
 }
 
 export function getVoice(): VoicePlugin | null {

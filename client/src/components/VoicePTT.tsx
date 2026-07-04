@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { MicIcon } from '@/components/ui/Icons'
-import type { VoicePlugin, VoiceCaptureResult } from '@/core/voice/plugin'
+import type { VoicePlugin, VoiceCaptureResult, VoicePartial } from '@/core/voice/plugin'
 
 // Push-to-talk floating button. First use is an explicit setup TAP: it
 // requests the mic permission and downloads the model with visible progress —
@@ -12,10 +12,15 @@ import type { VoicePlugin, VoiceCaptureResult } from '@/core/voice/plugin'
 
 type PttState = 'checking' | 'setup' | 'preparing' | 'idle' | 'listening' | 'busy'
 
-export function VoicePTT({ voice, bias, onResult, title = 'Hold to speak', disabled = false }: {
+export function VoicePTT({ voice, bias, onResult, onPartial, onListenChange, title = 'Hold to speak', disabled = false }: {
   voice:    VoicePlugin
   bias?:    string
   onResult: (result: VoiceCaptureResult) => void
+  /** Mid-capture segment transcriptions (pause-segmented long holds) —
+   *  drives a live caption while the scorer keeps talking. */
+  onPartial?: (partial: VoicePartial) => void
+  /** Fires on hold-to-talk start (true) and release/cancel (false). */
+  onListenChange?: (listening: boolean) => void
   title?:   string
   /** Capture unavailable right now (e.g. previewing history) — dimmed, hold
    *  does nothing. The first-run setup tap still works so model download and
@@ -27,6 +32,10 @@ export function VoicePTT({ voice, bias, onResult, title = 'Hold to speak', disab
   // Pointer already released (or cancelled) while start was in flight — the
   // async start path checks this before listening.
   const releasedRef = useRef(false)
+  // Ref so the one-time listener subscription survives re-renders with
+  // inline onPartial lambdas.
+  const onPartialRef = useRef(onPartial)
+  onPartialRef.current = onPartial
 
   useEffect(() => {
     let alive = true
@@ -34,6 +43,17 @@ export function VoicePTT({ voice, bias, onResult, title = 'Hold to speak', disab
       .then(({ ready }) => { if (alive) setState(ready ? 'idle' : 'setup') })
       .catch(() => { if (alive) setState('setup') })
     return () => { alive = false }
+  }, [voice])
+
+  useEffect(() => {
+    let alive = true
+    let handle: Awaited<ReturnType<VoicePlugin['addListener']>> | null = null
+    void voice.addListener('partialTranscript', e => { if (alive) onPartialRef.current?.(e) })
+      .then(h => {
+        if (alive) handle = h
+        else void h.remove()
+      })
+    return () => { alive = false; void handle?.remove() }
   }, [voice])
 
   // One-tap setup: permission first (the dialog would cancel a hold anyway),
@@ -76,6 +96,7 @@ export function VoicePTT({ voice, bias, onResult, title = 'Hold to speak', disab
         return
       }
       setState('listening')
+      onListenChange?.(true)
     } catch (err) {
       console.warn('[voice] capture start failed', err)
       setState('idle')
@@ -86,6 +107,7 @@ export function VoicePTT({ voice, bias, onResult, title = 'Hold to speak', disab
     releasedRef.current = true
     if (state !== 'listening') return
     setState('busy')
+    onListenChange?.(false)
     try {
       const result = await voice.stopCapture()
       onResult(result)
@@ -96,6 +118,7 @@ export function VoicePTT({ voice, bias, onResult, title = 'Hold to speak', disab
   const cancel = async () => {
     releasedRef.current = true
     if (state !== 'listening') return
+    onListenChange?.(false)
     try { await voice.cancelCapture() } catch { /* already stopped */ }
     setState('idle')
   }

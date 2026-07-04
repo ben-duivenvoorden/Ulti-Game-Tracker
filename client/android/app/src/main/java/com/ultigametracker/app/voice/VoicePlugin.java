@@ -32,10 +32,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Push-to-talk capture + on-device whisper.cpp transcription. The frozen
  * plugin shape lives in client/src/core/voice/plugin.ts — keep them in sync.
  *
- * Capture: 16 kHz mono float PCM via AudioRecord, accumulated while the
- * scorer holds the button (points are short; a 60 s hold is ~3.8 MB).
+ * Capture: 16 kHz mono float PCM via AudioRecord while the scorer holds the
+ * button. Long holds are segmented on natural pauses (energy-based silence
+ * detection): each closed segment transcribes on the background executor
+ * WHILE capture keeps rolling, and fires a `partialTranscript` event so the
+ * UI can show the narration assembling live. Release transcribes the tail
+ * and resolves with the full stitched transcript — a hold with no pauses
+ * degrades gracefully to the old single-shot behaviour.
  * Transcription: whisper.cpp (quantized tiny by default) via WhisperBridge,
- * biased with an initial_prompt of roster names + aliases from the TS side.
+ * biased with an initial_prompt of roster names + aliases from the TS side
+ * (per-segment, plus the previous segment's text for continuity).
  * Model: lazy first-run download from Hugging Face into filesDir/models.
  */
 @CapacitorPlugin(
@@ -53,13 +59,33 @@ public class VoicePlugin extends Plugin {
     /** Anything smaller than this is a truncated download, not a model. */
     private static final long MODEL_MIN_BYTES = 10L * 1024 * 1024;
 
+    // ── Pause segmentation ───────────────────────────────────────────────────
+    // A segment closes when ≥ SILENCE_BUFFERS consecutive quiet 100 ms reads
+    // follow some speech and the segment is at least MIN_SEGMENT_SAMPLES long
+    // (or unconditionally at MAX_SEGMENT_SAMPLES). The RMS threshold is
+    // deliberately conservative: a noisy sideline that never reads as quiet
+    // simply produces no partials and falls back to one big transcription.
+    private static final float SILENCE_RMS         = 0.015f;
+    private static final int   SILENCE_BUFFERS     = 7;                     // × 100 ms
+    private static final int   MIN_SEGMENT_SAMPLES = SAMPLE_RATE * 3 / 2;   // 1.5 s
+    private static final int   MAX_SEGMENT_SAMPLES = SAMPLE_RATE * 15;      // 15 s
+    /** whisper dislikes sub-second clips — zero-pad anything shorter. */
+    private static final int   MIN_DECODE_SAMPLES  = SAMPLE_RATE * 12 / 10; // 1.2 s
+
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     private final AtomicBoolean capturing = new AtomicBoolean(false);
     private AudioRecord recorder;
     private Thread captureThread;
-    private final List<float[]> chunks = new ArrayList<>();
     private String biasPrompt = "";
+
+    /** Transcribed segment texts for the current capture, in order. */
+    private final List<String> segmentTexts = new ArrayList<>();
+    /** Tail PCM handed from the capture thread to stopCapture at exit. */
+    private volatile float[] tailPcm = null;
+    /** Bumped on start/cancel so stale in-flight segment jobs drop out. */
+    private final java.util.concurrent.atomic.AtomicInteger captureGen =
+        new java.util.concurrent.atomic.AtomicInteger(0);
 
     private long whisperCtx = 0;
 
@@ -164,23 +190,55 @@ public class VoicePlugin extends Plugin {
             call.reject("AudioRecord init failed: " + e.getMessage());
             return;
         }
-        synchronized (chunks) { chunks.clear(); }
+        synchronized (segmentTexts) { segmentTexts.clear(); }
+        tailPcm = null;
+        final int gen = captureGen.incrementAndGet();
         recorder.startRecording();
         captureThread = new Thread(() -> {
             float[] buf = new float[SAMPLE_RATE / 10]; // 100 ms reads
+            List<float[]> seg = new ArrayList<>();
+            int segSamples = 0;
+            boolean segHasSpeech = false;
+            int quietRun = 0;
             while (capturing.get()) {
                 int n = recorder.read(buf, 0, buf.length, AudioRecord.READ_BLOCKING);
-                if (n > 0) {
-                    float[] copy = new float[n];
-                    System.arraycopy(buf, 0, copy, 0, n);
-                    synchronized (chunks) { chunks.add(copy); }
+                if (n <= 0) continue;
+                float[] copy = new float[n];
+                System.arraycopy(buf, 0, copy, 0, n);
+                seg.add(copy);
+                segSamples += n;
+                double sum = 0;
+                for (float v : copy) sum += v * v;
+                boolean quiet = Math.sqrt(sum / n) < SILENCE_RMS;
+                if (quiet) quietRun++; else { quietRun = 0; segHasSpeech = true; }
+                boolean pauseClose = segHasSpeech && quietRun >= SILENCE_BUFFERS && segSamples >= MIN_SEGMENT_SAMPLES;
+                boolean forceClose = segSamples >= MAX_SEGMENT_SAMPLES;
+                if (pauseClose || forceClose) {
+                    final float[] pcm = concatPcm(seg, segSamples);
+                    seg = new ArrayList<>();
+                    segSamples = 0;
+                    segHasSpeech = false;
+                    quietRun = 0;
+                    executor.execute(() -> transcribeSegment(pcm, gen, true));
                 }
             }
+            tailPcm = concatPcm(seg, segSamples);
         }, "voice-capture");
         captureThread.start();
         call.resolve();
     }
 
+    private static float[] concatPcm(List<float[]> parts, int total) {
+        float[] pcm = new float[total];
+        int off = 0;
+        for (float[] c : parts) {
+            System.arraycopy(c, 0, pcm, off, c.length);
+            off += c.length;
+        }
+        return pcm;
+    }
+
+    /** Stop the recorder + capture thread; returns the unfinished tail PCM. */
     private float[] drainCapture() {
         capturing.set(false);
         if (captureThread != null) {
@@ -192,18 +250,71 @@ public class VoicePlugin extends Plugin {
             recorder.release();
             recorder = null;
         }
-        synchronized (chunks) {
-            int total = 0;
-            for (float[] c : chunks) total += c.length;
-            float[] pcm = new float[total];
-            int off = 0;
-            for (float[] c : chunks) {
-                System.arraycopy(c, 0, pcm, off, c.length);
-                off += c.length;
-            }
-            chunks.clear();
-            return pcm;
+        float[] tail = tailPcm;
+        tailPcm = null;
+        return tail != null ? tail : new float[0];
+    }
+
+    /** Lazy whisper context init — executor thread only. */
+    private boolean ensureCtx() {
+        if (whisperCtx != 0) return true;
+        File f = modelFile();
+        if (!f.exists() || f.length() < MODEL_MIN_BYTES) return false;
+        whisperCtx = WhisperBridge.init(f.getAbsolutePath());
+        return whisperCtx != 0;
+    }
+
+    /** Transcribe one closed segment (executor thread). Appends the text,
+     *  and — for mid-capture segments — fires a partialTranscript event.
+     *  Stale generations (cancelled / restarted captures) are dropped. */
+    private void transcribeSegment(float[] pcmIn, int gen, boolean notify) {
+        if (gen != captureGen.get()) return;
+        if (pcmIn.length < SAMPLE_RATE / 4) return; // < 0.25 s — nothing there
+        float[] pcm = pcmIn;
+        if (pcm.length < MIN_DECODE_SAMPLES) {
+            pcm = new float[MIN_DECODE_SAMPLES];    // zero-pad: whisper dislikes sub-second clips
+            System.arraycopy(pcmIn, 0, pcm, 0, pcmIn.length);
         }
+        try {
+            if (!ensureCtx()) return;
+            String prev;
+            synchronized (segmentTexts) {
+                prev = segmentTexts.isEmpty() ? "" : segmentTexts.get(segmentTexts.size() - 1);
+            }
+            String bias = prev.isEmpty() ? biasPrompt : biasPrompt + ". " + prev;
+            int threads = Math.max(2, Math.min(6, Runtime.getRuntime().availableProcessors() - 2));
+            String json = WhisperBridge.transcribe(whisperCtx, pcm, bias, threads);
+            if (json == null) return;
+            String text = new JSONObject(json).optString("transcript", "").trim();
+            if (text.isEmpty()) return;
+            if (gen != captureGen.get()) return;
+            String aggregate;
+            int seq;
+            synchronized (segmentTexts) {
+                segmentTexts.add(text);
+                seq = segmentTexts.size() - 1;
+                aggregate = joinedTranscript();
+            }
+            if (notify) {
+                JSObject ev = new JSObject();
+                ev.put("seq", seq);
+                ev.put("transcript", text);
+                ev.put("aggregate", aggregate);
+                notifyListeners("partialTranscript", ev);
+            }
+        } catch (Exception ignored) {
+            // A failed segment loses its words but never the capture.
+        }
+    }
+
+    /** Call while holding segmentTexts' lock or from the executor thread. */
+    private String joinedTranscript() {
+        StringBuilder sb = new StringBuilder();
+        for (String t : segmentTexts) {
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(t);
+        }
+        return sb.toString();
     }
 
     @PluginMethod
@@ -212,43 +323,34 @@ public class VoicePlugin extends Plugin {
             call.reject("No capture in progress");
             return;
         }
-        final float[] pcm = drainCapture();
-        final String bias = biasPrompt;
+        final int gen = captureGen.get();
+        final float[] tail = drainCapture();
+        // The single-threaded executor keeps ordering: any in-flight segment
+        // jobs run first, then the tail, then the assembly that resolves.
+        executor.execute(() -> transcribeSegment(tail, gen, false));
         executor.execute(() -> {
-            try {
-                if (whisperCtx == 0) {
-                    File f = modelFile();
-                    if (!f.exists() || f.length() < MODEL_MIN_BYTES) {
-                        call.reject("Voice model not downloaded");
-                        return;
-                    }
-                    whisperCtx = WhisperBridge.init(f.getAbsolutePath());
-                    if (whisperCtx == 0) {
-                        call.reject("Could not load voice model");
-                        return;
-                    }
-                }
-                int threads = Math.max(2, Math.min(6, Runtime.getRuntime().availableProcessors() - 2));
-                String json = WhisperBridge.transcribe(whisperCtx, pcm, bias, threads);
-                if (json == null) {
-                    call.reject("Transcription failed");
-                    return;
-                }
-                JSONObject parsed = new JSONObject(json);
-                JSObject out = new JSObject();
-                out.put("transcript", parsed.optString("transcript", ""));
-                out.put("tokens", parsed.optJSONArray("tokens") != null
-                    ? parsed.getJSONArray("tokens") : new JSONArray());
-                call.resolve(out);
-            } catch (Exception e) {
-                call.reject("Transcription failed: " + e.getMessage());
+            if (gen != captureGen.get()) {
+                call.reject("Capture was cancelled");
+                return;
             }
+            String full;
+            synchronized (segmentTexts) { full = joinedTranscript(); }
+            if (full.isEmpty() && !ensureCtx()) {
+                call.reject("Voice model not downloaded");
+                return;
+            }
+            JSObject out = new JSObject();
+            out.put("transcript", full);
+            out.put("tokens", new JSONArray());
+            call.resolve(out);
         });
     }
 
     @PluginMethod
     public void cancelCapture(PluginCall call) {
+        captureGen.incrementAndGet(); // stale segment jobs drop their output
         if (capturing.get()) drainCapture();
+        synchronized (segmentTexts) { segmentTexts.clear(); }
         call.resolve();
     }
 

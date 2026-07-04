@@ -14,7 +14,7 @@ import { EventColumn } from './EventColumn'
 import { PassNotation } from './PassNotation'
 import { BottomSheet, type SheetTab } from './BottomSheet'
 import { SankeyBridge } from './SankeyBridge'
-import { VoiceReviewSheet } from './VoiceReviewSheet'
+import { VoiceLiveCaption, VoiceReviewSheet } from './VoiceReviewSheet'
 import { Btn } from '@/components/ui/Btn'
 import { MomentBackdrop } from '@/components/MomentBackdrop'
 import { ModalScrim } from '@/components/ModalScrim'
@@ -91,6 +91,9 @@ export default function LiveEntry() {
   const teamsState = useTeamsState()
   const voice = getVoice()
   const [voiceParsed, setVoiceParsed] = useState<ParsedNarration | null>(null)
+  // Live caption while the PTT is held: the pause-segmented transcript so
+  // far. null = strip hidden; '' = listening, nothing transcribed yet.
+  const [liveCaption, setLiveCaption] = useState<string | null>(null)
 
   const phase   = state?.gamePhase
   const pickMode = isPickMode(ui.uiMode) ? ui.uiMode : null
@@ -185,8 +188,9 @@ export default function LiveEntry() {
   const recording = phase === 'in-play' || phase === 'awaiting-pull'
 
   // Event-mode candidates = both active lines (small set → high accuracy);
-  // aliases resolved from the global players log by id.
-  const onVoiceResult = (result: VoiceCaptureResult) => {
+  // aliases resolved from the global players log by id. Shared by the final
+  // result AND the live caption preview (parse is pure and cheap).
+  const parseVoiceWords = (words: string[]) => {
     const lineFor = (t: TeamId) => state.activeLine[t]
     const speakables = [...lineFor('A'), ...lineFor('B')].map(p => ({
       id:            p.id,
@@ -197,7 +201,7 @@ export default function LiveEntry() {
       lineFor('A').some(p => p.id === id) ? 'A'
         : lineFor('B').some(p => p.id === id) ? 'B'
         : null
-    const parsed = parseNarration(resultWords(result), buildMatcher(speakables), {
+    return parseNarration(words, buildMatcher(speakables), {
       pointIndex: state.pointIndex,
       possession: state.possession,
       discHolder: state.discHolder,
@@ -209,6 +213,11 @@ export default function LiveEntry() {
       awaitingPull: phase === 'awaiting-pull',
       selPuller:    ui.selPuller,
     })
+  }
+
+  const onVoiceResult = (result: VoiceCaptureResult) => {
+    setLiveCaption(null)
+    const parsed = parseVoiceWords(resultWords(result))
     // A pure "injury" call has nothing to record — jump straight to the
     // injury line editor instead of showing an empty review sheet.
     if (parsed.followUp === 'injury-sub' && parsed.events.length === 0 && parsed.issues.length === 0) {
@@ -413,6 +422,16 @@ export default function LiveEntry() {
             onClose={() => setBackfillOpen(false)}
           />
         )}
+
+        {/* Live caption while holding the PTT — segments land on pauses. */}
+        {liveCaption !== null && (
+          <VoiceLiveCaption
+            caption={liveCaption}
+            parsed={liveCaption.length > 0
+              ? parseVoiceWords(liveCaption.split(/[\s,.!?]+/).filter(w => w.length > 0))
+              : null}
+          />
+        )}
       </div>
 
       {/* Voice footer — the narration PTT gets its own centred row so it
@@ -426,6 +445,8 @@ export default function LiveEntry() {
             voice={voice}
             bias={voiceBias}
             onResult={onVoiceResult}
+            onPartial={p => setLiveCaption(p.aggregate)}
+            onListenChange={listening => setLiveCaption(listening ? '' : null)}
             disabled={!narrationReady}
             title={narrationReady
               ? 'Hold and narrate — pulls, passes, calls, undo'
