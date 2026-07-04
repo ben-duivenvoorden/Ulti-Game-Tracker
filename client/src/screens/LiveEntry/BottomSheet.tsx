@@ -175,7 +175,7 @@ function LogTab(props: BottomSheetProps) {
 }
 
 // ─── More tab ────────────────────────────────────────────────────────────────
-// Stoppages + manual half-time / end-game.
+// Stoppages + resync. Half-time / end-game are point-boundary only (PointSummary).
 
 function MoreTab(props: BottomSheetProps) {
   const { state, recordingOptions, teams,

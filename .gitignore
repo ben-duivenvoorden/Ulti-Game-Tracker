@@ -3,6 +3,8 @@
 
 # Claude Code — local settings are machine-specific; settings.json (shared config) is committed if present
 .claude/settings.local.json
+# Project instructions — local-only, not published to the repo
+CLAUDE.md
 node_modules
 
 # Local-only working docs (plans, design notes, feedback). Kept on disk, not tracked.
