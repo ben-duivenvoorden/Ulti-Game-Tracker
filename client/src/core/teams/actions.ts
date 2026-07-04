@@ -34,23 +34,25 @@ export function addPlayer(
   teamId:   GlobalTeamId,
   name:     string,
   gender:   'M' | 'F',
-  extras: { jerseyNumber?: number; photoUrl?: string } = {},
+  extras: { jerseyNumber?: number; photoUrl?: string; spokenAliases?: string[] } = {},
 ): Omit<PlayerAddEvent, 'id' | 'timestamp'> {
   return {
     type:     'player-add',
     playerId, teamId, name, gender,
-    ...(extras.jerseyNumber !== undefined ? { jerseyNumber: extras.jerseyNumber } : {}),
-    ...(extras.photoUrl     !== undefined ? { photoUrl:     extras.photoUrl     } : {}),
+    ...(extras.jerseyNumber  !== undefined ? { jerseyNumber:  extras.jerseyNumber  } : {}),
+    ...(extras.photoUrl      !== undefined ? { photoUrl:      extras.photoUrl      } : {}),
+    ...(extras.spokenAliases !== undefined ? { spokenAliases: extras.spokenAliases } : {}),
   }
 }
 
 export function editPlayer(
   playerId: PlayerId,
   patch: {
-    name?:         string
-    gender?:       'M' | 'F'
-    jerseyNumber?: number | null
-    photoUrl?:     string | null
+    name?:          string
+    gender?:        'M' | 'F'
+    jerseyNumber?:  number | null
+    photoUrl?:      string | null
+    spokenAliases?: string[]
   },
 ): Omit<PlayerEditEvent, 'id' | 'timestamp'> {
   return { type: 'player-edit', playerId, ...patch }

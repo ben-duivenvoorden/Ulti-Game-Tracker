@@ -159,11 +159,11 @@ interface GameStore {
     teamId: GlobalTeamId,
     name: string,
     gender: 'M' | 'F',
-    extras?: { jerseyNumber?: number; photoUrl?: string },
+    extras?: { jerseyNumber?: number; photoUrl?: string; spokenAliases?: string[] },
   ) => PlayerId
   editPlayer:          (
     playerId: PlayerId,
-    patch: { name?: string; gender?: 'M' | 'F'; jerseyNumber?: number | null; photoUrl?: string | null },
+    patch: { name?: string; gender?: 'M' | 'F'; jerseyNumber?: number | null; photoUrl?: string | null; spokenAliases?: string[] },
   ) => void
   removePlayer:        (playerId: PlayerId) => void
 

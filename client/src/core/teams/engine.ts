@@ -58,6 +58,7 @@ export function deriveTeamsState(log: TeamEvent[]): TeamsState {
           gender:       event.gender,
           ...(event.jerseyNumber !== undefined ? { jerseyNumber: event.jerseyNumber } : {}),
           ...(event.photoUrl     !== undefined ? { photoUrl:     event.photoUrl     } : {}),
+          spokenAliases: event.spokenAliases ?? [],
           removed:      false,
         }
         playersById.set(event.playerId, player)
@@ -80,6 +81,7 @@ export function deriveTeamsState(log: TeamEvent[]): TeamsState {
           if (event.photoUrl === null) delete p.photoUrl
           else p.photoUrl = event.photoUrl
         }
+        if (event.spokenAliases !== undefined) p.spokenAliases = event.spokenAliases
         break
       }
 

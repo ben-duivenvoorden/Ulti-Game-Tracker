@@ -45,6 +45,8 @@ export interface PlayerAddEvent extends BaseTeamEvent {
   gender:        'M' | 'F'
   jerseyNumber?: number
   photoUrl?:     string
+  /** Nicknames / call-names for voice matching ("Bennie", "Beast"). */
+  spokenAliases?: string[]
 }
 
 export interface PlayerEditEvent extends BaseTeamEvent {
@@ -54,6 +56,7 @@ export interface PlayerEditEvent extends BaseTeamEvent {
   gender?:       'M' | 'F'
   jerseyNumber?: number | null   // null clears
   photoUrl?:     string | null   // null clears
+  spokenAliases?: string[]       // [] clears
 }
 
 /** Soft remove — same reasoning as team-archive. */
@@ -91,6 +94,9 @@ export interface GlobalPlayer {
   gender:        'M' | 'F'
   jerseyNumber?: number
   photoUrl?:     string
+  /** Nicknames / call-names for voice matching. Always present on the derived
+   *  shape (defaults to []) so consumers never null-check. */
+  spokenAliases: string[]
   removed:       boolean
 }
 

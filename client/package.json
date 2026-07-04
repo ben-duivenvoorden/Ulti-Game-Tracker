@@ -15,6 +15,7 @@
     "@fontsource/rajdhani": "^5.2.7",
     "@fontsource/roboto": "^5.2.10",
     "@fontsource/roboto-mono": "^5.2.8",
+    "double-metaphone": "^2.0.1",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "zustand": "^5.0.12"

@@ -176,7 +176,7 @@ function TeamDetailView({ team, roster, onBack, onEditTeam, onArchive, onAddPlay
   onEditTeam:     (patch: { name?: string; short?: string; color?: string }) => void
   onArchive:      () => void
   onAddPlayer:    (p: { name: string; gender: 'M' | 'F'; extras?: { jerseyNumber?: number } }) => void
-  onEditPlayer:   (id: number, patch: { name?: string; gender?: 'M' | 'F'; jerseyNumber?: number | null }) => void
+  onEditPlayer:   (id: number, patch: { name?: string; gender?: 'M' | 'F'; jerseyNumber?: number | null; spokenAliases?: string[] }) => void
   onRemovePlayer: (id: number) => void
 }) {
   const [confirm, setConfirm] = useState<
@@ -262,41 +262,72 @@ function TeamDetailView({ team, roster, onBack, onEditTeam, onArchive, onAddPlay
 
 function PlayerRow({ player, onEdit, onRemove }: {
   player:   GlobalPlayer
-  onEdit:   (patch: { name?: string; gender?: 'M' | 'F'; jerseyNumber?: number | null }) => void
+  onEdit:   (patch: { name?: string; gender?: 'M' | 'F'; jerseyNumber?: number | null; spokenAliases?: string[] }) => void
   onRemove: () => void
 }) {
   return (
-    <div className="flex items-center gap-2 p-2 rounded-md border"
+    <div className="flex flex-col gap-1.5 p-2 rounded-md border"
       style={{ background: 'var(--color-surf)', borderColor: 'var(--color-border)' }}
     >
-      <GenderSelect value={player.gender} onChange={gender => onEdit({ gender })} />
-      <input
-        type="text"
-        value={player.name}
-        onChange={e => onEdit({ name: e.target.value })}
-        className="flex-1 min-w-0 h-9 px-3 rounded-md border text-sm text-content"
-        style={{ background: 'var(--color-surf-2)', borderColor: 'var(--color-border-2)' }}
-      />
-      <input
-        type="number"
-        value={player.jerseyNumber ?? ''}
-        onChange={e => {
-          const raw = e.target.value
-          onEdit({ jerseyNumber: raw === '' ? null : Number(raw) })
-        }}
-        placeholder="#"
-        className="w-14 h-9 px-2 rounded-md border text-sm font-mono text-center text-content flex-shrink-0"
-        style={{ background: 'var(--color-surf-2)', borderColor: 'var(--color-border-2)' }}
-      />
-      <button
-        onClick={onRemove}
-        className="flex-shrink-0 w-8 h-9 cursor-pointer rounded-md hover:bg-surf-2 flex items-center justify-center"
-        style={{ color: 'var(--color-muted)' }}
-        title="Remove player"
-      >
-        <CloseIcon size={16} />
-      </button>
+      <div className="flex items-center gap-2">
+        <GenderSelect value={player.gender} onChange={gender => onEdit({ gender })} />
+        <input
+          type="text"
+          value={player.name}
+          onChange={e => onEdit({ name: e.target.value })}
+          className="flex-1 min-w-0 h-9 px-3 rounded-md border text-sm text-content"
+          style={{ background: 'var(--color-surf-2)', borderColor: 'var(--color-border-2)' }}
+        />
+        <input
+          type="number"
+          value={player.jerseyNumber ?? ''}
+          onChange={e => {
+            const raw = e.target.value
+            onEdit({ jerseyNumber: raw === '' ? null : Number(raw) })
+          }}
+          placeholder="#"
+          className="w-14 h-9 px-2 rounded-md border text-sm font-mono text-center text-content flex-shrink-0"
+          style={{ background: 'var(--color-surf-2)', borderColor: 'var(--color-border-2)' }}
+        />
+        <button
+          onClick={onRemove}
+          className="flex-shrink-0 w-8 h-9 cursor-pointer rounded-md hover:bg-surf-2 flex items-center justify-center"
+          style={{ color: 'var(--color-muted)' }}
+          title="Remove player"
+        >
+          <CloseIcon size={16} />
+        </button>
+      </div>
+      <AliasesInput aliases={player.spokenAliases} onCommit={spokenAliases => onEdit({ spokenAliases })} />
     </div>
+  )
+}
+
+// Spoken aliases (nicknames) for voice matching. Local state while typing —
+// commas / trailing spaces would fight a parse-on-keystroke controlled input —
+// committed as one player-edit event on blur / Enter.
+function AliasesInput({ aliases, onCommit }: {
+  aliases:  string[]
+  onCommit: (aliases: string[]) => void
+}) {
+  const [draft, setDraft] = useState(aliases.join(', '))
+  const commit = () => {
+    const next = draft.split(',').map(s => s.trim()).filter(s => s.length > 0)
+    setDraft(next.join(', '))
+    if (next.join(' ') !== aliases.join(' ')) onCommit(next)
+  }
+  return (
+    <input
+      type="text"
+      value={draft}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+      placeholder="Spoken aliases (voice) — e.g. Bennie, Beast"
+      title="Nicknames the voice recogniser should accept for this player, comma-separated"
+      className="w-full h-8 px-3 rounded-md border text-xs text-content"
+      style={{ background: 'var(--color-surf-2)', borderColor: 'var(--color-border-2)' }}
+    />
   )
 }
 

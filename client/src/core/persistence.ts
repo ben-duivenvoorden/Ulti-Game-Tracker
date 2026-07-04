@@ -11,10 +11,10 @@ import { seedTeamsAndGames } from './data'
 import type { TeamEvent } from './teams/types'
 import type { ScheduledGameEvent } from './games/types'
 
-export const STORAGE_VERSION = 18
+export const STORAGE_VERSION = 19
 export const STORAGE_KEY     = 'ugt-game'
 /** Tagged at build time so hydration logs identify which bundle is running. */
-export const BUILD_MARKER    = 'ugt-build-2026-06-12-v18'
+export const BUILD_MARKER    = 'ugt-build-2026-07-04-v19'
 
 // `seedTeamsAndGames()` produces deterministic id 1.. events; the same seed
 // is consumed by the migration so old upgrades inherit the same world.
@@ -94,6 +94,10 @@ export function migrateGameStore(persisted: unknown, fromVersion: number) {
   const sessionV18 = (sessionWithDevice && Array.isArray(sessionWithDevice.rawLog) && fromVersion < 18)
     ? { ...sessionWithDevice, rawLog: sessionWithDevice.rawLog.filter(e => !deadTypes.includes(e.type)) }
     : sessionWithDevice
+
+  // v18 → v19: purely additive — `spokenAliases` joined the player events
+  // (teams log) and the derived GlobalPlayer defaults it to []. No rewrite
+  // needed; old events simply lack the optional field.
 
   console.info('[ugt-game] migrate', {
     build: BUILD_MARKER,
