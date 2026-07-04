@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   useSession, useDerivedState, useVisLog, useGameActions, useUiState, useRecordingOptions,
-  useTruncateCursor, useDisplayEndsSwapped,
+  useTruncateCursor, useDisplayEndsSwapped, useTeamsState,
 } from '@/core/selectors'
 import { otherTeam, UNKNOWN_PLAYER, type Player, type PlayerId, type TeamId, type VisLogEntry } from '@/core/types'
 import { isPickMode, pickActiveTeam, resolveContextLabel } from '@/core/pickModes'
@@ -14,10 +14,15 @@ import { EventColumn } from './EventColumn'
 import { PassNotation } from './PassNotation'
 import { BottomSheet, type SheetTab } from './BottomSheet'
 import { SankeyBridge } from './SankeyBridge'
+import { VoiceReviewSheet } from './VoiceReviewSheet'
 import { Btn } from '@/components/ui/Btn'
 import { MomentBackdrop } from '@/components/MomentBackdrop'
 import { ModalScrim } from '@/components/ModalScrim'
+import { VoicePTT } from '@/components/VoicePTT'
 import { CloseIcon } from '@/components/ui/Icons'
+import { getVoice, resultWords, type VoiceCaptureResult } from '@/core/voice/plugin'
+import { buildMatcher } from '@/core/voice/match'
+import { parseNarration, type ParsedNarration } from '@/core/voice/parse'
 
 // True until the active team's possession run has at least 2 recorded
 // disc-in-hand events — i.e. the current holder hasn't received a pass
@@ -80,6 +85,12 @@ export default function LiveEntry() {
   const [moveSelectedId, setMoveSelectedId] = useState<PlayerId | null>(null)
   // Running-start backfill picker — open when an empty `+` slot is tapped.
   const [backfillOpen, setBackfillOpen] = useState(false)
+
+  // Voice narration: PTT (in-play only — voice never drives the pull) →
+  // parse against the active lines → review sheet → recordVoiceEvents.
+  const teamsState = useTeamsState()
+  const voice = getVoice()
+  const [voiceParsed, setVoiceParsed] = useState<ParsedNarration | null>(null)
 
   const phase   = state?.gamePhase
   const pickMode = isPickMode(ui.uiMode) ? ui.uiMode : null
@@ -172,6 +183,34 @@ export default function LiveEntry() {
     setMoveSelectedId(null)
   }
   const recording = phase === 'in-play' || phase === 'awaiting-pull'
+
+  // Event-mode candidates = both active lines (small set → high accuracy);
+  // aliases resolved from the global players log by id.
+  const onVoiceResult = (result: VoiceCaptureResult) => {
+    const lineFor = (t: TeamId) => state.activeLine[t]
+    const speakables = [...lineFor('A'), ...lineFor('B')].map(p => ({
+      id:            p.id,
+      name:          p.name,
+      spokenAliases: teamsState.playersById.get(p.id)?.spokenAliases ?? [],
+    }))
+    const teamOf = (id: PlayerId): TeamId | null =>
+      lineFor('A').some(p => p.id === id) ? 'A'
+        : lineFor('B').some(p => p.id === id) ? 'B'
+        : null
+    const parsed = parseNarration(resultWords(result), buildMatcher(speakables), {
+      pointIndex: state.pointIndex,
+      possession: state.possession,
+      discHolder: state.discHolder,
+      teamOf,
+      passes: recordingOptions.passes,
+      stall:  recordingOptions.stall,
+    })
+    setVoiceParsed(parsed)
+  }
+  const voiceBias = state.activeLine.A.concat(state.activeLine.B)
+    .flatMap(p => [p.name.split(/\s+/)[0], ...(teamsState.playersById.get(p.id)?.spokenAliases ?? [])])
+    .concat(['to', 'score', 'goal', 'drop', 'throwaway', 'stall', 'block', 'intercept', 'callahan'])
+    .join(', ')
   // Shared tile count: players (or the running-start lineSize) plus
   // the always-present Unknown-Player tile. Drives the event-column
   // padding AND the Sankey geometry so all three columns stay
@@ -329,6 +368,27 @@ export default function LiveEntry() {
           onPick={actions.recordPick}
           onResumeFromScore={actions.resumeFromScore}
         />
+
+        {/* Push-to-talk — in-play, live view only. Bottom-centre so it clears
+            both the player and event columns. */}
+        {voice && phase === 'in-play' && !previewing && !pickMode && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20">
+            <VoicePTT
+              voice={voice}
+              bias={voiceBias}
+              onResult={onVoiceResult}
+              title="Hold and narrate the point"
+            />
+          </div>
+        )}
+
+        {voiceParsed && (
+          <VoiceReviewSheet
+            parsed={voiceParsed}
+            onApply={events => actions.recordVoiceEvents(events.map(e => e.input))}
+            onClose={() => setVoiceParsed(null)}
+          />
+        )}
 
         {backfillOpen && (
           <BackfillPicker

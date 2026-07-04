@@ -1,16 +1,20 @@
 import { useState } from 'react'
 import { Btn } from '@/components/ui/Btn'
 import { Chip } from '@/components/ui/Chip'
-import { IconBtn, SettingsIcon, TeamsIcon, BackIcon, CheckIcon } from '@/components/ui/Icons'
+import { IconBtn, SettingsIcon, TeamsIcon, BackIcon, CheckIcon, CloseIcon } from '@/components/ui/Icons'
 import { GenderSelect } from '@/components/ui/form'
 import { ModalScrim } from '@/components/ModalScrim'
 import { ScorerInfoButton } from '@/components/ScorerInfoButton'
-import { useGameActions, useSession, useDerivedState, useRecordingOptions } from '@/core/selectors'
+import { VoicePTT } from '@/components/VoicePTT'
+import { useGameActions, useSession, useDerivedState, useRecordingOptions, useTeamsState } from '@/core/selectors'
 import { useGameStore } from '@/core/store'
 import { isAPoint, ratioForPoint } from '@/core/engine'
 import { inkOn } from '@/core/contrast'
 import { pickDisplayNames } from '@/core/teams/shortName'
 import { firstNameKey } from '@/core/teams/shortName'
+import { getVoice, resultWords, type VoiceCaptureResult } from '@/core/voice/plugin'
+import { buildMatcher, AUTO_CONFIDENCE } from '@/core/voice/match'
+import { matchLineCall } from '@/core/voice/parse'
 import type { Player, GameMode, RecordingOptions, TeamId } from '@/core/types'
 
 // See Header.tsx — same convention. Score header is the tight context.
@@ -58,14 +62,47 @@ export default function LineSelection() {
   const [overrideOpen, setOverrideOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<TeamId>('A')
 
+  // Voice line creation: names spoken while holding PTT toggle players into
+  // the active tab's line. Low-confidence matches are amber-flagged (the line
+  // UI is its own review surface); unmatched words surface in a strip.
+  const teamsState = useTeamsState()
+  const voice = getVoice()
+  const [voiceFlagged, setVoiceFlagged] = useState<ReadonlySet<number>>(new Set())
+  const [voiceUnmatched, setVoiceUnmatched] = useState<string[]>([])
+
   if (!rosters || !teams) return null
 
   const toggle = (player: Player, sel: Player[], setSel: (p: Player[]) => void) => {
+    if (voiceFlagged.has(player.id)) {
+      // Any manual tap on a flagged player is the eyeball check — clear it.
+      setVoiceFlagged(prev => { const next = new Set(prev); next.delete(player.id); return next })
+    }
     if (sel.find(p => p.id === player.id)) {
       setSel(sel.filter(p => p.id !== player.id))
     } else {
       setSel([...sel, player])
     }
+  }
+
+  const speakables = (roster: Player[]) => roster.map(p => ({
+    id:            p.id,
+    name:          p.name,
+    spokenAliases: teamsState.playersById.get(p.id)?.spokenAliases ?? [],
+  }))
+
+  const onVoiceResult = (result: VoiceCaptureResult) => {
+    const roster  = rosters[activeTab]
+    const call    = matchLineCall(resultWords(result), buildMatcher(speakables(roster)))
+    const sel     = activeTab === 'A' ? selA : selB
+    const setSel  = activeTab === 'A' ? setSelA : setSelB
+    const byId    = new Map(roster.map(p => [p.id, p]))
+    const added   = call.matches
+      .map(m => byId.get(m.playerId!))
+      .filter((p): p is Player => !!p && !sel.some(s => s.id === p.id))
+    if (added.length > 0) setSel([...sel, ...added])
+    const lowConf = call.matches.filter(m => m.confidence < AUTO_CONFIDENCE).map(m => m.playerId!)
+    if (lowConf.length > 0) setVoiceFlagged(prev => new Set([...prev, ...lowConf]))
+    setVoiceUnmatched(call.unmatched)
   }
 
   const validateA = validateLine(selA, gameMode, effectiveRatio, lineSize)
@@ -88,7 +125,7 @@ export default function LineSelection() {
     slot === 'A' ? session!.gameConfig.teamAGlobalId : session!.gameConfig.teamBGlobalId
 
   return (
-    <div className="h-full flex flex-col bg-bg text-content">
+    <div className="h-full flex flex-col bg-bg text-content relative">
       {/* Header — back · score · Confirm. Three-column grid with equal-width
           side columns (88 px) keeps the score perfectly centred on the page
           regardless of how wide the Confirm button is. The score's middle
@@ -193,6 +230,23 @@ export default function LineSelection() {
         </div>
       )}
 
+      {/* Words the voice matcher couldn't place — shown, never dropped. */}
+      {voiceUnmatched.length > 0 && (
+        <div
+          className="flex-shrink-0 flex items-center gap-2 px-3 py-1.5 text-[11px] font-mono border-b"
+          style={{ background: 'var(--color-warn-bg)', color: 'var(--color-warn)', borderColor: 'var(--color-warn)' }}
+        >
+          <span className="truncate flex-1">Not matched: {voiceUnmatched.join(' · ')}</span>
+          <button
+            onClick={() => setVoiceUnmatched([])}
+            className="flex-shrink-0 cursor-pointer"
+            title="Dismiss"
+          >
+            <CloseIcon size={14} />
+          </button>
+        </div>
+      )}
+
       {/* Active team's roster */}
       <div className="flex-1 overflow-hidden">
         {(() => {
@@ -210,6 +264,7 @@ export default function LineSelection() {
               targetM={effectiveRatio.M}
               targetF={effectiveRatio.F}
               lineSize={lineSize}
+              flaggedIds={voiceFlagged}
               onAddPlayer={(name, gender, jersey) =>
                 addPlayer(globalIdFor(slot), name, gender,
                   jersey !== undefined ? { jerseyNumber: jersey } : undefined)
@@ -229,6 +284,19 @@ export default function LineSelection() {
           )
         })()}
       </div>
+
+      {/* Push-to-talk — only when a voice engine is present (device / mock).
+          Speaks names into the active tab's line. */}
+      {voice && (
+        <div className="absolute bottom-6 right-5 z-10">
+          <VoicePTT
+            voice={voice}
+            bias={speakables(rosters[activeTab]).flatMap(s => [s.name.split(/\s+/)[0], ...s.spokenAliases]).join(', ')}
+            onResult={onVoiceResult}
+            title="Hold and speak names to build the line"
+          />
+        </div>
+      )}
 
       {overrideOpen && (
         <OverrideDialog
@@ -325,6 +393,8 @@ interface TeamPanelProps {
   targetF: number
   lineSize: number
   onAddPlayer: (name: string, gender: 'M' | 'F', jerseyNumber?: number) => void
+  /** Low-confidence voice adds — amber ring until the scorer taps them. */
+  flaggedIds?: ReadonlySet<number>
   /** Right-aligned header-row affordances (info / teams / settings icons). */
   trailing?: React.ReactNode
 }
@@ -339,13 +409,14 @@ const byFirstName = (a: Player, b: Player) => firstNameKey(a.name).localeCompare
 
 function TeamPanel({
   players, selected, color, onToggle, onSetAll,
-  gameMode, targetM, targetF, lineSize, onAddPlayer, trailing,
+  gameMode, targetM, targetF, lineSize, onAddPlayer, flaggedIds, trailing,
 }: TeamPanelProps) {
   const total  = selected.length
   const countM = selected.filter(p => p.gender === 'M').length
   const countF = selected.filter(p => p.gender === 'F').length
   const allSelected = players.length > 0 && total === players.length
   const isOn = (p: Player) => !!selected.find(s => s.id === p.id)
+  const isFlagged = (p: Player) => flaggedIds?.has(p.id) ?? false
 
   const allButton = (
     <button
@@ -377,12 +448,12 @@ function TeamPanel({
         <div className="flex-1 overflow-y-auto p-2 grid grid-cols-2 gap-2 items-start">
           <GenderColumn
             heading={<Chip color={chipColor(countF, targetF)}>FMP {countF}/{targetF}</Chip>}
-            players={females} color={color} isOn={isOn} onToggle={onToggle}
+            players={females} color={color} isOn={isOn} isFlagged={isFlagged} onToggle={onToggle}
             addRow={<AddPlayerRow color={color} onAdd={onAddPlayer} fixedGender="F" />}
           />
           <GenderColumn
             heading={<Chip color={chipColor(countM, targetM)}>MMP {countM}/{targetM}</Chip>}
-            players={males} color={color} isOn={isOn} onToggle={onToggle}
+            players={males} color={color} isOn={isOn} isFlagged={isFlagged} onToggle={onToggle}
             addRow={<AddPlayerRow color={color} onAdd={onAddPlayer} fixedGender="M" />}
           />
         </div>
@@ -400,7 +471,7 @@ function TeamPanel({
       </div>
       <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-1.5">
         {[...players].sort(byFirstName).map(p => (
-          <PlayerTile key={p.id} player={p} on={isOn(p)} color={color} onToggle={onToggle} />
+          <PlayerTile key={p.id} player={p} on={isOn(p)} flagged={isFlagged(p)} color={color} onToggle={onToggle} />
         ))}
         <AddPlayerRow color={color} onAdd={onAddPlayer} />
       </div>
@@ -409,20 +480,21 @@ function TeamPanel({
 }
 
 function GenderColumn({
-  heading, players, color, isOn, onToggle, addRow,
+  heading, players, color, isOn, isFlagged, onToggle, addRow,
 }: {
-  heading:  React.ReactNode
-  players:  Player[]
-  color:    string
-  isOn:     (p: Player) => boolean
-  onToggle: (p: Player) => void
-  addRow:   React.ReactNode
+  heading:   React.ReactNode
+  players:   Player[]
+  color:     string
+  isOn:      (p: Player) => boolean
+  isFlagged: (p: Player) => boolean
+  onToggle:  (p: Player) => void
+  addRow:    React.ReactNode
 }) {
   return (
     <div className="flex flex-col gap-1.5 min-w-0">
       <div className="flex justify-center pb-0.5">{heading}</div>
       {players.map(p => (
-        <PlayerTile key={p.id} player={p} on={isOn(p)} color={color} onToggle={onToggle} />
+        <PlayerTile key={p.id} player={p} on={isOn(p)} flagged={isFlagged(p)} color={color} onToggle={onToggle} />
       ))}
       {addRow}
     </div>
@@ -430,10 +502,12 @@ function GenderColumn({
 }
 
 function PlayerTile({
-  player, on, color, onToggle,
+  player, on, flagged, color, onToggle,
 }: {
   player:   Player
   on:       boolean
+  /** Low-confidence voice match — amber ring until eyeballed (tapped). */
+  flagged?: boolean
   color:    string
   onToggle: (p: Player) => void
 }) {
@@ -443,7 +517,8 @@ function PlayerTile({
       className="flex items-center gap-2 px-2.5 rounded-lg border cursor-pointer transition-all min-w-0"
       style={{
         background:  on ? `${color}18` : 'var(--color-surf-2)',
-        borderColor: on ? `${color}55` : 'var(--color-border)',
+        borderColor: flagged ? 'var(--color-warn)' : on ? `${color}55` : 'var(--color-border)',
+        boxShadow:   flagged ? '0 0 0 1px var(--color-warn)' : undefined,
         height: 44,
       }}
     >

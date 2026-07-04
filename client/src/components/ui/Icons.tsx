@@ -134,6 +134,16 @@ export function CheckIcon({ size = 14 }: { size?: number }) {
   return <Glyph size={size} sw={3}><path d="M20 6 9 17l-5-5" /></Glyph>
 }
 
+export function MicIcon({ size = 24 }: { size?: number }) {
+  return (
+    <Glyph size={size} sw={1.8}>
+      <path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z" />
+      <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
+      <path d="M12 18v4" />
+    </Glyph>
+  )
+}
+
 // Small filled play-triangle — the truncate-cursor marker (▶) in the log.
 export function CursorIcon({ size = 11 }: { size?: number }) {
   return (

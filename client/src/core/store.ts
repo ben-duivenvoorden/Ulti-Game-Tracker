@@ -132,6 +132,10 @@ interface GameStore {
   recordPick:          () => void
   recordStall:         () => void
   recordTimeout:       () => void
+  /** Append a reviewed voice-narration batch. Every event is validated with
+   *  `canRecord` against the evolving state (the single guard) before ANY of
+   *  them commit — all-or-nothing. Returns false when validation rejects. */
+  recordVoiceEvents:   (inputs: RawEventInput[]) => boolean
   undo:                () => void
   recordHalfTime:      () => void
   recordEndGame:       () => void
@@ -695,6 +699,37 @@ export const useGameStore = create<GameStore>()(
 
       recordTimeout() {
         recordVia(get, set, bareEventInput('timeout'), { showEventMenu: false })
+      },
+
+      // ── recordVoiceEvents ────────────────────────────────────────────────────
+      // The apply half of the voice review sheet (§ narration). Dry-runs the
+      // whole batch — each event must pass canRecord against the state that
+      // the previous ones produce — then commits in one append. A goal at the
+      // end routes to point-summary exactly like recordGoal. Voice operates on
+      // live state only, so any truncate preview is committed first (same
+      // contract as recordVia).
+      recordVoiceEvents(inputs) {
+        const { session: target, truncateCursor } = get()
+        if (!target || inputs.length === 0) return false
+
+        const base = effectiveSession(target, truncateCursor)
+        let probe = base
+        for (const input of inputs) {
+          if (!canRecord(deriveGameState(probe), input.type)) return false
+          probe = appendEvents(probe, [input])
+        }
+
+        const head: RawEventInput[] = truncateCursor !== null
+          ? [{ pointIndex: deriveGameState(base).pointIndex, type: 'truncate', truncateAfterId: truncateCursor }]
+          : []
+        const updated = appendEvents(target, [...head, ...inputs])
+        const endsWithGoal = inputs[inputs.length - 1].type === 'goal'
+        set({
+          session: updated,
+          truncateCursor: null,
+          ...(endsWithGoal ? { screen: 'point-summary' as const } : {}),
+        })
+        return true
       },
 
       // ── Settings navigation ──────────────────────────────────────────────────
