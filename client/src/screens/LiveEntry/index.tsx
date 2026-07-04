@@ -14,7 +14,7 @@ import { EventColumn } from './EventColumn'
 import { PassNotation } from './PassNotation'
 import { BottomSheet, type SheetTab } from './BottomSheet'
 import { SankeyBridge } from './SankeyBridge'
-import { VoiceLiveCaption, VoiceReviewSheet } from './VoiceReviewSheet'
+import { VoiceLivePanel } from './VoiceLivePanel'
 import { Btn } from '@/components/ui/Btn'
 import { MomentBackdrop } from '@/components/MomentBackdrop'
 import { ModalScrim } from '@/components/ModalScrim'
@@ -90,10 +90,12 @@ export default function LiveEntry() {
   // parse against the active lines → review sheet → recordVoiceEvents.
   const teamsState = useTeamsState()
   const voice = getVoice()
+  // Voice surface state: non-null voiceParsed = confirm mode (result in,
+  // awaiting Record/Discard); voiceUi tracks the capture lifecycle before
+  // that; liveCaption is the transcript so far (aggregate → final).
   const [voiceParsed, setVoiceParsed] = useState<ParsedNarration | null>(null)
-  // Live caption while the PTT is held: the pause-segmented transcript so
-  // far. null = strip hidden; '' = listening, nothing transcribed yet.
-  const [liveCaption, setLiveCaption] = useState<string | null>(null)
+  const [voiceUi, setVoiceUi] = useState<'idle' | 'listening' | 'transcribing'>('idle')
+  const [liveCaption, setLiveCaption] = useState('')
 
   const phase   = state?.gamePhase
   const pickMode = isPickMode(ui.uiMode) ? ui.uiMode : null
@@ -188,20 +190,22 @@ export default function LiveEntry() {
   const recording = phase === 'in-play' || phase === 'awaiting-pull'
 
   // Event-mode candidates = both active lines (small set → high accuracy);
-  // aliases resolved from the global players log by id. Shared by the final
-  // result AND the live caption preview (parse is pure and cheap).
+  // aliases resolved from the global players log by id. The matcher is
+  // shared by the parser AND the live caption's word highlighting; parse is
+  // pure and cheap, so the preview re-parses on every partial.
+  const voiceSpeakables = [...state.activeLine.A, ...state.activeLine.B].map(p => ({
+    id:            p.id,
+    name:          p.name,
+    spokenAliases: teamsState.playersById.get(p.id)?.spokenAliases ?? [],
+  }))
+  const voiceMatcher = buildMatcher(voiceSpeakables)
   const parseVoiceWords = (words: string[]) => {
     const lineFor = (t: TeamId) => state.activeLine[t]
-    const speakables = [...lineFor('A'), ...lineFor('B')].map(p => ({
-      id:            p.id,
-      name:          p.name,
-      spokenAliases: teamsState.playersById.get(p.id)?.spokenAliases ?? [],
-    }))
     const teamOf = (id: PlayerId): TeamId | null =>
       lineFor('A').some(p => p.id === id) ? 'A'
         : lineFor('B').some(p => p.id === id) ? 'B'
         : null
-    return parseNarration(words, buildMatcher(speakables), {
+    return parseNarration(words, voiceMatcher, {
       pointIndex: state.pointIndex,
       possession: state.possession,
       discHolder: state.discHolder,
@@ -216,14 +220,16 @@ export default function LiveEntry() {
   }
 
   const onVoiceResult = (result: VoiceCaptureResult) => {
-    setLiveCaption(null)
+    setVoiceUi('idle')
     const parsed = parseVoiceWords(resultWords(result))
     // A pure "injury" call has nothing to record — jump straight to the
-    // injury line editor instead of showing an empty review sheet.
+    // injury line editor instead of an empty confirm panel.
     if (parsed.followUp === 'injury-sub' && parsed.events.length === 0 && parsed.issues.length === 0) {
+      setLiveCaption('')
       actions.triggerInjurySub()
       return
     }
+    setLiveCaption(result.transcript)
     setVoiceParsed(parsed)
   }
   const voiceBias = state.activeLine.A.concat(state.activeLine.B)
@@ -395,17 +401,27 @@ export default function LiveEntry() {
           onResumeFromScore={actions.resumeFromScore}
         />
 
-        {voiceParsed && (
-          <VoiceReviewSheet
+        {(voiceUi !== 'idle' || voiceParsed !== null) && (
+          <VoiceLivePanel
+            caption={liveCaption}
+            busy={voiceUi === 'transcribing'}
+            matcher={voiceMatcher}
+            preview={voiceUi !== 'idle' && liveCaption.length > 0
+              ? parseVoiceWords(liveCaption.split(/[\s,.!?]+/).filter(w => w.length > 0))
+              : null}
             parsed={voiceParsed}
             onApply={events => {
               const ok = actions.recordVoiceEvents(events.map(e => e.input))
-              // "injury" spoken alongside events: apply them, then open the
-              // injury line editor (the part no event can express).
-              if (ok && voiceParsed.followUp === 'injury-sub') actions.triggerInjurySub()
+              if (ok) {
+                // "injury" spoken alongside events: apply them, then open the
+                // injury line editor (the part no event can express).
+                if (voiceParsed?.followUp === 'injury-sub') actions.triggerInjurySub()
+                setVoiceParsed(null)
+                setLiveCaption('')
+              }
               return ok
             }}
-            onClose={() => setVoiceParsed(null)}
+            onDiscard={() => { setVoiceParsed(null); setLiveCaption('') }}
           />
         )}
 
@@ -423,15 +439,6 @@ export default function LiveEntry() {
           />
         )}
 
-        {/* Live caption while holding the PTT — segments land on pauses. */}
-        {liveCaption !== null && (
-          <VoiceLiveCaption
-            caption={liveCaption}
-            parsed={liveCaption.length > 0
-              ? parseVoiceWords(liveCaption.split(/[\s,.!?]+/).filter(w => w.length > 0))
-              : null}
-          />
-        )}
       </div>
 
       {/* Voice footer — the narration PTT gets its own centred row so it
@@ -446,7 +453,18 @@ export default function LiveEntry() {
             bias={voiceBias}
             onResult={onVoiceResult}
             onPartial={p => setLiveCaption(p.aggregate)}
-            onListenChange={listening => setLiveCaption(listening ? '' : null)}
+            onCaptureState={s => {
+              if (s === 'listening') {
+                setVoiceUi('listening')
+                setLiveCaption('')
+                setVoiceParsed(null)
+              } else if (s === 'transcribing') {
+                setVoiceUi('transcribing')
+              } else {
+                setVoiceUi('idle')
+                setLiveCaption('')
+              }
+            }}
             disabled={!narrationReady}
             title={narrationReady
               ? 'Hold and narrate — pulls, passes, calls, undo'

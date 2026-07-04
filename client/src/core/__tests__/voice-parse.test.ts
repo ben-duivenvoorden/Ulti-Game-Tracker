@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildMatcher, buildTeamMatcher } from '../voice/match'
-import { parseNarration, matchTeamLineCall, type ParseContext } from '../voice/parse'
+import { classifyWords, parseNarration, matchTeamLineCall, type ParseContext } from '../voice/parse'
 
 // Team A on offence: Ben, Sam, Alice. Team B defending: Kim, Dana.
 const ROSTER = [
@@ -149,6 +149,19 @@ describe('parseNarration — unknown tokens', () => {
     expect(r.issues.some(i => i.includes('Zorblax'))).toBe(true)
     // Sam still chains; the goal lands on the last *matched* player.
     expect(types(r)).toEqual(['possession', 'goal'])
+  })
+})
+
+describe('classifyWords — live caption highlighting', () => {
+  it('players, keywords, noise, unknowns each get their kind', () => {
+    const kinds = classifyWords(['Kim', 'pull', 'Sam', 'to', 'Ben', 'score', 'Zorblax'], matcher).map(c => c.kind)
+    expect(kinds).toEqual(['player', 'keyword', 'player', 'noise', 'player', 'keyword', 'unknown'])
+  })
+
+  it('bigram keywords light up both words', () => {
+    const kinds = classifyWords(['Ben', 'throw', 'away'], matcher).map(c => c.kind)
+    expect(kinds).toEqual(['player', 'keyword', 'keyword'])
+    expect(classifyWords(['time', 'out'], matcher).map(c => c.kind)).toEqual(['keyword', 'keyword'])
   })
 })
 

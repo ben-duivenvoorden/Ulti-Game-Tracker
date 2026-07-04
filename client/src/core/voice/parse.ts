@@ -167,6 +167,50 @@ export function matchTeamLineCall(
   return { matches, unmatched, finalTeam: current }
 }
 
+// ─── Live-caption word classification ─────────────────────────────────────────
+// Per-word highlighting for the live strip — mirrors exactly what the parser
+// does with each word, without emitting anything.
+
+export type WordKind = 'player' | 'keyword' | 'noise' | 'unknown'
+
+export interface ClassifiedWord {
+  word: string
+  kind: WordKind
+}
+
+const isBigramKeyword = (a: string, b: string): boolean =>
+  (a === 'throw' && b === 'away') ||
+  (a === 'pull' && b === 'bonus') ||
+  (a === 'time' && b === 'out') ||
+  (a === 'injury' && (b === 'sub' || b === 'substitution' || b === 'timeout' || b === 'stoppage'))
+
+export function classifyWords(words: string[], matcher: PlayerMatcher): ClassifiedWord[] {
+  const out: ClassifiedWord[] = []
+  for (let i = 0; i < words.length; i++) {
+    const w = normalize(words[i])
+    const next = i + 1 < words.length ? normalize(words[i + 1]) : ''
+    if (isBigramKeyword(w, next)) {
+      out.push({ word: words[i], kind: 'keyword' }, { word: words[i + 1], kind: 'keyword' })
+      i++
+      continue
+    }
+    if (w.length === 0 || NOISE.has(w) || CONNECTORS.has(w)) {
+      out.push({ word: words[i], kind: 'noise' })
+      continue
+    }
+    if (OUTCOME_WORDS[w] || PULL_WORDS[w] || COMMAND_WORDS[w] || INJURY_WORDS.has(w)) {
+      out.push({ word: words[i], kind: 'keyword' })
+      continue
+    }
+    const m = matcher.match(w)
+    out.push({
+      word: words[i],
+      kind: m.playerId !== null && m.confidence >= MIN_CONFIDENCE ? 'player' : 'unknown',
+    })
+  }
+  return out
+}
+
 export function parseNarration(words: string[], matcher: PlayerMatcher, ctx: ParseContext): ParsedNarration {
   const events:    VoiceEvent[] = []
   const issues:    string[] = []

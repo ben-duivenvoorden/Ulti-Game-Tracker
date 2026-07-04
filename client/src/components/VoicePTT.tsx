@@ -12,15 +12,17 @@ import type { VoicePlugin, VoiceCaptureResult, VoicePartial } from '@/core/voice
 
 type PttState = 'checking' | 'setup' | 'preparing' | 'idle' | 'listening' | 'busy'
 
-export function VoicePTT({ voice, bias, onResult, onPartial, onListenChange, title = 'Hold to speak', disabled = false }: {
+export function VoicePTT({ voice, bias, onResult, onPartial, onCaptureState, title = 'Hold to speak', disabled = false }: {
   voice:    VoicePlugin
   bias?:    string
   onResult: (result: VoiceCaptureResult) => void
   /** Mid-capture segment transcriptions (pause-segmented long holds) —
    *  drives a live caption while the scorer keeps talking. */
   onPartial?: (partial: VoicePartial) => void
-  /** Fires on hold-to-talk start (true) and release/cancel (false). */
-  onListenChange?: (listening: boolean) => void
+  /** Capture lifecycle for the live panel: 'listening' on hold start,
+   *  'transcribing' on release (tail decode in flight — onResult follows),
+   *  'cancelled' on drag-off / failure (no result coming). */
+  onCaptureState?: (s: 'listening' | 'transcribing' | 'cancelled') => void
   title?:   string
   /** Capture unavailable right now (e.g. previewing history) — dimmed, hold
    *  does nothing. The first-run setup tap still works so model download and
@@ -96,7 +98,7 @@ export function VoicePTT({ voice, bias, onResult, onPartial, onListenChange, tit
         return
       }
       setState('listening')
-      onListenChange?.(true)
+      onCaptureState?.('listening')
     } catch (err) {
       console.warn('[voice] capture start failed', err)
       setState('idle')
@@ -107,18 +109,21 @@ export function VoicePTT({ voice, bias, onResult, onPartial, onListenChange, tit
     releasedRef.current = true
     if (state !== 'listening') return
     setState('busy')
-    onListenChange?.(false)
+    onCaptureState?.('transcribing')
     try {
       const result = await voice.stopCapture()
       onResult(result)
-    } catch { /* capture failed — nothing to hand over */ }
+    } catch {
+      // Capture failed — nothing to hand over; tell the panel to stand down.
+      onCaptureState?.('cancelled')
+    }
     setState('idle')
   }
 
   const cancel = async () => {
     releasedRef.current = true
     if (state !== 'listening') return
-    onListenChange?.(false)
+    onCaptureState?.('cancelled')
     try { await voice.cancelCapture() } catch { /* already stopped */ }
     setState('idle')
   }

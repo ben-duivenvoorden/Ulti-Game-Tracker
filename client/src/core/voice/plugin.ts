@@ -89,7 +89,7 @@ const mockVoice: VoicePlugin = {
       mockTimers.push(setTimeout(() => {
         const aggregate = clauses.slice(0, i + 1).join(' ')
         for (const l of mockPartialListeners) l({ seq: i, transcript: clause, aggregate })
-      }, (i + 1) * 800))
+      }, (i + 1) * 600))
     })
     return Promise.resolve()
   },

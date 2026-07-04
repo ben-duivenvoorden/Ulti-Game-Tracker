@@ -66,9 +66,9 @@ public class VoicePlugin extends Plugin {
     // deliberately conservative: a noisy sideline that never reads as quiet
     // simply produces no partials and falls back to one big transcription.
     private static final float SILENCE_RMS         = 0.015f;
-    private static final int   SILENCE_BUFFERS     = 7;                     // × 100 ms
-    private static final int   MIN_SEGMENT_SAMPLES = SAMPLE_RATE * 3 / 2;   // 1.5 s
-    private static final int   MAX_SEGMENT_SAMPLES = SAMPLE_RATE * 15;      // 15 s
+    private static final int   SILENCE_BUFFERS     = 5;                     // × 100 ms
+    private static final int   MIN_SEGMENT_SAMPLES = SAMPLE_RATE;           // 1 s
+    private static final int   MAX_SEGMENT_SAMPLES = SAMPLE_RATE * 8;       // 8 s
     /** whisper dislikes sub-second clips — zero-pad anything shorter. */
     private static final int   MIN_DECODE_SAMPLES  = SAMPLE_RATE * 12 / 10; // 1.2 s
 
