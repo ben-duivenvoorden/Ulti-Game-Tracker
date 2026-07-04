@@ -10,6 +10,7 @@
 // without a device: it "hears" whatever `ugt-voice-mock-transcript` holds.
 
 import { Capacitor, registerPlugin } from '@capacitor/core'
+import type { PermissionState, PluginListenerHandle } from '@capacitor/core'
 
 export interface VoiceCaptureToken {
   word: string
@@ -35,6 +36,15 @@ export interface VoicePlugin {
   stopCapture(): Promise<VoiceCaptureResult>
   /** Pointer-cancel / drag-off. */
   cancelCapture(): Promise<void>
+  /** Capacitor's built-in permission surface for the `microphone` alias —
+   *  requested up-front by the PTT setup step, so the permission dialog never
+   *  fights a hold-to-talk press for the pointer. */
+  checkPermissions(): Promise<{ microphone: PermissionState }>
+  requestPermissions(): Promise<{ microphone: PermissionState }>
+  addListener(
+    eventName: 'downloadProgress',
+    listener: (event: { progress: number }) => void,
+  ): Promise<PluginListenerHandle>
 }
 
 const native = registerPlugin<VoicePlugin>('Voice')
@@ -51,6 +61,9 @@ const mockVoice: VoicePlugin = {
     return Promise.resolve({ transcript, tokens: [] })
   },
   cancelCapture: () => Promise.resolve(),
+  checkPermissions: () => Promise.resolve({ microphone: 'granted' as PermissionState }),
+  requestPermissions: () => Promise.resolve({ microphone: 'granted' as PermissionState }),
+  addListener: () => Promise.resolve({ remove: () => Promise.resolve() }),
 }
 
 export function getVoice(): VoicePlugin | null {

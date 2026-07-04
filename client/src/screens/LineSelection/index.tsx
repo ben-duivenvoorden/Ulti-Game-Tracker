@@ -13,8 +13,8 @@ import { inkOn } from '@/core/contrast'
 import { pickDisplayNames } from '@/core/teams/shortName'
 import { firstNameKey } from '@/core/teams/shortName'
 import { getVoice, resultWords, type VoiceCaptureResult } from '@/core/voice/plugin'
-import { buildMatcher, AUTO_CONFIDENCE } from '@/core/voice/match'
-import { matchLineCall } from '@/core/voice/parse'
+import { buildMatcher, buildTeamMatcher, AUTO_CONFIDENCE } from '@/core/voice/match'
+import { matchTeamLineCall } from '@/core/voice/parse'
 import type { Player, GameMode, RecordingOptions, TeamId } from '@/core/types'
 
 // See Header.tsx — same convention. Score header is the tight context.
@@ -91,19 +91,34 @@ export default function LineSelection() {
     spokenAliases: teamsState.playersById.get(p.id)?.spokenAliases ?? [],
   }))
 
+  // One hold can build both lines: a spoken team name switches which roster
+  // the following player names land in, and the tab follows the last-named
+  // team so the scorer sees where their words went.
   const onVoiceResult = (result: VoiceCaptureResult) => {
-    const roster  = rosters[activeTab]
-    const call    = matchLineCall(resultWords(result), buildMatcher(speakables(roster)))
-    const sel     = activeTab === 'A' ? selA : selB
-    const setSel  = activeTab === 'A' ? setSelA : setSelB
-    const byId    = new Map(roster.map(p => [p.id, p]))
-    const added   = call.matches
-      .map(m => byId.get(m.playerId!))
-      .filter((p): p is Player => !!p && !sel.some(s => s.id === p.id))
-    if (added.length > 0) setSel([...sel, ...added])
-    const lowConf = call.matches.filter(m => m.confidence < AUTO_CONFIDENCE).map(m => m.playerId!)
+    const call = matchTeamLineCall(
+      resultWords(result),
+      { A: buildMatcher(speakables(rosters.A)), B: buildMatcher(speakables(rosters.B)) },
+      buildTeamMatcher([
+        { team: 'A', name: teams.A.name, short: teams.A.short },
+        { team: 'B', name: teams.B.name, short: teams.B.short },
+      ]),
+      activeTab,
+    )
+    const lowConf: number[] = []
+    for (const slot of ['A', 'B'] as TeamId[]) {
+      const roster = rosters[slot]
+      const sel    = slot === 'A' ? selA : selB
+      const setSel = slot === 'A' ? setSelA : setSelB
+      const byId   = new Map(roster.map(p => [p.id, p]))
+      const added  = call.matches[slot]
+        .map(m => byId.get(m.playerId!))
+        .filter((p): p is Player => !!p && !sel.some(s => s.id === p.id))
+      if (added.length > 0) setSel([...sel, ...added])
+      lowConf.push(...call.matches[slot].filter(m => m.confidence < AUTO_CONFIDENCE).map(m => m.playerId!))
+    }
     if (lowConf.length > 0) setVoiceFlagged(prev => new Set([...prev, ...lowConf]))
     setVoiceUnmatched(call.unmatched)
+    setActiveTab(call.finalTeam)
   }
 
   const validateA = validateLine(selA, gameMode, effectiveRatio, lineSize)
@@ -287,14 +302,19 @@ export default function LineSelection() {
       </div>
 
       {/* Push-to-talk — only when a voice engine is present (device / mock).
-          Speaks names into the active tab's line. */}
+          Both team names + rosters ride the bias: one hold can name a team,
+          list its players, then the other team and more. */}
       {voice && (
         <div className="absolute bottom-6 right-5 z-10">
           <VoicePTT
             voice={voice}
-            bias={speakables(rosters[activeTab]).flatMap(s => [s.name.split(/\s+/)[0], ...s.spokenAliases]).join(', ')}
+            bias={[
+              teams.A.name, teams.B.name,
+              ...speakables(rosters.A).flatMap(s => [s.name.split(/\s+/)[0], ...s.spokenAliases]),
+              ...speakables(rosters.B).flatMap(s => [s.name.split(/\s+/)[0], ...s.spokenAliases]),
+            ].join(', ')}
             onResult={onVoiceResult}
-            title="Hold and speak names to build the line"
+            title="Hold and speak — a team name, then players; name the other team to switch"
           />
         </div>
       )}

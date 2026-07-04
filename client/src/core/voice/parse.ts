@@ -17,8 +17,8 @@
 import type { TeamId } from '../types'
 import { otherTeam } from '../types'
 import type { RawEventInput } from '../engine'
-import type { PlayerMatcher, TokenMatch } from './match'
-import { MIN_CONFIDENCE } from './match'
+import type { PlayerMatcher, TeamMatcher, TokenMatch } from './match'
+import { AUTO_CONFIDENCE, MIN_CONFIDENCE } from './match'
 
 export type OutcomeKind = 'goal' | 'receiver-error' | 'throw-away' | 'stall' | 'block' | 'intercept'
 
@@ -79,34 +79,54 @@ function foldBigrams(words: string[]): string[] {
   return out
 }
 
-// ─── Line mode: names only ────────────────────────────────────────────────────
-// LineSelection push-to-talk — every recognised name toggles that player into
-// the line; no outcome words, no events. The line UI itself is the review
-// surface, so this returns matches (with confidence, for amber-marking) and
-// the words that matched nobody.
+// ─── Line mode: team names + player names ─────────────────────────────────────
+// LineSelection push-to-talk — one hold can build both lines: a spoken team
+// name (or a distinctive part of it) switches which roster the following
+// player names land in, e.g. "Lizards Alex Ben … Gooselings Ana Kim". Every
+// recognised player name adds that player to the named team's line; no
+// outcome words, no events. The line UI itself is the review surface, so this
+// returns per-team matches (with confidence, for amber-marking), the words
+// that matched nobody, and the team context left active at the end — the tab
+// the screen should show.
 
-export interface LineCall {
-  matches:   TokenMatch[]
+export interface TeamLineCall {
+  matches:   Record<TeamId, TokenMatch[]>
   unmatched: string[]
+  /** Team named last — the tab to leave active. */
+  finalTeam: TeamId
 }
 
-export function matchLineCall(words: string[], matcher: PlayerMatcher): LineCall {
-  const matches:   TokenMatch[] = []
+export function matchTeamLineCall(
+  words:       string[],
+  matchers:    Record<TeamId, PlayerMatcher>,
+  teamMatcher: TeamMatcher,
+  startTeam:   TeamId,
+): TeamLineCall {
+  const matches: Record<TeamId, TokenMatch[]> = { A: [], B: [] }
+  const seen:    Record<TeamId, Set<number>>  = { A: new Set(), B: new Set() }
   const unmatched: string[] = []
-  const seen = new Set<number>()
+  let current = startTeam
   for (const raw of words) {
     const w = normalize(raw)
     if (w.length === 0 || NOISE.has(w) || CONNECTORS.has(w)) continue
-    const m = matcher.match(w)
-    if (m.playerId === null || m.confidence < MIN_CONFIDENCE) {
+    // A word that confidently names a team switches the listing context —
+    // unless it names a player on the current roster at least as well
+    // (a player called Young beats the Young and the Restless mid-listing).
+    const t = teamMatcher.match(w)
+    const p = matchers[current].match(w)
+    if (t.team !== null && t.confidence >= AUTO_CONFIDENCE && t.confidence > p.confidence) {
+      current = t.team
+      continue
+    }
+    if (p.playerId === null || p.confidence < MIN_CONFIDENCE) {
       unmatched.push(raw)
-    } else if (!seen.has(m.playerId)) {
+    } else if (!seen[current].has(p.playerId)) {
       // A repeated name is an STT stutter, not a toggle-off request.
-      seen.add(m.playerId)
-      matches.push(m)
+      seen[current].add(p.playerId)
+      matches[current].push(p)
     }
   }
-  return { matches, unmatched }
+  return { matches, unmatched, finalTeam: current }
 }
 
 export function parseNarration(words: string[], matcher: PlayerMatcher, ctx: ParseContext): ParsedNarration {

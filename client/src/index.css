@@ -93,6 +93,17 @@ html, body, #root {
   overscroll-behavior: none;
 }
 
+/* Native shell: keep the app out of the system bars. Capacitor's SystemBars
+ * plugin injects --safe-area-inset-* on <html> (Android, any notch/ratio);
+ * env() covers iOS/PWA standalone; plain browsers resolve everything to 0.
+ * The body background paints the bar areas in app colour. */
+body {
+  padding-top:    var(--safe-area-inset-top,    env(safe-area-inset-top,    0px));
+  padding-right:  var(--safe-area-inset-right,  env(safe-area-inset-right,  0px));
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  padding-left:   var(--safe-area-inset-left,   env(safe-area-inset-left,   0px));
+}
+
 /* ── Motion ─────────────────────────────────────────────────────────────────
  * Plain keyframes applied via inline `animation` styles in components (kept out
  * of @theme so they're framework-agnostic). Respects reduced-motion below. */

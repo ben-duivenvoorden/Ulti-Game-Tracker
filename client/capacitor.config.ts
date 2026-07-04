@@ -8,6 +8,17 @@ const config: CapacitorConfig = {
   appId: 'com.ultigametracker.app',
   appName: 'Ulti Game Tracker',
   webDir: 'dist',
+  // Matches --color-bg — shows through wherever the WebView doesn't paint.
+  backgroundColor: '#111111',
+  plugins: {
+    // Android 15+ forces edge-to-edge; SystemBars injects the real
+    // --safe-area-inset-* values (insetsHandling defaults to 'css') and
+    // index.css pads the shell with them — works on any notch/ratio.
+    // 'DARK' = light bar icons for the always-dark app.
+    SystemBars: {
+      style: 'DARK',
+    },
+  },
 }
 
 export default config

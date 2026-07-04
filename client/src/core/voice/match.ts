@@ -6,6 +6,7 @@
 // "Bennie" finds Ben and a windswept "Adeelya" still finds Adilia.
 
 import { doubleMetaphone } from 'double-metaphone'
+import type { TeamId } from '../types'
 
 export interface SpeakablePlayer {
   id:            number
@@ -67,12 +68,12 @@ interface SpeakableForm {
 /** Score one token against one speakable form. Exact > phonetic > fuzzy;
  *  phonetic hits are shaded by string similarity so "Ben"/"Bin" (same key)
  *  outranks "Ben"/"Bowen" (same key, further apart). */
-function scoreForm(token: string, tokenKeys: [string, string], f: SpeakableForm): number {
-  if (token === f.form) return 1
-  const sim = similarity(token, f.form)
-  const primaryHit   = tokenKeys[0] === f.keys[0]
+function scoreForm(token: string, tokenKeys: [string, string], form: string, keys: [string, string]): number {
+  if (token === form) return 1
+  const sim = similarity(token, form)
+  const primaryHit   = tokenKeys[0] === keys[0]
   const secondaryHit = !primaryHit && (
-    tokenKeys[0] === f.keys[1] || tokenKeys[1] === f.keys[0] || tokenKeys[1] === f.keys[1]
+    tokenKeys[0] === keys[1] || tokenKeys[1] === keys[0] || tokenKeys[1] === keys[1]
   )
   if (primaryHit)   return 0.8 + 0.2 * sim
   if (secondaryHit) return 0.7 + 0.2 * sim
@@ -111,7 +112,7 @@ export function buildMatcher(players: SpeakablePlayer[]): PlayerMatcher {
       // Best score per player, then compare the top two players.
       const best = new Map<number, { score: number; name: string }>()
       for (const f of forms) {
-        const s = scoreForm(token, tokenKeys, f)
+        const s = scoreForm(token, tokenKeys, f.form, f.keys)
         const cur = best.get(f.playerId)
         if (!cur || s > cur.score) best.set(f.playerId, { score: s, name: f.playerName })
       }
@@ -136,6 +137,78 @@ export function buildMatcher(players: SpeakablePlayer[]): PlayerMatcher {
         ? Math.min(top.score, AUTO_CONFIDENCE - 0.01)
         : top.score
       return { playerId: top.id, playerName: top.name, confidence, token: word }
+    },
+  }
+}
+
+// ─── Team-name matching ───────────────────────────────────────────────────────
+// Line-call team switching: "Lizards … Gooselings …" flips which roster the
+// following names are matched against. A team is speakable by any distinctive
+// word of its name (stopwords dropped — "The Bald and the Beautiful" answers
+// to "bald" / "beautiful", never "the") plus its short code.
+
+const TEAM_STOPWORDS = new Set(['the', 'and', 'of', 'a', 'an'])
+
+export interface SpeakableTeam {
+  team:  TeamId
+  name:  string
+  short: string
+}
+
+export interface TeamTokenMatch {
+  team:       TeamId | null
+  confidence: number
+}
+
+export interface TeamMatcher {
+  match: (word: string) => TeamTokenMatch
+}
+
+export function buildTeamMatcher(teams: SpeakableTeam[]): TeamMatcher {
+  const forms: { team: TeamId; form: string; keys: [string, string] }[] = []
+  for (const t of teams) {
+    const speakables = new Set<string>()
+    for (const word of t.name.split(/\s+/)) {
+      const n = normalize(word)
+      if (n.length >= 3 && !TEAM_STOPWORDS.has(n)) speakables.add(n)
+    }
+    const short = normalize(t.short)
+    if (short.length >= 2) speakables.add(short)
+    for (const form of speakables) {
+      forms.push({ team: t.team, form, keys: doubleMetaphone(form) as [string, string] })
+    }
+  }
+
+  return {
+    match(word: string): TeamTokenMatch {
+      const token = normalize(word)
+      if (token.length === 0) return { team: null, confidence: 0 }
+      const tokenKeys = doubleMetaphone(token) as [string, string]
+
+      const best = new Map<TeamId, number>()
+      for (const f of forms) {
+        const s = scoreForm(token, tokenKeys, f.form, f.keys)
+        if (s > (best.get(f.team) ?? 0)) best.set(f.team, s)
+      }
+
+      let top: { team: TeamId; score: number } | null = null
+      let runnerUp = 0
+      for (const [team, score] of best) {
+        if (!top || score > top.score) {
+          runnerUp = top?.score ?? 0
+          top = { team, score }
+        } else if (score > runnerUp) {
+          runnerUp = score
+        }
+      }
+
+      if (!top || top.score < MIN_CONFIDENCE) return { team: null, confidence: top?.score ?? 0 }
+      // A word both teams answer to (shared league prefix etc.) switches
+      // nothing — demote it out of the switch band.
+      const confidence = (top.score - runnerUp) < AMBIGUITY_MARGIN
+        ? Math.min(top.score, AUTO_CONFIDENCE - 0.01)
+        : top.score
+      return { team: top.team, confidence }
     },
   }
 }

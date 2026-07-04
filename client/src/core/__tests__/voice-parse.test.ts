@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { buildMatcher } from '../voice/match'
-import { parseNarration, matchLineCall, type ParseContext } from '../voice/parse'
+import { buildMatcher, buildTeamMatcher } from '../voice/match'
+import { parseNarration, matchTeamLineCall, type ParseContext } from '../voice/parse'
 
 // Team A on offence: Ben, Sam, Alice. Team B defending: Kim, Dana.
 const ROSTER = [
@@ -148,16 +148,67 @@ describe('parseNarration — unknown tokens', () => {
   })
 })
 
-describe('matchLineCall — line mode', () => {
-  it('matches a run of names and dedupes stutters', () => {
-    const r = matchLineCall(['Ben', 'Sam', 'Alice', 'Sam'], matcher)
-    expect(r.matches.map(m => m.playerId)).toEqual([1, 2, 3])
+describe('matchTeamLineCall — line mode', () => {
+  // Two distinct rosters so cross-team routing is observable.
+  const ROSTER_A = [
+    { id: 1, name: 'Ben Duivenvoorden', spokenAliases: ['Bennie'] },
+    { id: 2, name: 'Sam Kooistra',      spokenAliases: [] },
+    { id: 3, name: 'Alice de Vries',    spokenAliases: [] },
+  ]
+  const ROSTER_B = [
+    { id: 4, name: 'Kim Park', spokenAliases: [] },
+    { id: 5, name: 'Dana Wu',  spokenAliases: [] },
+  ]
+  const matchers = { A: buildMatcher(ROSTER_A), B: buildMatcher(ROSTER_B) }
+  const teamMatcher = buildTeamMatcher([
+    { team: 'A', name: 'Lizards Eastside',           short: 'LIZ' },
+    { team: 'B', name: 'The Bald and the Beautiful', short: 'BAB' },
+  ])
+
+  it('matches a run of names into the start team and dedupes stutters', () => {
+    const r = matchTeamLineCall(['Ben', 'Sam', 'Alice', 'Sam'], matchers, teamMatcher, 'A')
+    expect(r.matches.A.map(m => m.playerId)).toEqual([1, 2, 3])
+    expect(r.matches.B).toEqual([])
     expect(r.unmatched).toEqual([])
+    expect(r.finalTeam).toBe('A')
   })
 
   it('nicknames resolve and unknowns surface', () => {
-    const r = matchLineCall(['Bennie', 'Zorblax'], matcher)
-    expect(r.matches.map(m => m.playerId)).toEqual([1])
+    const r = matchTeamLineCall(['Bennie', 'Zorblax'], matchers, teamMatcher, 'A')
+    expect(r.matches.A.map(m => m.playerId)).toEqual([1])
     expect(r.unmatched).toEqual(['Zorblax'])
+  })
+
+  it('a spoken team name switches which roster the following names land in', () => {
+    const r = matchTeamLineCall(
+      ['Lizards', 'Ben', 'Sam', 'Bald', 'Kim', 'Dana'],
+      matchers, teamMatcher, 'B',
+    )
+    expect(r.matches.A.map(m => m.playerId)).toEqual([1, 2])
+    expect(r.matches.B.map(m => m.playerId)).toEqual([4, 5])
+    expect(r.finalTeam).toBe('B')
+  })
+
+  it('a partial team name works — "beautiful" alone names team B', () => {
+    const r = matchTeamLineCall(['Beautiful', 'Kim'], matchers, teamMatcher, 'A')
+    expect(r.matches.B.map(m => m.playerId)).toEqual([4])
+    expect(r.finalTeam).toBe('B')
+  })
+
+  it('stopwords in a team name never switch ("the", "and")', () => {
+    const r = matchTeamLineCall(['Ben', 'the', 'and', 'Sam'], matchers, teamMatcher, 'A')
+    expect(r.matches.A.map(m => m.playerId)).toEqual([1, 2])
+    expect(r.finalTeam).toBe('A')
+  })
+
+  it('a word that names a current-team player at least as well stays a player', () => {
+    // Roster has a player literally named like the other team's word.
+    const clashMatchers = {
+      A: buildMatcher([{ id: 9, name: 'Bald Eagleton', spokenAliases: [] }]),
+      B: buildMatcher(ROSTER_B),
+    }
+    const r = matchTeamLineCall(['Bald'], clashMatchers, teamMatcher, 'A')
+    expect(r.matches.A.map(m => m.playerId)).toEqual([9])
+    expect(r.finalTeam).toBe('A')
   })
 })

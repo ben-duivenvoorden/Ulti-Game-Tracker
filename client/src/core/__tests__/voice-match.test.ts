@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildMatcher, levenshtein, AUTO_CONFIDENCE, MIN_CONFIDENCE } from '../voice/match'
+import { buildMatcher, buildTeamMatcher, levenshtein, AUTO_CONFIDENCE, MIN_CONFIDENCE } from '../voice/match'
 
 // Roster shaped like a real mixed team: overlapping sounds, nicknames, and a
 // pair sharing a phonetically-close first name.
@@ -84,5 +84,35 @@ describe('buildMatcher', () => {
   it('Alice vs Alex: close names stay distinct on exact hits', () => {
     expect(matcher.match('Alice').playerId).toBe(3)
     expect(matcher.match('Alex').playerId).toBe(4)
+  })
+})
+
+describe('buildTeamMatcher', () => {
+  const teamMatcher = buildTeamMatcher([
+    { team: 'A', name: 'Brisbane Ultimate Mixed League Lizards', short: 'LIZ' },
+    { team: 'B', name: 'The Bald and the Beautiful',             short: 'BAB' },
+  ])
+
+  it('distinctive words hit their team with full confidence', () => {
+    expect(teamMatcher.match('Lizards')).toMatchObject({ team: 'A', confidence: 1 })
+    expect(teamMatcher.match('beautiful')).toMatchObject({ team: 'B', confidence: 1 })
+    expect(teamMatcher.match('BAB').team).toBe('B')
+  })
+
+  it('stopwords match nothing', () => {
+    expect(teamMatcher.match('the').team).toBeNull()
+    expect(teamMatcher.match('and').team).toBeNull()
+  })
+
+  it('a word both teams answer to is demoted out of the switch band', () => {
+    const shared = buildTeamMatcher([
+      { team: 'A', name: 'Brisbane Lizards',    short: 'BL' },
+      { team: 'B', name: 'Brisbane Beautifuls', short: 'BB' },
+    ])
+    expect(shared.match('Brisbane').confidence).toBeLessThan(AUTO_CONFIDENCE)
+  })
+
+  it('unrelated words score below MIN_CONFIDENCE', () => {
+    expect(teamMatcher.match('Zorblax').confidence).toBeLessThan(MIN_CONFIDENCE)
   })
 })
