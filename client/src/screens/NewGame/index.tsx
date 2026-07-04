@@ -12,18 +12,20 @@ import { suggestShortName } from '@/core/teams/shortName'
 interface NewGameFormProps {
   onCreated: (newGameId: number) => void
   onCancel:  () => void
+  /** Pre-selected competition (when the form is opened from inside one). */
+  defaultCompetitionId?: CompetitionId | null
 }
 
 const DEFAULT_TEAM_COLOR = '#1f4788'
 
-export default function NewGameForm({ onCreated, onCancel }: NewGameFormProps) {
+export default function NewGameForm({ onCreated, onCancel, defaultCompetitionId = null }: NewGameFormProps) {
   const teamsState   = useTeamsState()
   const competitions = useCompetitions()
   const actions      = useGameActions()
 
   const [name, setName] = useState('')
   const [scheduledTime, setScheduledTime] = useState('12:00')
-  const [competitionId, setCompetitionId] = useState<CompetitionId | null>(null)
+  const [competitionId, setCompetitionId] = useState<CompetitionId | null>(defaultCompetitionId)
   const [teamA, setTeamA] = useState<GlobalTeamId | null>(null)
   const [teamB, setTeamB] = useState<GlobalTeamId | null>(null)
   const [halfTimeAt, setHalfTimeAt] = useState(8)

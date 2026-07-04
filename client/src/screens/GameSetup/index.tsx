@@ -4,41 +4,40 @@ import { Chip } from '@/components/ui/Chip'
 import { Label } from '@/components/ui/Label'
 import { IconBtn, SettingsIcon, TeamsIcon } from '@/components/ui/Icons'
 import { ScreenHeader } from '@/components/ScreenHeader'
+import { PromptSheet } from '@/components/PromptSheet'
 import { useGameStore } from '@/core/store'
 import { useCompetitions, useGameActions, useRecordingOptions, useScheduledGames, useSession, useTeamsState } from '@/core/selectors'
 import { deriveGameState, deriveGameStatus } from '@/core/engine'
-import { resolveGameConfig } from '@/core/games/engine'
+import { deriveScheduledGamesState, resolveGameConfig } from '@/core/games/engine'
+import type { CompetitionId } from '@/core/games/types'
 import { fetchGameSummary, decideResume, type GameSummary } from '@/core/serverLog'
 import { abbaRatioLabel } from '@/core/format'
 import type { TeamId } from '@/core/types'
 import NewGameForm from '@/screens/NewGame'
 
-// Sentinel that pushes the NewGame form full-screen.
-const NEW_GAME_SENTINEL = -1
+// Two-level flow: the FIRST screen lists competitions (plus an "Other games"
+// bucket); tapping one shows the games inside it. Competition-level settings
+// (defaults + enforcement) hang off the gear on each competition row.
 
 export default function GameSetup() {
-  const { selectGame, resumeGame, startSegmentFromScore, openGameSettings, openTeamsManager, openCompetitionSettings } = useGameActions()
+  const { selectGame, resumeGame, startSegmentFromScore, openGameSettings, openTeamsManager, openCompetitionSettings, addCompetition } = useGameActions()
   const deviceId     = useGameStore(s => s.deviceId)
   const session      = useSession()
   const games        = useScheduledGames()
   const competitions = useCompetitions()
   const teamsState   = useTeamsState()
 
-  // Group by competition (insertion order); games without one — or whose
-  // competition is unknown — land under OTHER. Competitions always show,
-  // even with no games yet: the header is the way into their settings.
   const knownComps = new Set(competitions.map(c => c.id))
-  const groups = [
-    ...competitions
-      .map(c => ({ key: `c${c.id}`, competitionId: c.id as number | null, title: c.name, games: games.filter(g => g.competitionId === c.id) })),
-    {
-      key: 'other', competitionId: null, title: 'Other',
-      games: games.filter(g => g.competitionId === undefined || !knownComps.has(g.competitionId)),
-    },
-  ].filter(group => group.competitionId !== null || group.games.length > 0)
-  const showHeaders = groups.some(group => group.key !== 'other')
+  const otherGames = games.filter(g => g.competitionId === undefined || !knownComps.has(g.competitionId))
 
   const options = useRecordingOptions()
+
+  // Which level we're on: null = competitions listing; a CompetitionId or
+  // 'other' = that group's games. Transient — every app start lands on the
+  // competitions listing.
+  const [openComp, setOpenComp] = useState<CompetitionId | 'other' | null>(null)
+  const [newGameOpen, setNewGameOpen] = useState(false)
+  const [newCompOpen, setNewCompOpen] = useState(false)
 
   // When set, expand the matching card inline to show pulling-team picker.
   const [expandedId, setExpandedId] = useState<number | null>(null)
@@ -53,6 +52,7 @@ export default function GameSetup() {
   const [summaries, setSummaries] = useState<Record<number, GameSummary | null>>({})
 
   const sessionGameId = session?.gameConfig.id ?? null
+  const sessionLive   = deriveGameStatus(session) === 'in-progress'
 
   // Fetch high-water summaries for the listed games when the menu shows. Small
   // N (a handful of games); per-game fetch is fine. Re-runs when the set of
@@ -89,62 +89,165 @@ export default function GameSetup() {
     if (local) resumeGame(gameId)
   }
 
-  // Full-screen NewGame form pushes over the list.
-  if (expandedId === NEW_GAME_SENTINEL) {
+  const resetCardState = () => { setExpandedId(null); setPullingTeam(null); setAbbaMajority(null) }
+
+  // Full-screen NewGame form pushes over everything.
+  if (newGameOpen) {
     return (
       <NewGameForm
-        onCreated={(newId) => { setExpandedId(newId); setPullingTeam(null); setAbbaMajority(null) }}
-        onCancel={() => setExpandedId(null)}
+        defaultCompetitionId={typeof openComp === 'number' ? openComp : null}
+        onCreated={(newId) => {
+          setNewGameOpen(false)
+          // Land inside whichever group the game actually went to (the form's
+          // competition picker may have been changed).
+          const created = deriveScheduledGamesState(useGameStore.getState().scheduledGamesLog).gamesById.get(newId)
+          setOpenComp(created?.competitionId !== undefined && knownComps.has(created.competitionId)
+            ? created.competitionId
+            : 'other')
+          setExpandedId(newId); setPullingTeam(null); setAbbaMajority(null)
+        }}
+        onCancel={() => setNewGameOpen(false)}
       />
     )
   }
 
+  // ─── Level 1: competitions listing ─────────────────────────────────────────
+  if (openComp === null) {
+    return (
+      <div className="h-full flex flex-col bg-bg text-content">
+        <ScreenHeader
+          kicker="GAME SETUP"
+          title="Competitions"
+          right={
+            <>
+              <IconBtn onClick={openTeamsManager} title="Manage teams">
+                <TeamsIcon />
+              </IconBtn>
+              <IconBtn onClick={openGameSettings} title="Recording settings">
+                <SettingsIcon />
+              </IconBtn>
+            </>
+          }
+        />
+
+        <div className="flex-1 overflow-y-auto">
+          {competitions.length === 0 && otherGames.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full px-6 text-center gap-3">
+              <div className="text-5xl mb-1 opacity-30">🥏</div>
+              <Label>No competitions or games yet</Label>
+              <Btn variant="primary" size="md" onClick={() => setNewCompOpen(true)}>
+                + New Competition
+              </Btn>
+              <Btn variant="ghost" size="md" onClick={() => { setNewGameOpen(true); resetCardState() }}>
+                + New Game
+              </Btn>
+            </div>
+          ) : (
+            <>
+              {competitions.map(c => {
+                const compGames = games.filter(g => g.competitionId === c.id)
+                const hasLive = sessionLive && compGames.some(g => g.id === sessionGameId)
+                return (
+                  <div key={c.id} className="flex items-stretch border-b border-border">
+                    <button
+                      onClick={() => { setOpenComp(c.id); resetCardState() }}
+                      className="flex-1 min-w-0 text-left px-4 py-4 cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="text-lg font-semibold text-content truncate">{c.name}</div>
+                        {hasLive && <Chip color="var(--color-success)">LIVE</Chip>}
+                      </div>
+                      <div className="text-sm" style={{ color: 'var(--color-muted)' }}>
+                        {compGames.length === 0 ? 'No games yet' : `${compGames.length} game${compGames.length === 1 ? '' : 's'}`}
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => openCompetitionSettings(c.id)}
+                      className="flex items-center px-4 cursor-pointer"
+                      style={{ color: 'var(--color-muted)' }}
+                      title={`${c.name} — competition settings`}
+                    >
+                      <SettingsIcon size={18} />
+                    </button>
+                  </div>
+                )
+              })}
+
+              {otherGames.length > 0 && (
+                <button
+                  onClick={() => { setOpenComp('other'); resetCardState() }}
+                  className="w-full text-left px-4 py-4 cursor-pointer border-b border-border"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="text-lg font-semibold text-content truncate">Other games</div>
+                    {sessionLive && otherGames.some(g => g.id === sessionGameId) && (
+                      <Chip color="var(--color-success)">LIVE</Chip>
+                    )}
+                  </div>
+                  <div className="text-sm" style={{ color: 'var(--color-muted)' }}>
+                    {otherGames.length} game{otherGames.length === 1 ? '' : 's'} outside a competition
+                  </div>
+                </button>
+              )}
+
+              <button
+                onClick={() => setNewCompOpen(true)}
+                className="w-full text-left px-4 py-3.5 cursor-pointer"
+                style={{ color: 'var(--color-muted)' }}
+              >
+                + New competition…
+              </button>
+            </>
+          )}
+        </div>
+
+        <PromptSheet
+          open={newCompOpen}
+          title="New competition"
+          label="Competition name"
+          placeholder="e.g. Brisbane Parity League"
+          confirmLabel="Add"
+          onSubmit={name => {
+            setNewCompOpen(false)
+            if (name.trim().length === 0) return
+            const id = addCompetition(name.trim())
+            openCompetitionSettings(id)
+          }}
+          onCancel={() => setNewCompOpen(false)}
+        />
+      </div>
+    )
+  }
+
+  // ─── Level 2: games within one competition (or the "Other" bucket) ─────────
+  const comp = typeof openComp === 'number' ? competitions.find(c => c.id === openComp) ?? null : null
+  const visibleGames = openComp === 'other' ? otherGames : games.filter(g => g.competitionId === openComp)
+
   return (
     <div className="h-full flex flex-col bg-bg text-content">
       <ScreenHeader
-        kicker="GAME SETUP"
-        title="Games"
-        right={
-          <>
-            <IconBtn onClick={openTeamsManager} title="Manage teams">
-              <TeamsIcon />
-            </IconBtn>
-            <IconBtn onClick={openGameSettings} title="Recording settings">
-              <SettingsIcon />
-            </IconBtn>
-          </>
-        }
+        onBack={() => { setOpenComp(null); resetCardState() }}
+        backTitle="Competitions"
+        kicker="COMPETITION"
+        title={comp ? comp.name : 'Other games'}
+        right={comp ? (
+          <IconBtn onClick={() => openCompetitionSettings(comp.id)} title="Competition settings">
+            <SettingsIcon />
+          </IconBtn>
+        ) : undefined}
       />
 
       {/* Game list */}
       <div className="flex-1 overflow-y-auto">
-        {games.length === 0 && groups.length === 0 ? (
+        {visibleGames.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full px-6 text-center">
             <div className="text-5xl mb-4 opacity-30">🥏</div>
             <Label className="mb-3">No games scheduled yet</Label>
-            <Btn variant="primary" size="md" onClick={() => { setExpandedId(NEW_GAME_SENTINEL); setPullingTeam(null); setAbbaMajority(null) }}>
+            <Btn variant="primary" size="md" onClick={() => { setNewGameOpen(true); resetCardState() }}>
               + New Game
             </Btn>
           </div>
-        ) : groups.map(group => (
-          <div key={group.key}>
-            {showHeaders && (
-              group.competitionId !== null ? (
-                <button
-                  onClick={() => openCompetitionSettings(group.competitionId!)}
-                  className="w-full flex items-center justify-between gap-2 px-4 pt-4 pb-1.5 cursor-pointer text-left"
-                  title={`${group.title} — competition settings`}
-                >
-                  <Label>{group.title}</Label>
-                  <span style={{ color: 'var(--color-muted)' }}><SettingsIcon size={15} /></span>
-                </button>
-              ) : (
-                <div className="px-4 pt-4 pb-1.5">
-                  <Label>{group.title}</Label>
-                </div>
-              )
-            )}
-            {group.games.map(g => {
+        ) : visibleGames.map(g => {
           const resolved = resolveGameConfig(g, teamsState)
           const liveSession = (session && sessionGameId === g.id) ? session : null
           const status = deriveGameStatus(liveSession)
@@ -288,15 +391,13 @@ export default function GameSetup() {
               )}
             </div>
           )
-            })}
-          </div>
-        ))}
+        })}
       </div>
 
       {/* FAB: + New Game (hidden when the empty state already shows the CTA). */}
-      {(games.length > 0 || groups.length > 0) && (
+      {visibleGames.length > 0 && (
         <button
-          onClick={() => { setExpandedId(NEW_GAME_SENTINEL); setPullingTeam(null); setAbbaMajority(null) }}
+          onClick={() => { setNewGameOpen(true); resetCardState() }}
           className="absolute bottom-6 right-5 w-14 h-14 rounded-full flex items-center justify-center cursor-pointer text-2xl font-bold"
           style={{
             background: 'var(--color-team-a)',
