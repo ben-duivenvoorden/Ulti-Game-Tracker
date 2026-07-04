@@ -84,6 +84,17 @@ export function isMutedLogEntry(type: VisLogEntry['type']): boolean {
   return type === 'possession' || type === 'point-start' || type === 'score-resume'
 }
 
+// ─── ABBA ratio labels ────────────────────────────────────────────────────────
+
+/** "4 MMP / 3 FMP" for a given majority division over the configured
+ *  magnitudes — shared by the setup picker, GameSettings, and the
+ *  LineSelection advisory banner. */
+export function abbaRatioLabel(majority: 'M' | 'F', lineRatio: { M: number; F: number }): string {
+  const hi = Math.max(lineRatio.M, lineRatio.F)
+  const lo = Math.min(lineRatio.M, lineRatio.F)
+  return majority === 'M' ? `${hi} MMP / ${lo} FMP` : `${lo} MMP / ${hi} FMP`
+}
+
 // Events that put the game into a "dead disc / waiting for pickup" state
 // (gamePhase = 'in-play' with no discHolder).
 export type DeadDiscEventType =

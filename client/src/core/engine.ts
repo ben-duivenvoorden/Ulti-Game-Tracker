@@ -91,6 +91,33 @@ export function deriveEndsSwapped(baseline: boolean, visLog: VisLogEntry[]): boo
   return swapped
 }
 
+// ─── ABBA gender-ratio prescription (WFDF Ratio Rule A) ──────────────────────
+// Mixed division: after the opening flip, a second flip decides the gender
+// ratio for point 1 (ratio A). The prescription then alternates every two
+// points — A B B A A B B A … — and half-time does NOT reset the pattern.
+// `pointIndex` (total goals so far) is the 0-based index of the point about
+// to be played, so the sequence is a pure function of it.
+
+/** True when the given point plays ratio A (the point-1 ratio):
+ *  points 0, 3, 4, 7, 8, … */
+export const isAPoint = (pointIndex: number): boolean =>
+  (((pointIndex + 1) >> 1) & 1) === 0
+
+/** Effective MMP/FMP target for a point under ABBA. `majority` is the
+ *  matching division holding the majority on the A (point-1) ratio; the
+ *  magnitudes come from `lineRatio` (e.g. 4/3) regardless of which division
+ *  they were configured against. */
+export function ratioForPoint(
+  pointIndex: number,
+  majority: 'M' | 'F',
+  lineRatio: { M: number; F: number },
+): { M: number; F: number } {
+  const hi = Math.max(lineRatio.M, lineRatio.F)
+  const lo = Math.min(lineRatio.M, lineRatio.F)
+  const maj = isAPoint(pointIndex) ? majority : (majority === 'M' ? 'F' : 'M')
+  return maj === 'M' ? { M: hi, F: lo } : { M: lo, F: hi }
+}
+
 // ─── Derived game state ───────────────────────────────────────────────────────
 // Pure function: walks the rawLog (after undo/amend resolution) and computes
 // everything. This is the ONLY place game state is computed. The store holds

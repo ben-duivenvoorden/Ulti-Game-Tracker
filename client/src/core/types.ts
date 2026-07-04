@@ -293,6 +293,14 @@ export interface SegmentMeta {
 export interface GameSession {
   gameConfig: GameConfig
   gameStartPullingTeam: TeamId
+  /** WFDF Ratio Rule A (ABBA), mixed division only: which matching division is
+   *  the majority on point 1 — the outcome of the second (ratio) flip. The
+   *  per-point prescription alternates every two points from this seed
+   *  (`ratioForPoint` in engine.ts). Sits alongside `gameStartPullingTeam` as
+   *  an opening-flip outcome — NOT on GameConfig, which `resolveSession`
+   *  rebuilds from the scheduled-games log on every read. Absent ⇒ ABBA advice
+   *  off (fixed `lineRatio` behaviour). */
+  abbaStartMajority?: 'M' | 'F'
   /** Identity of this scorer's recording. One game → many segments. */
   segment: SegmentMeta
   rawLog: RawEvent[]

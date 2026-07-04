@@ -92,7 +92,10 @@ interface GameStore {
   endsSwappedBaseline: boolean
 
   // Game / session actions
-  selectGame:        (gameId: number, pullingTeam: TeamId) => void
+  selectGame:        (gameId: number, pullingTeam: TeamId, abbaStartMajority?: 'M' | 'F') => void
+  /** Set / clear the ABBA point-1 majority (WFDF Ratio Rule A) on the current
+   *  session — the second-flip outcome. `null` turns the per-point advice off. */
+  setAbbaStartMajority: (majority: 'M' | 'F' | null) => void
   /** Start a fresh *anchored* segment for a game part-way through: record from
    *  the given score with `offence` receiving. The anchor lives on the segment
    *  (no event needed) and seeds the engine; the non-offence team pulls the
@@ -205,6 +208,7 @@ function freshSession(
   teamsLog: TeamEvent[],
   scheduledGamesLog: ScheduledGameEvent[],
   anchor?: SegmentAnchor,
+  abbaStartMajority?: 'M' | 'F',
 ): GameSession | null {
   const gamesState = deriveScheduledGamesState(scheduledGamesLog)
   const game = gamesState.gamesById.get(gameId)
@@ -214,6 +218,7 @@ function freshSession(
   return {
     gameConfig:           config,
     gameStartPullingTeam: pullingTeam,
+    ...(abbaStartMajority ? { abbaStartMajority } : {}),
     segment:              { segmentId: newSegmentId(), scorerId, deviceId, createdAt: Date.now(), ...(anchor ? { anchor } : {}) },
     rawLog:               [],
   }
@@ -333,11 +338,26 @@ export const useGameStore = create<GameStore>()(
       // Start a fresh game session (overwrites any existing one). Resolves
       // teams + rosters from the live teamsLog at the moment of creation —
       // subsequent reads via `resolveSession` re-resolve on every render.
-      selectGame(gameId, pullingTeam) {
+      selectGame(gameId, pullingTeam, abbaStartMajority) {
         const { teamsLog, scheduledGamesLog, scorerId, deviceId } = get()
-        const session = freshSession(gameId, pullingTeam, scorerId, deviceId, teamsLog, scheduledGamesLog)
+        const session = freshSession(
+          gameId, pullingTeam, scorerId, deviceId, teamsLog, scheduledGamesLog,
+          undefined, abbaStartMajority,
+        )
         if (!session) return
         set({ session, screen: 'line-selection', ...RESET_TRANSIENT_UI })
+      },
+
+      // ── setAbbaStartMajority ─────────────────────────────────────────────────
+      // Correct / set the ABBA second-flip outcome mid-game (from GameSettings).
+      // Session-shaped, not an event: it's an opening-flip fact like
+      // `gameStartPullingTeam`, not part of game history.
+      setAbbaStartMajority(majority) {
+        const { session } = get()
+        if (!session) return
+        const { abbaStartMajority: _prev, ...rest } = session
+        void _prev
+        set({ session: majority ? { ...rest, abbaStartMajority: majority } : rest })
       },
 
       // ── startSegmentFromScore ─────────────────────────────────────────────────

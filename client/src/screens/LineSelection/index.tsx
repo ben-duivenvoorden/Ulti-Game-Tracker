@@ -7,6 +7,7 @@ import { ModalScrim } from '@/components/ModalScrim'
 import { ScorerInfoButton } from '@/components/ScorerInfoButton'
 import { useGameActions, useSession, useDerivedState, useRecordingOptions } from '@/core/selectors'
 import { useGameStore } from '@/core/store'
+import { isAPoint, ratioForPoint } from '@/core/engine'
 import { inkOn } from '@/core/contrast'
 import { pickDisplayNames } from '@/core/teams/shortName'
 import { firstNameKey } from '@/core/teams/shortName'
@@ -39,10 +40,19 @@ export default function LineSelection() {
   const rosters = session?.gameConfig.rosters
   const teams   = session?.gameConfig.teams
 
+  // ABBA (WFDF Ratio Rule A): when the point-1 majority is set on a mixed game,
+  // the MMP/FMP target for THIS point comes from the alternating prescription —
+  // seed, validation, chips, and the advisory banner all follow it. Unset (or
+  // open mode) falls back to the fixed configured ratio.
+  const abbaMajority  = gameMode === 'mixed' ? session?.abbaStartMajority : undefined
+  const pointIndex    = state?.pointIndex ?? 0
+  const effectiveRatio = abbaMajority ? ratioForPoint(pointIndex, abbaMajority, lineRatio) : lineRatio
+  const effectiveOptions = abbaMajority ? { ...options, lineRatio: effectiveRatio } : options
+
   // Seed selection from the derived activeLine if it's been set (mid-game), or
   // from a sensible default of the roster otherwise (very first point).
-  const initialA = (state && state.activeLine.A.length > 0) ? state.activeLine.A : (rosters ? seedDefaultLine(rosters.A, options) : [])
-  const initialB = (state && state.activeLine.B.length > 0) ? state.activeLine.B : (rosters ? seedDefaultLine(rosters.B, options) : [])
+  const initialA = (state && state.activeLine.A.length > 0) ? state.activeLine.A : (rosters ? seedDefaultLine(rosters.A, effectiveOptions) : [])
+  const initialB = (state && state.activeLine.B.length > 0) ? state.activeLine.B : (rosters ? seedDefaultLine(rosters.B, effectiveOptions) : [])
   const [selA, setSelA] = useState<Player[]>(initialA)
   const [selB, setSelB] = useState<Player[]>(initialB)
   const [overrideOpen, setOverrideOpen] = useState(false)
@@ -58,8 +68,8 @@ export default function LineSelection() {
     }
   }
 
-  const validateA = validateLine(selA, gameMode, lineRatio, lineSize)
-  const validateB = validateLine(selB, gameMode, lineRatio, lineSize)
+  const validateA = validateLine(selA, gameMode, effectiveRatio, lineSize)
+  const validateB = validateLine(selB, gameMode, effectiveRatio, lineSize)
 
   // Running-start: a partial / short line is fine — the recorder fills the
   // empty `+` slots mid-point. Only an OVER-quota gender split (mixed mode,
@@ -164,6 +174,25 @@ export default function LineSelection() {
         </div>
       )}
 
+      {/* ABBA advisory — the prescribed split flips under the scorer every two
+          points, so name this point's target explicitly (advice, not a lock). */}
+      {abbaMajority && (
+        <div
+          className="flex-shrink-0 flex items-center justify-center gap-2 px-3 py-1.5 text-[11px] font-mono tracking-wide border-b border-border"
+          style={{ background: 'var(--color-surf)', color: 'var(--color-content)' }}
+        >
+          <span className="font-bold">Point {pointIndex + 1}</span>
+          <span style={{ color: 'var(--color-dim)' }}>·</span>
+          <span style={{ color: 'var(--color-muted)' }}>ABBA {isAPoint(pointIndex) ? 'A' : 'B'}</span>
+          <span style={{ color: 'var(--color-dim)' }}>·</span>
+          <span className="font-bold">{effectiveRatio.M} MMP / {effectiveRatio.F} FMP</span>
+          {!isInjurySub && (() => {
+            const next = ratioForPoint(pointIndex + 1, abbaMajority, lineRatio)
+            return <span style={{ color: 'var(--color-dim)' }}>next: {next.M}/{next.F}</span>
+          })()}
+        </div>
+      )}
+
       {/* Active team's roster */}
       <div className="flex-1 overflow-hidden">
         {(() => {
@@ -178,8 +207,8 @@ export default function LineSelection() {
               onToggle={p => toggle(p, sel, setSel)}
               onSetAll={setSel}
               gameMode={gameMode}
-              targetM={lineRatio.M}
-              targetF={lineRatio.F}
+              targetM={effectiveRatio.M}
+              targetF={effectiveRatio.F}
               lineSize={lineSize}
               onAddPlayer={(name, gender, jersey) =>
                 addPlayer(globalIdFor(slot), name, gender,

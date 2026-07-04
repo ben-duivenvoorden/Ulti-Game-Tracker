@@ -5,10 +5,11 @@ import { Label } from '@/components/ui/Label'
 import { IconBtn, SettingsIcon, TeamsIcon } from '@/components/ui/Icons'
 import { ScreenHeader } from '@/components/ScreenHeader'
 import { useGameStore } from '@/core/store'
-import { useGameActions, useScheduledGames, useSession, useTeamsState } from '@/core/selectors'
+import { useGameActions, useRecordingOptions, useScheduledGames, useSession, useTeamsState } from '@/core/selectors'
 import { deriveGameState, deriveGameStatus } from '@/core/engine'
 import { resolveGameConfig } from '@/core/games/engine'
 import { fetchGameSummary, decideResume, type GameSummary } from '@/core/serverLog'
+import { abbaRatioLabel } from '@/core/format'
 import type { TeamId } from '@/core/types'
 import NewGameForm from '@/screens/NewGame'
 
@@ -22,9 +23,14 @@ export default function GameSetup() {
   const games      = useScheduledGames()
   const teamsState = useTeamsState()
 
+  const options = useRecordingOptions()
+
   // When set, expand the matching card inline to show pulling-team picker.
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [pullingTeam, setPullingTeam] = useState<TeamId | null>(null)
+  // ABBA second-flip outcome (mixed only): which division holds the point-1
+  // majority. null = not set → per-point advice stays off for this game.
+  const [abbaMajority, setAbbaMajority] = useState<'M' | 'F' | null>(null)
 
   // Server-side high-water summaries, keyed by game id. Each is the `max`
   // point-position any scorer/device reached for that game (null = no server
@@ -72,7 +78,7 @@ export default function GameSetup() {
   if (expandedId === NEW_GAME_SENTINEL) {
     return (
       <NewGameForm
-        onCreated={(newId) => { setExpandedId(newId); setPullingTeam(null) }}
+        onCreated={(newId) => { setExpandedId(newId); setPullingTeam(null); setAbbaMajority(null) }}
         onCancel={() => setExpandedId(null)}
       />
     )
@@ -101,7 +107,7 @@ export default function GameSetup() {
           <div className="flex flex-col items-center justify-center h-full px-6 text-center">
             <div className="text-5xl mb-4 opacity-30">🥏</div>
             <Label className="mb-3">No games scheduled yet</Label>
-            <Btn variant="primary" size="md" onClick={() => { setExpandedId(NEW_GAME_SENTINEL); setPullingTeam(null) }}>
+            <Btn variant="primary" size="md" onClick={() => { setExpandedId(NEW_GAME_SENTINEL); setPullingTeam(null); setAbbaMajority(null) }}>
               + New Game
             </Btn>
           </div>
@@ -141,10 +147,10 @@ export default function GameSetup() {
                   }
                   if (expanded) {
                     setExpandedId(null)
-                    setPullingTeam(null)
+                    setPullingTeam(null); setAbbaMajority(null)
                   } else {
                     setExpandedId(g.id)
-                    setPullingTeam(null)
+                    setPullingTeam(null); setAbbaMajority(null)
                   }
                 }}
                 className="w-full text-left px-4 py-3 cursor-pointer"
@@ -227,12 +233,19 @@ export default function GameSetup() {
                           )
                         })}
                       </div>
+                      {options.gameMode === 'mixed' && options.lineRatio.M !== options.lineRatio.F && (
+                        <AbbaRatioPicker
+                          lineRatio={options.lineRatio}
+                          value={abbaMajority}
+                          onChange={setAbbaMajority}
+                        />
+                      )}
                       <Btn
                         variant="primary"
                         size="lg"
                         full
                         disabled={!pullingTeam}
-                        onClick={() => pullingTeam && selectGame(g.id, pullingTeam)}
+                        onClick={() => pullingTeam && selectGame(g.id, pullingTeam, abbaMajority ?? undefined)}
                       >
                         Start Recording
                       </Btn>
@@ -248,7 +261,7 @@ export default function GameSetup() {
       {/* FAB: + New Game (hidden when the empty state already shows the CTA). */}
       {games.length > 0 && (
         <button
-          onClick={() => { setExpandedId(NEW_GAME_SENTINEL); setPullingTeam(null) }}
+          onClick={() => { setExpandedId(NEW_GAME_SENTINEL); setPullingTeam(null); setAbbaMajority(null) }}
           className="absolute bottom-6 right-5 w-14 h-14 rounded-full flex items-center justify-center cursor-pointer text-2xl font-bold"
           style={{
             background: 'var(--color-team-a)',
@@ -260,6 +273,46 @@ export default function GameSetup() {
           +
         </button>
       )}
+    </div>
+  )
+}
+
+// ─── ABBA point-1 ratio picker ───────────────────────────────────────────────
+// Mixed division only: the second flip's winner picks the gender ratio for
+// point 1 (WFDF Ratio Rule A); the prescription then alternates every two
+// points. Optional — tap the selected choice again to clear it and keep the
+// fixed-ratio behaviour.
+
+function AbbaRatioPicker({ lineRatio, value, onChange }: {
+  lineRatio: { M: number; F: number }
+  value: 'M' | 'F' | null
+  onChange: (v: 'M' | 'F' | null) => void
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="text-xs text-content text-center">Point 1 ratio (ABBA)</div>
+      <div className="text-[10px] italic text-center" style={{ color: 'var(--color-muted)' }}>
+        (Second flip — optional; sets per-point ratio advice)
+      </div>
+      <div className="flex gap-2">
+        {(['M', 'F'] as const).map(majority => {
+          const selected = value === majority
+          return (
+            <button
+              key={majority}
+              onClick={e => { e.stopPropagation(); onChange(selected ? null : majority) }}
+              className="flex-1 h-11 rounded-lg border text-sm font-semibold transition-all cursor-pointer"
+              style={{
+                background:  selected ? 'var(--color-surf-2)' : 'transparent',
+                borderColor: selected ? 'var(--color-border-2)' : 'var(--color-border)',
+                color:       selected ? 'var(--color-content)' : 'var(--color-muted)',
+              }}
+            >
+              {abbaRatioLabel(majority, lineRatio)}
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }

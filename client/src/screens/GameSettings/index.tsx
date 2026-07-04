@@ -1,11 +1,13 @@
-import { useGameActions, useRecordingOptions } from '@/core/selectors'
+import { useGameActions, useRecordingOptions, useSession } from '@/core/selectors'
 import { Btn } from '@/components/ui/Btn'
 import { Section, Stepper } from '@/components/ui/form'
 import { ScreenHeader } from '@/components/ScreenHeader'
+import { abbaRatioLabel } from '@/core/format'
 
 export default function GameSettings() {
-  const { closeGameSettings, updateRecordingOption } = useGameActions()
+  const { closeGameSettings, updateRecordingOption, setAbbaStartMajority } = useGameActions()
   const options = useRecordingOptions()
+  const session = useSession()
 
   return (
     <div className="h-full flex flex-col bg-bg text-content">
@@ -75,6 +77,28 @@ export default function GameSettings() {
             </div>
           )}
         </Section>
+
+        {options.gameMode === 'mixed' && session && options.lineRatio.M !== options.lineRatio.F && (
+          <Section title="ABBA RATIO (RULE A)">
+            <div className="text-[10px] mb-1" style={{ color: 'var(--color-muted)' }}>
+              Point 1 ratio from the second flip — line advice then alternates
+              every two points. Off keeps the fixed ratio above.
+            </div>
+            <div className="flex gap-2">
+              <ModeButton
+                selected={session.abbaStartMajority === undefined}
+                onClick={() => setAbbaStartMajority(null)}
+              >Off</ModeButton>
+              {(['M', 'F'] as const).map(majority => (
+                <ModeButton
+                  key={majority}
+                  selected={session.abbaStartMajority === majority}
+                  onClick={() => setAbbaStartMajority(majority)}
+                >{abbaRatioLabel(majority, options.lineRatio)}</ModeButton>
+              ))}
+            </div>
+          </Section>
+        )}
 
         <Section title="EVENTS">
           <div className="flex flex-col gap-2">
