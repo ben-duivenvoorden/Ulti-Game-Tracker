@@ -7,6 +7,7 @@ import { UNKNOWN_PLAYER_ID, UNKNOWN_PLAYER, type TeamId, type VisLogEntry } from
 import { inkOn } from '@/core/contrast'
 import { Btn } from '@/components/ui/Btn'
 import { BottomSheet } from '@/screens/LiveEntry/BottomSheet'
+import { ConfirmSheet } from '@/components/ConfirmSheet'
 import { MomentBackdrop } from '@/components/MomentBackdrop'
 import { WarnIcon, UndoIcon } from '@/components/ui/Icons'
 
@@ -22,8 +23,9 @@ export default function PointSummary() {
   const recordingOptions = useRecordingOptions()
   const truncateCursor   = useTruncateCursor()
   const suggestion       = useSuggestedTransition()
-  const [sheetOpen, setSheetOpen] = useState(false)
-  const [dismissed, setDismissed] = useState(false)
+  const [sheetOpen, setSheetOpen]     = useState(false)
+  const [dismissed, setDismissed]     = useState(false)
+  const [confirmEnd, setConfirmEnd]   = useState(false)
 
   // Confirm the suggested transition then advance — dismissPointSummary
   // re-reads the session and routes correctly (line-selection after half-time,
@@ -141,7 +143,7 @@ export default function PointSummary() {
 
       {/* Undo + log — kept reachable on this screen. */}
       <div
-        className="flex-shrink-0 flex items-stretch gap-2 p-3"
+        className="flex-shrink-0 flex items-stretch gap-2 p-3 pb-2"
         style={{ borderTop: '1px solid var(--color-border)' }}
         onClick={e => e.stopPropagation()}
       >
@@ -149,6 +151,29 @@ export default function PointSummary() {
         <Btn variant="default" size="md" full onClick={() => setSheetOpen(true)}>View log</Btn>
         <Btn variant="primary" size="md" full onClick={actions.dismissPointSummary}>Next point</Btn>
       </div>
+
+      {/* Manual end — the only path to `end-game` when the score cap won't be
+          reached (time-capped formats: indoor 30-min games, league time caps).
+          The score-cap banner above stays the fast path when it applies. */}
+      <div className="flex-shrink-0 px-3 pb-3" onClick={e => e.stopPropagation()}>
+        <Btn variant="ghost" size="sm" full onClick={() => setConfirmEnd(true)}>
+          End game — time cap / final score
+        </Btn>
+      </div>
+
+      <ConfirmSheet
+        open={confirmEnd}
+        title="End the game?"
+        message={`Records ${state.score.A} – ${state.score.B} as the final score and marks the game complete.`}
+        confirmLabel="End game"
+        danger
+        onConfirm={() => {
+          setConfirmEnd(false)
+          actions.recordEndGame()
+          actions.dismissPointSummary()
+        }}
+        onCancel={() => setConfirmEnd(false)}
+      />
 
       <BottomSheet
         open={sheetOpen}

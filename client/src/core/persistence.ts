@@ -9,15 +9,16 @@ import { DEFAULT_RECORDING_OPTIONS } from './types'
 import { newSegmentId, newScorerId, newDeviceId } from './ids'
 import {
   seedTeamsAndGames, competitionInputs, parityTeamInputs, parityGameInput,
-  BUML_COMPETITION_ID, PARITY_COMPETITION_ID,
+  indoorCompetitionInput, indoorTeamInputs, indoorGameInputs,
+  BUML_COMPETITION_ID, PARITY_COMPETITION_ID, INDOOR_COMPETITION_NAME,
 } from './data'
 import type { TeamEvent } from './teams/types'
 import type { ScheduledGameEvent } from './games/types'
 
-export const STORAGE_VERSION = 21
+export const STORAGE_VERSION = 22
 export const STORAGE_KEY     = 'ugt-game'
 /** Tagged at build time so hydration logs identify which bundle is running. */
-export const BUILD_MARKER    = 'ugt-build-2026-07-04-v21'
+export const BUILD_MARKER    = 'ugt-build-2026-07-12-v22'
 
 // `seedTeamsAndGames()` produces deterministic id 1.. events; the same seed
 // is consumed by the migration so old upgrades inherit the same world.
@@ -168,6 +169,36 @@ export function migrateGameStore(persisted: unknown, fromVersion: number) {
     gamesLogV20 = gamesLog
   }
 
+  // v21 → v22: the NBU Indoor Ultimate 1 Day Tournament (2026-07-12) joined
+  // the seed — competition + 6 teams + 15 pool-play fixtures. Already-
+  // populated logs are patched append-only with every id allocated past the
+  // persisted max (competitions are user-creatable since v21, so even the
+  // competition id is dynamic). Guarded by competition name + the seed stamp
+  // (timestamp 0, the same convention v20 uses) so re-runs no-op without a
+  // same-named USER-created competition ever suppressing the seed.
+  let patchedV22 = false
+  if (fromVersion < 22 && !seed
+      && !gamesLogV20.some(e => e.type === 'competition-add' && e.name === INDOOR_COMPETITION_NAME && e.timestamp === 0)) {
+    const teamsLog = [...teamsLogV20]
+    const gamesLog = [...gamesLogV20]
+    const firstGid    = teamsLog.reduce((m, e) => Math.max(m, e.type === 'team-add'   ? e.teamId   : 0), 0) + 1
+    const firstPid    = teamsLog.reduce((m, e) => Math.max(m, e.type === 'player-add' ? e.playerId : 0), 0) + 1
+    const compId      = gamesLog.reduce((m, e) => Math.max(m, e.type === 'competition-add' ? e.competitionId : 0), 0) + 1
+    const firstGameId = gamesLog.reduce((m, e) => Math.max(m, e.type === 'game-add' ? e.gameId : 0), 0) + 1
+    let nextTeamEvId  = teamsLog.reduce((m, e) => Math.max(m, e.id), 0) + 1
+    let nextGameEvId  = gamesLog.reduce((m, e) => Math.max(m, e.id), 0) + 1
+    for (const input of indoorTeamInputs(firstGid, firstPid)) {
+      teamsLog.push({ ...input, id: nextTeamEvId++, timestamp: 0 } as TeamEvent)
+    }
+    gamesLog.push({ ...indoorCompetitionInput(compId), id: nextGameEvId++, timestamp: 0 } as ScheduledGameEvent)
+    for (const input of indoorGameInputs(firstGameId, firstGid, compId)) {
+      gamesLog.push({ ...input, id: nextGameEvId++, timestamp: 0 } as ScheduledGameEvent)
+    }
+    teamsLogV20 = teamsLog
+    gamesLogV20 = gamesLog
+    patchedV22 = true
+  }
+
   console.info('[ugt-game] migrate', {
     build: BUILD_MARKER,
     fromVersion,
@@ -182,6 +213,7 @@ export function migrateGameStore(persisted: unknown, fromVersion: number) {
     strippedDeadEventTypes: sessionV18 !== sessionWithDevice,
     patchedSeedV20: patchedV20,
     patchedCompetitionsV21: patchedV21,
+    patchedIndoorV22: patchedV22,
     mintedScorerId: !obj.scorerId,
     mintedDeviceId: !obj.deviceId,
   })

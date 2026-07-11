@@ -49,10 +49,11 @@ describe('migrateGameStore v19 → v20', () => {
     expect(games.gamesById.get(6)?.name).toBe('User Game')
   })
 
-  it('adds both competitions and tags the seeded BUML fixture', () => {
+  it('adds the competitions and tags the seeded BUML fixture', () => {
     expect(games.competitions.map(c => c.name)).toEqual([
       'Brisbane Ultimate Mixed League',
       'Brisbane Parity League',
+      'Indoor Ultimate 1 Day Tournament', // v22 block runs on the same pass
     ])
     expect(games.gamesById.get(5)?.competitionId).toBe(1)
   })
@@ -75,7 +76,7 @@ describe('migrateGameStore v19 → v20', () => {
   })
 
   it('competitions land in the v21 shape (defaults + locked)', () => {
-    expect(games.competitions.map(c => c.defaults.pullBonus)).toEqual([false, true])
+    expect(games.competitions.map(c => c.defaults.pullBonus)).toEqual([false, true, false])
     expect(games.competitions.every(c => c.locked.includes('pullBonus'))).toBe(true)
   })
 
@@ -116,9 +117,10 @@ describe('migrateGameStore v20 → v21', () => {
   const games = deriveScheduledGamesState(migrated.scheduledGamesLog)
 
   it('rewrites competitions to the defaults+locked shape, same ids, no duplicates', () => {
-    expect(games.competitions.map(c => c.id)).toEqual([1, 2])
-    expect(games.competitions.map(c => c.defaults.pullBonus)).toEqual([false, true])
-    expect(migrated.scheduledGamesLog.filter(e => e.type === 'competition-add')).toHaveLength(2)
+    // The v22 block appends the indoor tournament (id 3) on the same pass.
+    expect(games.competitions.map(c => c.id)).toEqual([1, 2, 3])
+    expect(games.competitions.map(c => c.defaults.pullBonus)).toEqual([false, true, false])
+    expect(migrated.scheduledGamesLog.filter(e => e.type === 'competition-add')).toHaveLength(3)
     expect(migrated.scheduledGamesLog.some(e => e.type === 'competition-add' && !('defaults' in e))).toBe(false)
   })
 

@@ -4,8 +4,9 @@
 // game-add events for every demo fixture. Engine tests also build their
 // fixture sessions from this seed (resolved via `__tests__/fixtures.ts`).
 //
-// Two competitions: Brisbane Ultimate Mixed League (the Lizards fixture, the
-// live test target) and Brisbane Parity League (pull-bonus modification on).
+// Three competitions: Brisbane Ultimate Mixed League (the Lizards fixture,
+// the live test target), Brisbane Parity League (pull-bonus modification on),
+// and the NBU Indoor Ultimate 1 Day Tournament (real event, 2026-07-12).
 // The Empire vs Breeze demo game left the seed in the 2026-07-04 trim — its
 // teams (rosters 1–26) stay because the engine-test fixtures are built on
 // them. AUDL Summer Series + Championship were removed in the 2026-05-11 trim.
@@ -200,6 +201,95 @@ export function parityGameInput(
   })
 }
 
+// ─── NBU Indoor Ultimate 1 Day Tournament (2026-07-12) ───────────────────────
+// Real event scraped from nbultimate.com.au — full round robin, 15 pool-play
+// games across courts 3–5. Rosters hold only the players whose names were
+// public on the event page (most are "Hidden by user" and are skipped);
+// three teams had no visible names at all and start with empty rosters.
+//
+// Indoor format: 4-a-side on a basketball court, 3M:1F on court, no brick,
+// no half time (halfTimeAt 99 keeps the suggestion banner silent), 30-minute
+// time-capped games with no score cap (scoreCapAt 99 — end-game is manual).
+
+export const INDOOR_COMPETITION_ID   = 3
+export const INDOOR_COMPETITION_NAME = 'Indoor Ultimate 1 Day Tournament'
+
+const INDOOR_GID_FIRST = 7
+const INDOOR_PID_FIRST = 68
+
+/** Site order. Migration + seed both address teams as firstGid + index. */
+const INDOOR_TEAMS: Array<{ name: string; short: string; color: string; roster: Array<[name: string, gender: 'M' | 'F']> }> = [
+  { name: "BB's",                 short: 'BBS', color: '#e4b323', roster: [] },
+  { name: 'Cool Beans',           short: 'CB',  color: '#3fb950', roster: [
+    ['Jane Huggins',      'F'], ['Jean Pameron',     'F'],
+    ['Angus McCall',      'M'], ['Arman Mehrabkhani','M'], ['Erik Stevenson', 'M'],
+  ] },
+  { name: 'Family Force 5',       short: 'FF5', color: '#9b5de5', roster: [
+    ['Daniel Johansen',   'M'],
+  ] },
+  { name: 'Inside jokes',         short: 'IJ',  color: '#ff8c42', roster: [] },
+  { name: 'NBU Indoor',           short: 'NBU', color: '#4ea1ff', roster: [] },
+  { name: 'Sarcastic Commentary', short: 'SC',  color: '#e63946', roster: [
+    ['Kellie Mantle',     'F'], ['Tanya Dodgen',     'F'],
+    ['Alexi Paasonen',    'M'], ['Ben Duivenvoorden','M'], ['Keith Algar',    'M'],
+  ] },
+]
+
+/** Round-robin draw: [round, time, court, teamA index, teamB index] with team
+ *  indexes into INDOOR_TEAMS (BB 0 · CB 1 · FF5 2 · IJ 3 · NBU 4 · SC 5). */
+const INDOOR_DRAW: Array<[round: number, time: string, court: number, a: number, b: number]> = [
+  [1, '10:50', 3, 1, 3], [1, '10:50', 4, 2, 0], [1, '10:50', 5, 5, 4],
+  [2, '11:30', 3, 1, 0], [2, '11:30', 4, 3, 5], [2, '11:30', 5, 2, 4],
+  [3, '12:10', 3, 1, 5], [3, '12:10', 4, 4, 0], [3, '12:10', 5, 3, 2],
+  [4, '14:00', 3, 1, 2], [4, '14:00', 4, 3, 4], [4, '14:00', 5, 5, 0],
+  [5, '14:40', 3, 1, 4], [5, '14:40', 4, 0, 3], [5, '14:40', 5, 2, 5],
+]
+
+/** Indoor competition-add input — id-parameterised because competitions are
+ *  user-creatable since v21, so the v22 migration allocates past the max. */
+export function indoorCompetitionInput(competitionId: number): ScheduledGameEventInput {
+  return addCompetition({
+    competitionId,
+    name: INDOOR_COMPETITION_NAME,
+    defaults: {
+      gameMode: 'mixed', lineRatio: { M: 3, F: 1 }, lineSize: 4,
+      abba: false, pullBonus: false, brick: false,
+      scorerInfo: 'Indoor: 4v4 on a basketball court, 3M:1F on court (2:2 by '
+        + 'agreement). 7-second stall, all lines are in-bounds, pulls from the '
+        + 'baseline with no brick, no half time. 30-minute games — one throw '
+        + 'only after the time cap.',
+    },
+    locked: ['pullBonus', 'brick'],
+  })
+}
+
+/** Indoor team + roster inputs. Teams take consecutive gids from `firstGid`
+ *  (site order), players consecutive ids from `firstPlayerId`. */
+export function indoorTeamInputs(firstGid: GlobalTeamId, firstPlayerId: number): TeamEventInput[] {
+  const out: TeamEventInput[] = []
+  let pid = firstPlayerId
+  INDOOR_TEAMS.forEach((t, i) => {
+    out.push(addTeam(firstGid + i, t.name, t.short, t.color))
+    for (const [name, gender] of t.roster) out.push(addPlayer(pid++, firstGid + i, name, gender, {}))
+  })
+  return out
+}
+
+/** The 15 pool-play fixtures, gameIds consecutive from `firstGameId`. */
+export function indoorGameInputs(
+  firstGameId: GameId, firstGid: GlobalTeamId, competitionId: number,
+): ScheduledGameEventInput[] {
+  return INDOOR_DRAW.map(([round, time, court, a, b], i) =>
+    addScheduledGame({
+      gameId: firstGameId + i,
+      name: `Pool R${round} · Court ${court}`,
+      scheduledTime: time,
+      teamAGlobalId: firstGid + a, teamBGlobalId: firstGid + b,
+      halfTimeAt: 99, scoreCapAt: 99,
+      competitionId,
+    }))
+}
+
 // ─── Seed function ────────────────────────────────────────────────────────────
 
 interface SeedResult {
@@ -240,12 +330,14 @@ export function seedTeamsAndGames(): SeedResult {
   emitTeamWithRoster(teamInputs, LIZARDS_GID,    LIZARDS,    LIZARDS_ROSTER)
   emitTeamWithRoster(teamInputs, GOOSELINGS_GID, GOOSELINGS, GOOSELINGS_ROSTER)
   teamInputs.push(...parityTeamInputs(BALD_GID, YOUNG_GID, 48))
+  teamInputs.push(...indoorTeamInputs(INDOOR_GID_FIRST, INDOOR_PID_FIRST))
 
   // Order matters: deriveScheduledGames preserves insertion order, so the
   // BUML fixture is emitted first (top of GameSetup), competitions in their
   // display order before it.
   const gameInputs: ScheduledGameEventInput[] = [
     ...competitionInputs(),
+    indoorCompetitionInput(INDOOR_COMPETITION_ID),
     addScheduledGame({
       gameId: 5, name: 'BUML 2026-05-11', scheduledTime: '19:00',
       teamAGlobalId: LIZARDS_GID, teamBGlobalId: GOOSELINGS_GID,
@@ -253,6 +345,7 @@ export function seedTeamsAndGames(): SeedResult {
       competitionId: BUML_COMPETITION_ID,
     }),
     parityGameInput(PARITY_GAME_ID, BALD_GID, YOUNG_GID),
+    ...indoorGameInputs(7, INDOOR_GID_FIRST, INDOOR_COMPETITION_ID),
   ]
 
   return {
