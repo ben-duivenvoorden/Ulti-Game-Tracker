@@ -14,14 +14,15 @@ import { EventColumn } from './EventColumn'
 import { PassNotation } from './PassNotation'
 import { BottomSheet, type SheetTab } from './BottomSheet'
 import { SankeyBridge } from './SankeyBridge'
-import { VoiceLivePanel } from './VoiceLivePanel'
+import { VoiceTicker } from './VoiceTicker'
 import { Btn } from '@/components/ui/Btn'
 import { MomentBackdrop } from '@/components/MomentBackdrop'
 import { ModalScrim } from '@/components/ModalScrim'
-import { VoicePTT } from '@/components/VoicePTT'
+import { useVoiceCapture } from '@/components/useVoiceCapture'
+import { VoiceMicButton } from '@/components/VoiceMicButton'
 import { CloseIcon } from '@/components/ui/Icons'
-import { getVoice, resultWords, type VoiceCaptureResult } from '@/core/voice/plugin'
-import { buildMatcher } from '@/core/voice/match'
+import { getVoice } from '@/core/voice/plugin'
+import { buildMatcher, AUTO_CONFIDENCE } from '@/core/voice/match'
 import { parseNarration, type ParsedNarration } from '@/core/voice/parse'
 
 // True until the active team's possession run has at least 2 recorded
@@ -60,6 +61,16 @@ function isFirstPossession(visLog: VisLogEntry[], teamId: TeamId): boolean {
   return true
 }
 
+// Narration problems accumulated over a capture. `issues` carries the
+// parser's human-readable lines (unmatched words fold into these) plus
+// whole segments the store rejected; `lowConf` counts applied events whose
+// name match was below AUTO_CONFIDENCE — recorded, but worth an eyeball.
+interface VoiceFlags {
+  issues:  string[]
+  lowConf: number
+}
+const NO_VOICE_FLAGS: VoiceFlags = { issues: [], lowConf: 0 }
+
 export default function LiveEntry() {
   const session          = useSession()
   const state            = useDerivedState()
@@ -86,16 +97,15 @@ export default function LiveEntry() {
   // Running-start backfill picker — open when an empty `+` slot is tapped.
   const [backfillOpen, setBackfillOpen] = useState(false)
 
-  // Voice narration: PTT (in-play only — voice never drives the pull) →
-  // parse against the active lines → review sheet → recordVoiceEvents.
+  // Voice narration: toggle mic docked in the log strip → each pause-closed
+  // segment parses against the CURRENT derived state and auto-applies via
+  // recordVoiceEvents. Problems flag (amber ticker word + warn chip in the
+  // strip), never block — listening continues.
   const teamsState = useTeamsState()
   const voice = getVoice()
-  // Voice surface state: non-null voiceParsed = confirm mode (result in,
-  // awaiting Record/Discard); voiceUi tracks the capture lifecycle before
-  // that; liveCaption is the transcript so far (aggregate → final).
-  const [voiceParsed, setVoiceParsed] = useState<ParsedNarration | null>(null)
-  const [voiceUi, setVoiceUi] = useState<'idle' | 'listening' | 'transcribing'>('idle')
-  const [liveCaption, setLiveCaption] = useState('')
+  // Narration problems accumulated over the current capture (and left up
+  // for review after it ends). Cleared when the next capture starts.
+  const [voiceFlags, setVoiceFlags] = useState<VoiceFlags>(NO_VOICE_FLAGS)
 
   const phase   = state?.gamePhase
   const pickMode = isPickMode(ui.uiMode) ? ui.uiMode : null
@@ -142,12 +152,112 @@ export default function LiveEntry() {
     if (phase === 'point-over' || phase === 'half-time') actions.nextPoint()
   }, [phase, actions, truncateCursor])
 
+  // ── Voice pipeline ───────────────────────────────────────────────────────
+  // Sits before the null-session early return because hooks must run
+  // unconditionally; the state guards make the null cases no-ops. Narration
+  // covers the whole live grammar (pulls, passes, outcomes, calls, undo);
+  // only history preview and pick-mode suspend it. First-run setup
+  // (permission + model) works regardless.
+  const previewing = truncateCursor !== null
+  const narrationReady =
+    (phase === 'in-play' || phase === 'awaiting-pull') && !previewing && pickMode === null
+
+  // Event-mode candidates = both active lines (small set → high accuracy);
+  // aliases resolved from the global players log by id. The matcher is
+  // shared by the parser AND the ticker's word highlighting; parse is pure
+  // and cheap, so every segment re-parses against fresh state.
+  const voiceSpeakables = (state ? [...state.activeLine.A, ...state.activeLine.B] : []).map(p => ({
+    id:            p.id,
+    name:          p.name,
+    spokenAliases: teamsState.playersById.get(p.id)?.spokenAliases ?? [],
+  }))
+  const voiceMatcher = buildMatcher(voiceSpeakables)
+  const parseVoiceWords = (words: string[]): ParsedNarration => {
+    if (!state) return { events: [], issues: [], unmatched: [] }
+    const lineFor = (t: TeamId) => state.activeLine[t]
+    const teamOf = (id: PlayerId): TeamId | null =>
+      lineFor('A').some(p => p.id === id) ? 'A'
+        : lineFor('B').some(p => p.id === id) ? 'B'
+        : null
+    return parseNarration(words, voiceMatcher, {
+      pointIndex: state.pointIndex,
+      possession: state.possession,
+      discHolder: state.discHolder,
+      teamOf,
+      passes:    recordingOptions.passes,
+      stall:     recordingOptions.stall,
+      pullBonus: recordingOptions.pullBonus,
+      brick:     recordingOptions.brick,
+      awaitingPull: phase === 'awaiting-pull',
+      selPuller:    ui.selPuller,
+    })
+  }
+  const voiceBias = state
+    ? state.activeLine.A.concat(state.activeLine.B)
+        .flatMap(p => [p.name.split(/\s+/)[0], ...(teamsState.playersById.get(p.id)?.spokenAliases ?? [])])
+        .concat([
+          'to', 'score', 'goal', 'drop', 'throwaway', 'stall', 'block', 'intercept', 'callahan',
+          'pull', 'bonus', 'brick', 'foul', 'pick', 'timeout', 'undo', 'injury',
+        ])
+        .join(', ')
+    : undefined
+
+  const voiceCapture = useVoiceCapture({
+    voice,
+    bias: voiceBias,
+    onStart: () => setVoiceFlags(NO_VOICE_FLAGS),
+    onWords: words => handleVoiceWords(words),
+  })
+
+  // One pause-closed segment (or the tap-stop tail): parse, apply, flag.
+  // Hoisted function so the hook call above can reference it; at event time
+  // the ref-routed callback is always the latest render's closure.
+  function handleVoiceWords(words: string[]) {
+    if (!state) return
+    const parsed = parseVoiceWords(words)
+    // A pure "injury" call has nothing to record — close the capture and
+    // jump straight to the injury line editor.
+    if (parsed.followUp === 'injury-sub' && parsed.events.length === 0 && parsed.issues.length === 0) {
+      voiceCapture.cancel()
+      actions.triggerInjurySub()
+      return
+    }
+    const applied = parsed.events.length > 0
+      && actions.recordVoiceEvents(parsed.events.map(e => e.input))
+    // recordVoiceEvents is all-or-nothing: a canRecord failure mid-batch
+    // rejects the whole segment — flagged here, never blocking.
+    const issues = [...parsed.issues]
+    if (parsed.events.length > 0 && !applied) {
+      issues.push(`Couldn't record "${words.join(' ')}" from the current game state`)
+    }
+    const lowConf = applied ? parsed.events.filter(e => e.confidence < AUTO_CONFIDENCE).length : 0
+    if (issues.length > 0 || lowConf > 0) {
+      setVoiceFlags(f => ({ issues: [...f.issues, ...issues], lowConf: f.lowConf + lowConf }))
+    }
+    if (!applied) return
+    // "injury" spoken alongside events: apply them, then open the line
+    // editor (the part no event can express).
+    if (parsed.followUp === 'injury-sub') {
+      voiceCapture.cancel()
+      actions.triggerInjurySub()
+      return
+    }
+    // A goal routed to point-summary — the capture can't outlive this screen.
+    if (parsed.events[parsed.events.length - 1].input.type === 'goal') voiceCapture.cancel()
+  }
+
+  // Preview / pick-mode entered mid-capture: the narration context is gone,
+  // so the capture is cancelled rather than left running (or applied stale).
+  const voiceCancel = voiceCapture.cancel
+  useEffect(() => {
+    if (!narrationReady) voiceCancel()
+  }, [narrationReady, voiceCancel])
+
   if (!session || !state || !activeTeam) return null
 
   const { teams } = session.gameConfig
 
   const isGameOver = phase === 'game-over'
-  const previewing = truncateCursor !== null
 
   const defendingShort = teams[otherTeam(state.possession)].short
   const activeTeamColor = teams[activeTeam].color
@@ -189,56 +299,6 @@ export default function LiveEntry() {
   }
   const recording = phase === 'in-play' || phase === 'awaiting-pull'
 
-  // Event-mode candidates = both active lines (small set → high accuracy);
-  // aliases resolved from the global players log by id. The matcher is
-  // shared by the parser AND the live caption's word highlighting; parse is
-  // pure and cheap, so the preview re-parses on every partial.
-  const voiceSpeakables = [...state.activeLine.A, ...state.activeLine.B].map(p => ({
-    id:            p.id,
-    name:          p.name,
-    spokenAliases: teamsState.playersById.get(p.id)?.spokenAliases ?? [],
-  }))
-  const voiceMatcher = buildMatcher(voiceSpeakables)
-  const parseVoiceWords = (words: string[]) => {
-    const lineFor = (t: TeamId) => state.activeLine[t]
-    const teamOf = (id: PlayerId): TeamId | null =>
-      lineFor('A').some(p => p.id === id) ? 'A'
-        : lineFor('B').some(p => p.id === id) ? 'B'
-        : null
-    return parseNarration(words, voiceMatcher, {
-      pointIndex: state.pointIndex,
-      possession: state.possession,
-      discHolder: state.discHolder,
-      teamOf,
-      passes:    recordingOptions.passes,
-      stall:     recordingOptions.stall,
-      pullBonus: recordingOptions.pullBonus,
-      brick:     recordingOptions.brick,
-      awaitingPull: phase === 'awaiting-pull',
-      selPuller:    ui.selPuller,
-    })
-  }
-
-  const onVoiceResult = (result: VoiceCaptureResult) => {
-    setVoiceUi('idle')
-    const parsed = parseVoiceWords(resultWords(result))
-    // A pure "injury" call has nothing to record — jump straight to the
-    // injury line editor instead of an empty confirm panel.
-    if (parsed.followUp === 'injury-sub' && parsed.events.length === 0 && parsed.issues.length === 0) {
-      setLiveCaption('')
-      actions.triggerInjurySub()
-      return
-    }
-    setLiveCaption(result.transcript)
-    setVoiceParsed(parsed)
-  }
-  const voiceBias = state.activeLine.A.concat(state.activeLine.B)
-    .flatMap(p => [p.name.split(/\s+/)[0], ...(teamsState.playersById.get(p.id)?.spokenAliases ?? [])])
-    .concat([
-      'to', 'score', 'goal', 'drop', 'throwaway', 'stall', 'block', 'intercept', 'callahan',
-      'pull', 'bonus', 'brick', 'foul', 'pick', 'timeout', 'undo', 'injury',
-    ])
-    .join(', ')
   // Shared tile count: players (or the running-start lineSize) plus
   // the always-present Unknown-Player tile. Drives the event-column
   // padding AND the Sankey geometry so all three columns stay
@@ -272,10 +332,6 @@ export default function LiveEntry() {
     </div>
   )
   const centreSpacer = <div className="w-4 h-full" />  // 16 px — halved again from 32 px
-  // Narration covers the whole live grammar (pulls, passes, outcomes, calls,
-  // undo); only history preview and pick-mode suspend it. First-run setup
-  // (permission + model) works regardless.
-  const narrationReady = (phase === 'in-play' || phase === 'awaiting-pull') && !previewing && pickMode === null
   const eventColumn = (
     <EventColumn
       state={state}
@@ -352,7 +408,34 @@ export default function LiveEntry() {
         players={[...session.gameConfig.rosters.A, ...session.gameConfig.rosters.B]}
         onOpen={() => openSheet('log')}
         onUndo={actions.undo}
+        voiceSlot={voice && !isGameOver ? (
+          <VoiceMicButton
+            capture={voiceCapture}
+            variant="strip"
+            disabled={!narrationReady}
+            title={narrationReady
+              ? 'Tap and narrate — pulls, passes, calls, undo'
+              : 'Narration paused while previewing / picking'}
+          />
+        ) : undefined}
+        warnCount={voiceFlags.issues.length + voiceFlags.lowConf}
+        warnDetail={[
+          ...voiceFlags.issues,
+          ...(voiceFlags.lowConf > 0
+            ? [`${voiceFlags.lowConf} name${voiceFlags.lowConf === 1 ? '' : 's'} matched with low confidence`]
+            : []),
+        ].join('\n')}
+        onWarnClick={() => openSheet('log')}
       />
+
+      {voice && (
+        <VoiceTicker
+          active={voiceCapture.ui === 'listening' || voiceCapture.ui === 'stopping'}
+          transcript={voiceCapture.transcript}
+          matcher={voiceMatcher}
+          stopping={voiceCapture.ui === 'stopping'}
+        />
+      )}
 
       <div className="flex-1 relative overflow-hidden" style={{ minWidth: 0 }}>
         {isGameOver ? (
@@ -401,30 +484,6 @@ export default function LiveEntry() {
           onResumeFromScore={actions.resumeFromScore}
         />
 
-        {(voiceUi !== 'idle' || voiceParsed !== null) && (
-          <VoiceLivePanel
-            caption={liveCaption}
-            busy={voiceUi === 'transcribing'}
-            matcher={voiceMatcher}
-            preview={voiceUi !== 'idle' && liveCaption.length > 0
-              ? parseVoiceWords(liveCaption.split(/[\s,.!?]+/).filter(w => w.length > 0))
-              : null}
-            parsed={voiceParsed}
-            onApply={events => {
-              const ok = actions.recordVoiceEvents(events.map(e => e.input))
-              if (ok) {
-                // "injury" spoken alongside events: apply them, then open the
-                // injury line editor (the part no event can express).
-                if (voiceParsed?.followUp === 'injury-sub') actions.triggerInjurySub()
-                setVoiceParsed(null)
-                setLiveCaption('')
-              }
-              return ok
-            }}
-            onDiscard={() => { setVoiceParsed(null); setLiveCaption('') }}
-          />
-        )}
-
         {backfillOpen && (
           <BackfillPicker
             bench={session.gameConfig.rosters[activeTeam].filter(
@@ -440,38 +499,6 @@ export default function LiveEntry() {
         )}
 
       </div>
-
-      {/* Voice footer — the narration PTT gets its own centred row so it
-          never fights the columns for space. Hidden once the game is over. */}
-      {voice && !isGameOver && (
-        <div
-          className="flex-shrink-0 flex items-center justify-center py-2"
-          style={{ borderTop: '1px solid var(--color-border)' }}
-        >
-          <VoicePTT
-            voice={voice}
-            bias={voiceBias}
-            onResult={onVoiceResult}
-            onPartial={p => setLiveCaption(p.aggregate)}
-            onCaptureState={s => {
-              if (s === 'listening') {
-                setVoiceUi('listening')
-                setLiveCaption('')
-                setVoiceParsed(null)
-              } else if (s === 'transcribing') {
-                setVoiceUi('transcribing')
-              } else {
-                setVoiceUi('idle')
-                setLiveCaption('')
-              }
-            }}
-            disabled={!narrationReady}
-            title={narrationReady
-              ? 'Hold and narrate — pulls, passes, calls, undo'
-              : 'Narration paused while previewing / picking'}
-          />
-        </div>
-      )}
     </div>
   )
 }

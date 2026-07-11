@@ -1,21 +1,32 @@
+import type { ReactNode } from 'react'
 import type { VisLogEntry, Player } from '@/core/types'
 import { formatVisLogEntry, getVisLogColor, isMutedLogEntry } from '@/core/format'
-import { UndoIcon } from '@/components/ui/Icons'
+import { UndoIcon, WarnIcon } from '@/components/ui/Icons'
 
 interface LogPeekProps {
   visLog: VisLogEntry[]
   players: Player[]
   onOpen: () => void
   onUndo: () => void
+  /** The voice mic, docked at the left edge (kept away from UNDO so a
+   *  mis-tap can't stop a capture AND pop an event). */
+  voiceSlot?: ReactNode
+  /** Voice narration problems this capture — amber chip when > 0. */
+  warnCount?: number
+  /** Full issue lines behind the count (title text on the chip). */
+  warnDetail?: string
+  onWarnClick?: () => void
 }
 
-// Thin strip that sits between the header and the body. Two surfaces:
-//   - LEFT (flex-1): the last visible log entry as a tappable preview that
-//     opens the full log sheet. Muted-coloured by event type.
-//   - RIGHT: a prominent Undo button. Undo is the most common correction
-//     during live recording so it lives here, always visible, not buried
-//     in a sheet.
-export function LogPeek({ visLog, players, onOpen, onUndo }: LogPeekProps) {
+// Thin strip that sits between the header and the body. Surfaces, left to
+// right:
+//   - voiceSlot: the narration mic (when a voice engine is present)
+//   - the last visible log entry as a tappable preview that opens the full
+//     log sheet — muted-coloured by event type
+//   - an amber voice-issues chip (words/segments that didn't land cleanly)
+//   - a prominent Undo button. Undo is the most common correction during
+//     live recording so it lives here, always visible, not buried in a sheet.
+export function LogPeek({ visLog, players, onOpen, onUndo, voiceSlot, warnCount = 0, warnDetail, onWarnClick }: LogPeekProps) {
   const last = visLog.length > 0 ? visLog[visLog.length - 1] : null
   const color = last ? getVisLogColor(last.type) : 'var(--color-dim)'
   const muted = last ? isMutedLogEntry(last.type) : true
@@ -29,6 +40,7 @@ export function LogPeek({ visLog, players, onOpen, onUndo }: LogPeekProps) {
         borderBottom: '1px solid var(--color-border)',
       }}
     >
+      {voiceSlot}
       <button
         type="button"
         onClick={onOpen}
@@ -53,6 +65,21 @@ export function LogPeek({ visLog, players, onOpen, onUndo }: LogPeekProps) {
         </span>
         <span style={{ color: 'var(--color-muted)' }}>LOG ▾</span>
       </button>
+      {warnCount > 0 && (
+        <button
+          type="button"
+          onClick={onWarnClick}
+          className="flex-shrink-0 px-3 h-full cursor-pointer flex items-center gap-1.5 text-sm font-semibold"
+          style={{
+            background: 'var(--color-warn-bg)',
+            color:      'var(--color-warn)',
+            borderLeft: '1px solid var(--color-border)',
+          }}
+          title={warnDetail || 'Voice narration issues — check the log'}
+        >
+          <WarnIcon size={14} />{warnCount}
+        </button>
+      )}
       <button
         type="button"
         onClick={onUndo}

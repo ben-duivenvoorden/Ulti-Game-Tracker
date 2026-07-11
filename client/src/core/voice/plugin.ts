@@ -1,16 +1,17 @@
 // ─── VoicePlugin bridge ───────────────────────────────────────────────────────
 // The Capacitor plugin boundary. The native side (Android: whisper.cpp via
-// JNI; iOS later: WhisperKit) is app-agnostic — push-to-talk capture in, plain
+// JNI; iOS later: WhisperKit) is app-agnostic — toggled capture in, plain
 // transcript out. Everything UGT-specific (matching, parsing, validation)
 // stays in TS where Vitest can reach it.
 //
-// `getVoice()` is null in a plain browser — the PTT UI simply doesn't render
+// `getVoice()` is null in a plain browser — the mic UI simply doesn't render
 // on the PWA. A dev mock (localStorage `ugt-voice-mock` = '1') stands in for
 // the native side so the capture→match→UI loop can be driven end-to-end
 // without a device: it "hears" whatever `ugt-voice-mock-transcript` holds.
 
 import { Capacitor, registerPlugin } from '@capacitor/core'
 import type { PermissionState, PluginListenerHandle } from '@capacitor/core'
+import { transcriptWords } from './segments'
 
 export interface VoiceCaptureToken {
   word: string
@@ -36,24 +37,25 @@ export interface VoicePlugin {
   isModelReady(): Promise<{ ready: boolean; sizeMb: number }>
   /** One-time model fetch; emits `downloadProgress` events natively. */
   downloadModel(): Promise<void>
-  /** Pointer-down. `bias` seeds whisper's initial_prompt with the candidate
+  /** Toggle-start. `bias` seeds whisper's initial_prompt with the candidate
    *  names/aliases (+ outcome words in event mode) so decoding leans toward
    *  the roster. */
   startCapture(options?: { bias?: string }): Promise<void>
-  /** Pointer-up. */
+  /** Toggle-stop — resolves with the full stitched transcript; segments
+   *  already heard mid-capture arrived as `partialTranscript` events. */
   stopCapture(): Promise<VoiceCaptureResult>
-  /** Pointer-cancel / drag-off. */
+  /** System cancel (screen change / unmount) — discards the unheard tail. */
   cancelCapture(): Promise<void>
   /** Capacitor's built-in permission surface for the `microphone` alias —
-   *  requested up-front by the PTT setup step, so the permission dialog never
-   *  fights a hold-to-talk press for the pointer. */
+   *  requested up-front by the mic setup tap, so the permission dialog never
+   *  steals the tap that was meant to start a capture. */
   checkPermissions(): Promise<{ microphone: PermissionState }>
   requestPermissions(): Promise<{ microphone: PermissionState }>
   addListener(
     eventName: 'downloadProgress',
     listener: (event: { progress: number }) => void,
   ): Promise<PluginListenerHandle>
-  /** Long holds are pause-segmented natively; each closed segment fires one
+  /** Captures are pause-segmented natively; each closed segment fires one
    *  of these while capture keeps rolling. */
   addListener(
     eventName: 'partialTranscript',
@@ -67,8 +69,8 @@ const MOCK_FLAG       = 'ugt-voice-mock'
 const MOCK_TRANSCRIPT = 'ugt-voice-mock-transcript'
 
 // Mock partials: the mock transcript splits on commas/full stops and "speaks"
-// one clause every 800 ms, so the live caption strip can be driven end-to-end
-// in a plain browser.
+// one clause every 600 ms, so the live ticker can be driven end-to-end in a
+// plain browser.
 const mockPartialListeners = new Set<(e: VoicePartial) => void>()
 let mockTimers: ReturnType<typeof setTimeout>[] = []
 
@@ -124,5 +126,5 @@ export function getVoice(): VoicePlugin | null {
 /** Word list for the matcher/parser. Prefers the transcript (whisper tokens
  *  are subwords); strips punctuation artifacts. */
 export function resultWords(result: VoiceCaptureResult): string[] {
-  return result.transcript.split(/[\s,.!?]+/).filter(w => w.length > 0)
+  return transcriptWords(result.transcript)
 }

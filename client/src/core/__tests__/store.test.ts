@@ -90,6 +90,74 @@ describe('truncateCursor flow through recordVia', () => {
   })
 })
 
+describe('recordVoiceEvents', () => {
+  beforeEach(resetAndStartGame)
+
+  // Voice auto-applies per pause segment with no confirm step, so this
+  // action is the only gate between the parser and the rawLog.
+
+  /** Land in-play: A pulls, B receives. */
+  function recordPullFirst() {
+    const puller = MOCK_GAMES[0].rosters.A[0]
+    useGameStore.setState({ selPuller: puller.id })
+    useGameStore.getState().recordPull(false)
+  }
+
+  it('commits a valid batch in one append; a trailing goal routes to point-summary', () => {
+    recordPullFirst()
+    const state = deriveGameState(useGameStore.getState().session!)
+    const [b0, b1] = MOCK_GAMES[0].rosters.B
+    const before = useGameStore.getState().session!.rawLog.length
+
+    const ok = useGameStore.getState().recordVoiceEvents([
+      { pointIndex: state.pointIndex, type: 'possession', playerId: b0.id, teamId: 'B' },
+      { pointIndex: state.pointIndex, type: 'possession', playerId: b1.id, teamId: 'B' },
+      { pointIndex: state.pointIndex, type: 'goal',       playerId: b1.id, teamId: 'B' },
+    ])
+
+    expect(ok).toBe(true)
+    const log = useGameStore.getState().session!.rawLog
+    expect(log.length).toBe(before + 3)
+    expect(log.slice(-3).map(e => e.type)).toEqual(['possession', 'possession', 'goal'])
+    expect(useGameStore.getState().screen).toBe('point-summary')
+  })
+
+  it('rejects the whole batch when any event fails canRecord — nothing is appended', () => {
+    recordPullFirst()
+    const state = deriveGameState(useGameStore.getState().session!)
+    const b0 = MOCK_GAMES[0].rosters.B[0]
+    const a0 = MOCK_GAMES[0].rosters.A[0]
+    const before = useGameStore.getState().session!.rawLog.length
+
+    // A pull is not recordable while in-play — the batch must die whole,
+    // including the valid possession ahead of it.
+    const ok = useGameStore.getState().recordVoiceEvents([
+      { pointIndex: state.pointIndex, type: 'possession', playerId: b0.id, teamId: 'B' },
+      { pointIndex: state.pointIndex, type: 'pull',       playerId: a0.id, teamId: 'A' },
+    ])
+
+    expect(ok).toBe(false)
+    expect(useGameStore.getState().session!.rawLog.length).toBe(before)
+  })
+
+  it('applies a batch containing a spoken undo', () => {
+    recordPullFirst()
+    const state = deriveGameState(useGameStore.getState().session!)
+    const b0 = MOCK_GAMES[0].rosters.B[0]
+
+    const ok = useGameStore.getState().recordVoiceEvents([
+      { pointIndex: state.pointIndex, type: 'possession', playerId: b0.id, teamId: 'B' },
+      { pointIndex: state.pointIndex, type: 'undo' },
+    ])
+
+    expect(ok).toBe(true)
+    // The undo pops the possession it followed — the last visible entry is
+    // the pull again.
+    const vis = computeVisLog(useGameStore.getState().session!.rawLog)
+    expect(vis[vis.length - 1].type).toBe('pull')
+  })
+})
+
 describe('resumeFromScore', () => {
   beforeEach(resetAndStartGame)
 

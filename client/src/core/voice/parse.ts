@@ -118,7 +118,7 @@ function foldBigrams(words: string[]): string[] {
 }
 
 // ─── Line mode: team names + player names ─────────────────────────────────────
-// LineSelection push-to-talk — one hold can build both lines: a spoken team
+// LineSelection mic — one capture can build both lines: a spoken team
 // name (or a distinctive part of it) switches which roster the following
 // player names land in, e.g. "Lizards Alex Ben … Gooselings Ana Kim". Every
 // recognised player name adds that player to the named team's line; no

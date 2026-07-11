@@ -5,7 +5,8 @@ import { IconBtn, SettingsIcon, TeamsIcon, BackIcon, CheckIcon, CloseIcon } from
 import { GenderSelect } from '@/components/ui/form'
 import { ModalScrim } from '@/components/ModalScrim'
 import { ScorerInfoButton } from '@/components/ScorerInfoButton'
-import { VoicePTT } from '@/components/VoicePTT'
+import { useVoiceCapture } from '@/components/useVoiceCapture'
+import { VoiceMicButton } from '@/components/VoiceMicButton'
 import { useGameActions, useSession, useDerivedState, useRecordingOptions, useTeamsState } from '@/core/selectors'
 import { useGameStore } from '@/core/store'
 import { isAPoint, ratioForPoint } from '@/core/engine'
@@ -63,27 +64,13 @@ export default function LineSelection() {
   const [overrideOpen, setOverrideOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<TeamId>('A')
 
-  // Voice line creation: names spoken while holding PTT toggle players into
-  // the active tab's line. Low-confidence matches are amber-flagged (the line
+  // Voice line creation: names spoken while the mic is toggled on land in the
+  // active tab's line. Low-confidence matches are amber-flagged (the line
   // UI is its own review surface); unmatched words surface in a strip.
   const teamsState = useTeamsState()
   const voice = getVoice()
   const [voiceFlagged, setVoiceFlagged] = useState<ReadonlySet<number>>(new Set())
   const [voiceUnmatched, setVoiceUnmatched] = useState<string[]>([])
-
-  if (!rosters || !teams) return null
-
-  const toggle = (player: Player, sel: Player[], setSel: (p: Player[]) => void) => {
-    if (voiceFlagged.has(player.id)) {
-      // Any manual tap on a flagged player is the eyeball check — clear it.
-      setVoiceFlagged(prev => { const next = new Set(prev); next.delete(player.id); return next })
-    }
-    if (sel.find(p => p.id === player.id)) {
-      setSel(sel.filter(p => p.id !== player.id))
-    } else {
-      setSel([...sel, player])
-    }
-  }
 
   const speakables = (roster: Player[]) => roster.map(p => ({
     id:            p.id,
@@ -91,10 +78,12 @@ export default function LineSelection() {
     spokenAliases: teamsState.playersById.get(p.id)?.spokenAliases ?? [],
   }))
 
-  // One hold can build both lines: a spoken team name switches which roster
-  // the following player names land in, and the tab follows the last-named
-  // team so the scorer sees where their words went.
+  // One capture can build both lines: a spoken team name switches which
+  // roster the following player names land in, and the tab follows the
+  // last-named team so the scorer sees where their words went. Lines apply
+  // on tap-stop — the final result carries the whole utterance.
   const onVoiceResult = (result: VoiceCaptureResult) => {
+    if (!rosters || !teams) return
     const call = matchTeamLineCall(
       resultWords(result),
       { A: buildMatcher(speakables(rosters.A)), B: buildMatcher(speakables(rosters.B)) },
@@ -119,6 +108,32 @@ export default function LineSelection() {
     if (lowConf.length > 0) setVoiceFlagged(prev => new Set([...prev, ...lowConf]))
     setVoiceUnmatched(call.unmatched)
     setActiveTab(call.finalTeam)
+  }
+
+  // Both team names + rosters ride the bias: one capture can name a team,
+  // list its players, then the other team and more.
+  const voiceCapture = useVoiceCapture({
+    voice,
+    bias: rosters && teams ? [
+      teams.A.name, teams.B.name,
+      ...speakables(rosters.A).flatMap(s => [s.name.split(/\s+/)[0], ...s.spokenAliases]),
+      ...speakables(rosters.B).flatMap(s => [s.name.split(/\s+/)[0], ...s.spokenAliases]),
+    ].join(', ') : undefined,
+    onResult: onVoiceResult,
+  })
+
+  if (!rosters || !teams) return null
+
+  const toggle = (player: Player, sel: Player[], setSel: (p: Player[]) => void) => {
+    if (voiceFlagged.has(player.id)) {
+      // Any manual tap on a flagged player is the eyeball check — clear it.
+      setVoiceFlagged(prev => { const next = new Set(prev); next.delete(player.id); return next })
+    }
+    if (sel.find(p => p.id === player.id)) {
+      setSel(sel.filter(p => p.id !== player.id))
+    } else {
+      setSel([...sel, player])
+    }
   }
 
   const validateA = validateLine(selA, gameMode, effectiveRatio, lineSize)
@@ -301,20 +316,13 @@ export default function LineSelection() {
         })()}
       </div>
 
-      {/* Push-to-talk — only when a voice engine is present (device / mock).
-          Both team names + rosters ride the bias: one hold can name a team,
-          list its players, then the other team and more. */}
+      {/* Toggle mic — only when a voice engine is present (device / mock). */}
       {voice && (
         <div className="absolute bottom-6 right-5 z-10">
-          <VoicePTT
-            voice={voice}
-            bias={[
-              teams.A.name, teams.B.name,
-              ...speakables(rosters.A).flatMap(s => [s.name.split(/\s+/)[0], ...s.spokenAliases]),
-              ...speakables(rosters.B).flatMap(s => [s.name.split(/\s+/)[0], ...s.spokenAliases]),
-            ].join(', ')}
-            onResult={onVoiceResult}
-            title="Hold and speak — a team name, then players; name the other team to switch"
+          <VoiceMicButton
+            capture={voiceCapture}
+            variant="fab"
+            title="Tap to speak — a team name, then players; tap again to finish"
           />
         </div>
       )}
